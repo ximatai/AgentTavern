@@ -63,6 +63,16 @@
 }
 ```
 
+约束：
+
+- 同一房间内 `displayName` 必须唯一
+- 重名时直接返回冲突错误
+- `wsToken` 在本次加入房间时生成
+- `wsToken` 仅用于当前 member 的连接态识别
+- member 主动离开房间后，原 `wsToken` 失效
+- 断线重连时可继续使用未失效的 `wsToken`
+- 同一 member 允许存在多个并发连接
+
 #### `POST /api/rooms/:roomId/invite/reset`
 
 重置邀请链接。
@@ -165,6 +175,14 @@
 连接方式：
 
 `GET /ws?roomId=<roomId>&memberId=<memberId>&wsToken=<token>`
+
+连接规则：
+
+- 连接时必须校验 `roomId`、`memberId` 和 `wsToken`
+- `wsToken` 无效时拒绝连接
+- 断线后允许使用同一 `wsToken` 重连
+- member 离开房间后，旧连接和旧 `wsToken` 一并失效
+- 多连接共享同一 member 身份和房间事件流
 
 统一事件格式：
 

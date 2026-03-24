@@ -44,6 +44,7 @@ AgentTavern 是一个面向局域网的多人房间聊天系统。
 - `human` 的 `role_kind` 固定为 `none`
 - `agent` 的 `role_kind` 为 `independent` 或 `assistant`
 - `assistant` 必须有 `owner_member_id`
+- 同一房间内 `display_name` 必须唯一
 
 ### Message
 
@@ -135,6 +136,12 @@ AgentTavern 是一个面向局域网的多人房间聊天系统。
 - 一个成员可以有多个助理
 - 助理可以继续拥有自己的助理
 
+显示规则：
+
+- 成员列表中需要体现 `owner_member_id`
+- 消息展示中需要能识别该 Agent 为助理成员
+- 助理的显示名仍然作为独立成员名使用，不与 owner 名自动拼接
+
 MVP 规则：
 
 - 只检查直属 owner
@@ -146,6 +153,7 @@ MVP 规则：
 ### 触发规则
 
 - 消息中出现 `@成员显示名` 时触发解析
+- `@` 匹配直接使用房间内唯一的 `display_name`
 - 命中独立 Agent 时直接创建 `AgentSession`
 - 命中助理 Agent 时进入审批流程
 
