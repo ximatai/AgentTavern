@@ -20,9 +20,11 @@ import {
   rooms,
 } from "./db/schema";
 import { createId, createInviteToken } from "./lib/id";
-import { broadcastToRoom, issueWsToken } from "./realtime";
+import { broadcastToRoom, isMemberOnline, issueWsToken } from "./realtime";
 
 const app = new Hono();
+const approvalTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
+const APPROVAL_TIMEOUT_MS = Number(process.env.APPROVAL_TIMEOUT_MS ?? 30_000);
 
 function now(): string {
   return new Date().toISOString();
@@ -57,6 +59,75 @@ function createApprovalResolvedEvent(roomId: string, approval: Approval): Realti
     timestamp: now(),
     payload: { approval },
   };
+}
+
+function clearApprovalTimeout(approvalId: string): void {
+  const timeout = approvalTimeouts.get(approvalId);
+
+  if (timeout) {
+    clearTimeout(timeout);
+    approvalTimeouts.delete(approvalId);
+  }
+}
+
+function scheduleApprovalTimeout(approval: Approval): void {
+  clearApprovalTimeout(approval.id);
+
+  const timeout = setTimeout(() => {
+    const current = db
+      .select()
+      .from(approvals)
+      .where(eq(approvals.id, approval.id))
+      .get();
+
+    if (!current || current.status !== "pending") {
+      approvalTimeouts.delete(approval.id);
+      return;
+    }
+
+    const resolvedAt = now();
+    const expiredApproval: Approval = {
+      ...current,
+      status: "expired",
+      resolvedAt,
+    };
+
+    db
+      .update(approvals)
+      .set({
+        status: expiredApproval.status,
+        resolvedAt: expiredApproval.resolvedAt,
+      })
+      .where(eq(approvals.id, current.id))
+      .run();
+
+    db
+      .update(agentSessions)
+      .set({
+        status: "rejected",
+        endedAt: resolvedAt,
+      })
+      .where(eq(agentSessions.approvalId, current.id))
+      .run();
+
+    broadcastToRoom(current.roomId, createApprovalResolvedEvent(current.roomId, expiredApproval));
+
+    const timeoutMessage: Message = {
+      id: createId("msg"),
+      roomId: current.roomId,
+      senderMemberId: current.agentMemberId,
+      messageType: "approval_result",
+      content: "Approval request timed out.",
+      replyToMessageId: current.triggerMessageId,
+      createdAt: resolvedAt,
+    };
+
+    db.insert(messages).values(timeoutMessage).run();
+    broadcastToRoom(current.roomId, createMessageCreatedEvent(current.roomId, timeoutMessage));
+    approvalTimeouts.delete(current.id);
+  }, APPROVAL_TIMEOUT_MS);
+
+  approvalTimeouts.set(approval.id, timeout);
 }
 
 app.get("/healthz", (c) => {
@@ -445,6 +516,55 @@ app.post("/api/rooms/:roomId/messages", async (c) => {
         continue;
       }
 
+      const ownerOnline = isMemberOnline(target.ownerMemberId, roomId);
+
+      if (!ownerOnline) {
+        const resolvedAt = now();
+        const offlineApproval: Approval = {
+          id: createId("apr"),
+          roomId,
+          requesterMemberId: senderMemberId,
+          ownerMemberId: target.ownerMemberId,
+          agentMemberId: target.id,
+          triggerMessageId: message.id,
+          status: "expired",
+          createdAt: resolvedAt,
+          resolvedAt,
+        };
+
+        db.insert(approvals).values(offlineApproval).run();
+
+        const failedSession: AgentSession = {
+          id: createId("as"),
+          roomId,
+          agentMemberId: target.id,
+          triggerMessageId: message.id,
+          requesterMemberId: senderMemberId,
+          approvalId: offlineApproval.id,
+          approvalRequired: true,
+          status: "rejected",
+          startedAt: null,
+          endedAt: resolvedAt,
+        };
+
+        db.insert(agentSessions).values(failedSession).run();
+        broadcastToRoom(roomId, createApprovalResolvedEvent(roomId, offlineApproval));
+
+        const offlineMessage: Message = {
+          id: createId("msg"),
+          roomId,
+          senderMemberId: target.id,
+          messageType: "approval_result",
+          content: `${target.displayName} cannot start because the owner is offline.`,
+          replyToMessageId: message.id,
+          createdAt: resolvedAt,
+        };
+
+        db.insert(messages).values(offlineMessage).run();
+        broadcastToRoom(roomId, createMessageCreatedEvent(roomId, offlineMessage));
+        continue;
+      }
+
       const approval: Approval = {
         id: createId("apr"),
         roomId,
@@ -458,6 +578,7 @@ app.post("/api/rooms/:roomId/messages", async (c) => {
       };
 
       db.insert(approvals).values(approval).run();
+      scheduleApprovalTimeout(approval);
 
       const session: AgentSession = {
         id: createId("as"),
@@ -525,6 +646,7 @@ app.post("/api/approvals/:approvalId/approve", async (c) => {
     status: "approved",
     resolvedAt: now(),
   };
+  clearApprovalTimeout(approval.id);
 
   db
     .update(approvals)
@@ -594,6 +716,7 @@ app.post("/api/approvals/:approvalId/reject", async (c) => {
     status: "rejected",
     resolvedAt: now(),
   };
+  clearApprovalTimeout(approval.id);
 
   db
     .update(approvals)

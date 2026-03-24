@@ -190,6 +190,9 @@
 - 仅直属 owner 可审批
 - 同一审批只能处理一次
 - 审批成功后，对应 session 进入 `running`
+- owner 不在线时，不进入待审批状态，调用直接失败
+- 待审批请求超时后，对应 approval 进入 `expired`
+- 待审批请求超时后，对应 session 进入 `rejected`
 
 #### `POST /api/approvals/:approvalId/reject`
 

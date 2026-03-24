@@ -100,3 +100,13 @@ export function broadcastToRoom(roomId: string, event: RealtimeEvent): void {
     }
   }
 }
+
+export function isMemberOnline(memberId: string, roomId: string): boolean {
+  for (const context of socketContexts.values()) {
+    if (context.memberId === memberId && context.roomId === roomId) {
+      return true;
+    }
+  }
+
+  return false;
+}
