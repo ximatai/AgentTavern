@@ -215,6 +215,83 @@ app.get("/api/rooms/:roomId/members", (c) => {
   return c.json(roomMembers);
 });
 
+app.post("/api/rooms/:roomId/members/agents", async (c) => {
+  const roomId = c.req.param("roomId");
+  const room = db.select().from(rooms).where(eq(rooms.id, roomId)).get();
+
+  if (!room) {
+    return c.json({ error: "room not found" }, 404);
+  }
+
+  const body = await c.req.json().catch(() => null);
+  const displayName =
+    typeof body?.displayName === "string" ? body.displayName.trim() : "";
+  const roleKind =
+    body?.roleKind === "independent" || body?.roleKind === "assistant"
+      ? body.roleKind
+      : null;
+  const ownerMemberId =
+    typeof body?.ownerMemberId === "string" ? body.ownerMemberId.trim() : null;
+
+  if (!displayName || !roleKind) {
+    return c.json({ error: "displayName and roleKind are required" }, 400);
+  }
+
+  const existing = db
+    .select()
+    .from(members)
+    .where(and(eq(members.roomId, roomId), eq(members.displayName, displayName)))
+    .get();
+
+  if (existing) {
+    return c.json({ error: "displayName already exists in room" }, 409);
+  }
+
+  if (roleKind === "assistant" && !ownerMemberId) {
+    return c.json({ error: "assistant agent requires ownerMemberId" }, 400);
+  }
+
+  if (roleKind === "independent" && ownerMemberId) {
+    return c.json({ error: "independent agent cannot have ownerMemberId" }, 400);
+  }
+
+  if (ownerMemberId) {
+    const owner = db
+      .select()
+      .from(members)
+      .where(and(eq(members.id, ownerMemberId), eq(members.roomId, roomId)))
+      .get();
+
+    if (!owner) {
+      return c.json({ error: "owner member not found in room" }, 404);
+    }
+  }
+
+  const member: Member = {
+    id: createId("mem"),
+    roomId,
+    type: "agent",
+    roleKind,
+    displayName,
+    ownerMemberId,
+    presenceStatus: "online",
+    createdAt: now(),
+  };
+
+  db.insert(members).values(member).run();
+
+  const event: RealtimeEvent = {
+    type: "member.joined",
+    roomId,
+    timestamp: now(),
+    payload: { member },
+  };
+
+  broadcastToRoom(roomId, event);
+
+  return c.json(member, 201);
+});
+
 app.get("/api/rooms/:roomId/messages", (c) => {
   const roomId = c.req.param("roomId");
   const roomMessages = db
