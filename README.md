@@ -1,0 +1,121 @@
+# AgentTavern
+
+AgentTavern 是一个面向局域网场景的多人房间聊天系统。它的核心目标不是传统 IM，而是把人和 Agent 都视为聊天室成员，在同一个房间内进行实时协作。
+
+项目强调以下能力：
+
+- 多人进入同一房间实时聊天
+- 通过链接邀请加入，无需用户体系
+- Agent 可作为独立成员加入房间
+- Agent 也可作为某个成员的助理加入房间
+- 通过 `@Agent` 直接触发调用，无需复杂指令体系
+- 助理型 Agent 需要直属 owner 同意后才可执行
+- Agent 输出支持流式广播，房间内所有成员可实时看到过程
+- 支持接入本地运行的 Agent，且调用方式统一
+- 后端聊天逻辑与前端 UI 解耦，便于未来替换为像素风或游戏化界面
+- 单机可运行，尽量减少外部依赖
+
+## 当前阶段
+
+当前仓库处于需求和设计初始化阶段，尚未开始编码实现。
+
+项目计划以 MIT 协议开源发布到 GitHub。
+
+本阶段先完成以下文档：
+
+- 项目总览与范围定义
+- 业务详述与业务设计
+- 任务跟踪
+- 对接接口约定
+
+## 项目定位
+
+系统本质上由三部分组成：
+
+1. 聊天房间与实时消息系统
+2. Agent 成员与调度系统
+3. 与 UI 解耦的事件协议层
+
+其中最重要的设计原则是：
+
+- `human` 和 `agent` 都是房间成员
+- Agent 发言是消息，不是工具结果面板
+- 流式输出是协议层的一等能力
+- 本地 Agent 接入通过统一 adapter 抽象实现
+
+## MVP 范围
+
+第一阶段计划覆盖以下能力：
+
+- 创建房间
+- 通过链接邀请成员加入房间
+- 房间内多人实时聊天
+- Agent 作为独立成员加入房间
+- Agent 作为助理成员加入房间
+- 识别消息中的 `@Agent`
+- 独立 Agent 被 `@` 后直接执行
+- 助理 Agent 被 `@` 后，由直属 owner 审批
+- Agent 流式输出消息内容
+- 输出过程向房间内全员广播
+- 保存最终消息结果与关键过程状态
+
+## 已确认业务规则
+
+### 1. 房间与成员
+
+- 不做账号体系
+- 局域网场景使用，通过房间链接加入
+- 成员统一抽象为 `member`
+- 成员类型包括 `human` 和 `agent`
+
+### 2. Agent 身份
+
+Agent 分为两种角色：
+
+- `independent`：独立成员，和人平级
+- `assistant`：助理成员，必须归属于某个直属 owner
+
+owner 可以是：
+
+- human
+- independent agent
+- assistant agent
+
+这意味着系统支持多级助理链。
+
+### 3. 触发规则
+
+- 房间内通过 `@显示名` 触发成员响应
+- `@independent agent` 时直接执行
+- `@assistant agent` 时，需要直属 owner 明确同意
+- 每次触发都需要单独审批
+- owner 不在线时，助理不可执行
+- 多级助理只检查直属 owner，不做逐级审批
+
+### 4. 可见性与透明度
+
+- 助理成员默认对全房间可见
+- 审批结果通过房间系统消息体现
+- Agent 回复过程对全房间实时可见
+
+### 5. 并发策略
+
+- 同一房间内，同一个 Agent 默认串行执行
+- 先确保稳定和可预期，再考虑后续并发扩展
+
+## 文档目录
+
+详细文档见 [docs/business-design.md](/Users/aruis/develop/workspace-github/AgentTavern/docs/business-design.md)、[docs/task-tracking.md](/Users/aruis/develop/workspace-github/AgentTavern/docs/task-tracking.md)、[docs/api-integration.md](/Users/aruis/develop/workspace-github/AgentTavern/docs/api-integration.md)。
+
+## 下一步
+
+文档确认后，下一阶段建议直接进入：
+
+1. 领域模型与事件模型落地
+2. 项目目录初始化
+3. 后端实时协议实现
+4. 本地 Agent adapter 首个实现
+
+## License
+
+本项目使用 [MIT License](/Users/aruis/develop/workspace-github/AgentTavern/LICENSE)。
