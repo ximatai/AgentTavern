@@ -22,4 +22,5 @@ export interface AgentAdapter {
   run(input: AgentRunInput): AsyncIterable<AgentStreamEvent>;
 }
 
+export * from "./codex-cli";
 export * from "./local-process";

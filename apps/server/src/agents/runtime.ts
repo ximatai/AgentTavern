@@ -1,12 +1,15 @@
 import { desc, eq, inArray } from "drizzle-orm";
 
 import {
+  createCodexCliAdapter,
   createLocalProcessAdapter,
   type AgentAdapter,
   type AgentRunInput,
+  type CodexCliAdapterConfig,
   type LocalProcessAdapterConfig,
 } from "@agent-tavern/agent-sdk";
 import type {
+  AgentBinding,
   AgentSession,
   Member,
   Message,
@@ -15,7 +18,7 @@ import type {
 } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
-import { agentSessions, members, messages, rooms } from "../db/schema";
+import { agentBindings, agentSessions, members, messages, rooms } from "../db/schema";
 import { createId } from "../lib/id";
 import { toPublicMessage } from "../lib/public";
 import { broadcastToRoom } from "../realtime";
@@ -152,7 +155,38 @@ function parseLocalProcessConfig(raw: string | null): LocalProcessAdapterConfig 
   }
 }
 
-function resolveAgentAdapter(agent: Member): AgentAdapter | null {
+function toAgentBinding(row: {
+  id: string;
+  memberId: string;
+  backendType: string;
+  backendThreadId: string;
+  cwd: string | null;
+  status: string;
+  attachedAt: string;
+  detachedAt: string | null;
+}): AgentBinding {
+  return row as AgentBinding;
+}
+
+function buildCodexCliConfig(binding: AgentBinding): CodexCliAdapterConfig | null {
+  if (binding.backendType !== "codex_cli") {
+    return null;
+  }
+
+  return {
+    threadId: binding.backendThreadId,
+  };
+}
+
+function resolveAgentAdapter(agent: Member, binding: AgentBinding | null): AgentAdapter | null {
+  if (binding?.status === "active") {
+    const codexCliConfig = buildCodexCliConfig(binding);
+
+    if (codexCliConfig) {
+      return createCodexCliAdapter(codexCliConfig);
+    }
+  }
+
   if (agent.adapterType !== "local_process") {
     return null;
   }
@@ -327,7 +361,13 @@ async function runAgentSession(sessionId: string): Promise<void> {
   const typedAgent = toMember(agent);
   const typedRequester = toMember(requester);
   const typedTriggerMessage = toMessage(triggerMessage);
-  const adapter = resolveAgentAdapter(typedAgent);
+  const bindingRow = db
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.memberId, typedAgent.id))
+    .get();
+  const typedBinding = bindingRow ? toAgentBinding(bindingRow) : null;
+  const adapter = resolveAgentAdapter(typedAgent, typedBinding);
 
   if (!adapter) {
     failAgentSession(

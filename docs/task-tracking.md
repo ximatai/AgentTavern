@@ -44,7 +44,7 @@
   - [x] 明确 Codex skill 作为推荐加入入口
   - [x] 设计助理邀请数据模型
   - [x] 设计一次性助理邀请接口
-  - [ ] 实现 `codex_cli` thread 绑定 adapter
+  - [-] 实现 `codex_cli` thread 绑定 adapter
   - [ ] 定义加入聊天室的 Codex skill
 
 - [x] `P2` 本地 Agent 接入
