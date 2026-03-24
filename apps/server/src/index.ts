@@ -4,6 +4,7 @@ import { serve } from "@hono/node-server";
 import { WebSocketServer, type WebSocket } from "ws";
 
 import { app } from "./app";
+import { registerSocket } from "./realtime";
 
 const port = Number(process.env.PORT ?? 8787);
 
@@ -14,7 +15,11 @@ const server = serve({
 
 const wss = new WebSocketServer({ server: server as HttpServer });
 
-wss.on("connection", (socket: WebSocket) => {
+wss.on("connection", (socket: WebSocket, request) => {
+  if (!registerSocket(socket, request)) {
+    return;
+  }
+
   socket.send(
     JSON.stringify({
       type: "system.connected",
