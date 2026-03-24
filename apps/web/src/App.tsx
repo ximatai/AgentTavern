@@ -26,6 +26,19 @@ type JoinResult = {
   wsToken: string;
 };
 
+type AssistantInviteResult = {
+  id: string;
+  roomId: string;
+  ownerMemberId: string;
+  presetDisplayName: string | null;
+  backendType: "codex_cli" | "local_process";
+  inviteToken: string;
+  inviteUrl: string;
+  status: "pending" | "accepted" | "expired" | "revoked";
+  expiresAt: string;
+  createdAt: string;
+};
+
 const demoAgentArgs = [
   "--input-type=module",
   "-e",
@@ -81,6 +94,14 @@ function isRealtimeEvent(payload: unknown): payload is RealtimeEvent {
   return "type" in payload && typeof payload.type === "string" && "payload" in payload;
 }
 
+function roleLabel(member: Pick<PublicMember, "type" | "roleKind">): string {
+  if (member.type !== "agent") {
+    return "human";
+  }
+
+  return member.roleKind === "assistant" ? "assistant" : "agent";
+}
+
 function App() {
   const [roomName, setRoomName] = useState("Tavern Room");
   const [nickname, setNickname] = useState("Alice");
@@ -94,6 +115,8 @@ function App() {
   const [agentArgsText, setAgentArgsText] = useState(demoAgentArgs);
   const [agentInputFormat, setAgentInputFormat] = useState<"text" | "json">("text");
   const [assistantOwnerId, setAssistantOwnerId] = useState("");
+  const [assistantInviteName, setAssistantInviteName] = useState("CodexThreadA");
+  const [assistantInviteUrl, setAssistantInviteUrl] = useState("");
   const [room, setRoom] = useState<Room | null>(null);
   const [self, setSelf] = useState<JoinResult | null>(null);
   const [members, setMembers] = useState<PublicMember[]>([]);
@@ -348,6 +371,50 @@ function App() {
     }
   }
 
+  async function handleCreateAssistantInvite(): Promise<void> {
+    if (!self) {
+      return;
+    }
+
+    setErrorText("");
+
+    try {
+      const invite = await request<AssistantInviteResult>(
+        `/api/rooms/${self.roomId}/assistant-invites`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            actorMemberId: self.memberId,
+            wsToken: self.wsToken,
+            backendType: "codex_cli",
+            presetDisplayName: assistantInviteName.trim() || undefined,
+          }),
+        },
+      );
+
+      const fullInviteUrl = new URL(invite.inviteUrl, window.location.origin).toString();
+      setAssistantInviteUrl(fullInviteUrl);
+      setStatusText("Assistant invite ready");
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : "failed to create assistant invite");
+    }
+  }
+
+  async function handleCopyAssistantInvite(): Promise<void> {
+    if (!assistantInviteUrl) {
+      return;
+    }
+
+    setErrorText("");
+
+    try {
+      await navigator.clipboard.writeText(assistantInviteUrl);
+      setStatusText("Assistant invite copied");
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : "failed to copy invite");
+    }
+  }
+
   async function handleApproval(approvalId: string, action: "approve" | "reject"): Promise<void> {
     if (!self) {
       return;
@@ -381,193 +448,220 @@ function App() {
     })),
   ]);
 
+  const roomInviteUrl = room ? new URL(`/join/${room.inviteToken}`, window.location.origin).toString() : "";
+
+  function findMember(memberId: string): PublicMember | undefined {
+    return members.find((member) => member.id === memberId);
+  }
+
+  function formatTime(value: string): string {
+    return new Date(value).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
   return (
-    <main className="shell">
-      <section className="hero-card">
-        <div>
-          <p className="eyebrow">AGENT TAVERN</p>
-          <h1>Room-first chat for humans and local agents.</h1>
-          <p className="hero-copy">
-            当前页面已接上房间、成员、消息、审批和本地 Agent 流式事件。后面替换成酒馆式像素 UI 时，复用同一套事件协议。
-          </p>
+    <main className="lan-shell">
+      <aside className="app-rail">
+        <div className="brand-mark">AT</div>
+        <div className="rail-stack">
+          <button className="rail-item rail-item-active" type="button">
+            <span>Rooms</span>
+          </button>
+          <button className="rail-item" type="button">
+            <span>Agents</span>
+          </button>
+          <button className="rail-item" type="button">
+            <span>Links</span>
+          </button>
         </div>
-        <div className="status-panel">
-          <span>Status</span>
-          <strong>{statusText}</strong>
-          {room ? <p>Room: {room.name}</p> : null}
-          {self ? <p>Member: {self.displayName}</p> : null}
-          {errorText ? <p className="error-text">{errorText}</p> : null}
-        </div>
-      </section>
+        <div className="rail-user">{self?.displayName?.slice(0, 1) ?? "?"}</div>
+      </aside>
 
-      <section className="grid-layout">
-        <aside className="sidebar-card">
-          <div className="panel">
-            <h2>Create Room</h2>
-            <label>
-              <span>Room name</span>
-              <input value={roomName} onChange={(event) => setRoomName(event.target.value)} />
-            </label>
-            <label>
-              <span>Nickname</span>
-              <input value={nickname} onChange={(event) => setNickname(event.target.value)} />
-            </label>
-            <button onClick={handleCreateRoom}>Create and join</button>
+      <section className="workspace">
+        <header className="topbar">
+          <div className="topbar-title">
+            <h1>{room?.name ?? "Agent Tavern"}</h1>
+            <div className="live-badge">
+              <span className="live-dot" />
+              <span>{statusText}</span>
+            </div>
           </div>
-
-          <div className="panel">
-            <h2>Join Room</h2>
-            <label>
-              <span>Invite token or URL</span>
-              <input
-                value={inviteInput}
-                onChange={(event) => setInviteInput(event.target.value)}
-              />
-            </label>
-            <button onClick={handleJoinRoom}>Join by invite</button>
+          <div className="topbar-meta">
+            {roomInviteUrl ? (
+              <button className="ghost-button" onClick={() => navigator.clipboard.writeText(roomInviteUrl)}>
+                Copy room invite
+              </button>
+            ) : null}
+            {errorText ? <p className="error-inline">{errorText}</p> : null}
           </div>
+        </header>
 
-          <div className="panel">
-            <h2>Add Agent</h2>
-            <label>
-              <span>Display name</span>
-              <input value={agentName} onChange={(event) => setAgentName(event.target.value)} />
-            </label>
-            <label>
-              <span>Role</span>
-              <select
-                value={agentRoleKind}
-                onChange={(event) =>
-                  setAgentRoleKind(event.target.value as "independent" | "assistant")
-                }
-              >
-                <option value="independent">Independent</option>
-                <option value="assistant">Assistant</option>
-              </select>
-            </label>
-            {agentRoleKind === "assistant" ? (
+        <div className="workspace-grid">
+          <aside className="left-tools">
+            <section className="tool-card">
+              <div className="card-heading">
+                <h2>Session</h2>
+                <span>{self ? "joined" : "idle"}</span>
+              </div>
               <label>
-                <span>Owner</span>
+                <span>Room name</span>
+                <input value={roomName} onChange={(event) => setRoomName(event.target.value)} />
+              </label>
+              <label>
+                <span>Nickname</span>
+                <input value={nickname} onChange={(event) => setNickname(event.target.value)} />
+              </label>
+              <div className="inline-actions">
+                <button onClick={handleCreateRoom}>Create</button>
+                <button className="ghost-button" onClick={handleJoinRoom}>
+                  Join
+                </button>
+              </div>
+              <label>
+                <span>Invite token or URL</span>
+                <input
+                  value={inviteInput}
+                  onChange={(event) => setInviteInput(event.target.value)}
+                />
+              </label>
+              {self ? (
+                <div className="session-facts">
+                  <p>Room member: {self.displayName}</p>
+                  <p>Invite token: {room?.inviteToken ?? "pending"}</p>
+                </div>
+              ) : null}
+            </section>
+
+            <section className="tool-card">
+              <div className="card-heading">
+                <h2>Invite Codex Thread</h2>
+                <span>one-time</span>
+              </div>
+              <label>
+                <span>Preset display name</span>
+                <input
+                  value={assistantInviteName}
+                  onChange={(event) => setAssistantInviteName(event.target.value)}
+                  placeholder="CodexThreadA"
+                />
+              </label>
+              <button onClick={handleCreateAssistantInvite} disabled={!self}>
+                Create assistant invite
+              </button>
+              {assistantInviteUrl ? (
+                <div className="invite-result">
+                  <p className="muted-text">One-time invite URL</p>
+                  <textarea readOnly rows={4} value={assistantInviteUrl} />
+                  <button className="ghost-button" onClick={handleCopyAssistantInvite}>
+                    Copy invite URL
+                  </button>
+                </div>
+              ) : null}
+            </section>
+
+            <section className="tool-card">
+              <div className="card-heading">
+                <h2>Add Local Agent</h2>
+                <span>demo</span>
+              </div>
+              <label>
+                <span>Display name</span>
+                <input value={agentName} onChange={(event) => setAgentName(event.target.value)} />
+              </label>
+              <label>
+                <span>Role</span>
                 <select
-                  value={assistantOwnerId}
-                  onChange={(event) => setAssistantOwnerId(event.target.value)}
+                  value={agentRoleKind}
+                  onChange={(event) =>
+                    setAgentRoleKind(event.target.value as "independent" | "assistant")
+                  }
                 >
-                  {members.map((member) => (
-                    <option key={member.id} value={member.id}>
-                      {member.displayName}
-                    </option>
-                  ))}
+                  <option value="independent">Independent</option>
+                  <option value="assistant">Assistant</option>
                 </select>
               </label>
-            ) : null}
-            <label>
-              <span>Command</span>
-              <input
-                value={agentCommand}
-                onChange={(event) => setAgentCommand(event.target.value)}
-              />
-            </label>
-            <label>
-              <span>Args (one per line)</span>
-              <textarea
-                rows={6}
-                value={agentArgsText}
-                onChange={(event) => setAgentArgsText(event.target.value)}
-              />
-            </label>
-            <label>
-              <span>Input format</span>
-              <select
-                value={agentInputFormat}
-                onChange={(event) =>
-                  setAgentInputFormat(event.target.value as "text" | "json")
-                }
-              >
-                <option value="text">text</option>
-                <option value="json">json</option>
-              </select>
-            </label>
-            <button onClick={handleCreateAgent} disabled={!self}>
-              Add local agent
-            </button>
-          </div>
-        </aside>
-
-        <section className="content-column">
-          <div className="panel">
-            <div className="panel-header">
-              <h2>Members</h2>
-              <span>{members.length}</span>
-            </div>
-            <ul className="member-list">
-              {members.map((member) => (
-                <li key={member.id}>
-                  <strong>{member.displayName}</strong>
-                  <span>
-                    {member.type} / {member.roleKind}
-                    {member.ownerMemberId ? ` / owner ${member.ownerMemberId}` : ""}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="panel approvals-panel">
-            <div className="panel-header">
-              <h2>Pending approvals</h2>
-              <span>{pendingApprovals.length}</span>
-            </div>
-            <div className="approval-list">
-              {pendingApprovals.length === 0 ? (
-                <p className="muted-text">No pending approvals.</p>
+              {agentRoleKind === "assistant" ? (
+                <label>
+                  <span>Owner</span>
+                  <select
+                    value={assistantOwnerId}
+                    onChange={(event) => setAssistantOwnerId(event.target.value)}
+                  >
+                    {members.map((member) => (
+                      <option key={member.id} value={member.id}>
+                        {member.displayName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               ) : null}
-              {pendingApprovals.map((approval) => (
-                <article key={approval.id} className="approval-card">
-                  <div>
-                    <strong>{approval.agentMemberId}</strong>
-                    <p>Requester: {approval.requesterMemberId}</p>
-                  </div>
-                  <div className="approval-actions">
-                    <button
-                      onClick={() => handleApproval(approval.id, "approve")}
-                      disabled={approval.ownerMemberId !== self?.memberId}
-                    >
-                      Approve
-                    </button>
-                    <button
-                      className="ghost-button"
-                      onClick={() => handleApproval(approval.id, "reject")}
-                      disabled={approval.ownerMemberId !== self?.memberId}
-                    >
-                      Reject
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </div>
+              <label>
+                <span>Command</span>
+                <input
+                  value={agentCommand}
+                  onChange={(event) => setAgentCommand(event.target.value)}
+                />
+              </label>
+              <details className="advanced-config">
+                <summary>Advanced config</summary>
+                <label>
+                  <span>Args</span>
+                  <textarea
+                    rows={5}
+                    value={agentArgsText}
+                    onChange={(event) => setAgentArgsText(event.target.value)}
+                  />
+                </label>
+                <label>
+                  <span>Input format</span>
+                  <select
+                    value={agentInputFormat}
+                    onChange={(event) =>
+                      setAgentInputFormat(event.target.value as "text" | "json")
+                    }
+                  >
+                    <option value="text">text</option>
+                    <option value="json">json</option>
+                  </select>
+                </label>
+              </details>
+              <button onClick={handleCreateAgent} disabled={!self}>
+                Add local agent
+              </button>
+            </section>
+          </aside>
 
-          <div className="panel messages-panel">
-            <div className="panel-header">
-              <h2>Room feed</h2>
-              <span>{visibleMessages.length}</span>
-            </div>
-            <div className="message-list">
+          <section className="chat-stage">
+            <div className="day-marker">Today</div>
+            <div className="message-stream">
               {visibleMessages.map((message) => {
-                const sender = members.find((member) => member.id === message.senderMemberId);
+                const sender = findMember(message.senderMemberId);
+                const isAgent = sender?.type === "agent" || message.messageType === "agent_text";
+                const isSelf = message.senderMemberId === self?.memberId;
 
                 return (
-                  <article key={message.id} className="message-card">
-                    <header>
-                      <strong>{sender?.displayName ?? message.senderMemberId}</strong>
-                      <span>{message.messageType}</span>
+                  <article
+                    key={message.id}
+                    className={`chat-row ${isAgent ? "chat-row-agent" : ""} ${isSelf ? "chat-row-self" : ""}`}
+                  >
+                    <header className="chat-meta">
+                      <div className="chat-author">
+                        <strong>{sender?.displayName ?? message.senderMemberId}</strong>
+                        {sender ? <span className="agent-pill">{roleLabel(sender)}</span> : null}
+                      </div>
+                      <span>{formatTime(message.createdAt)}</span>
                     </header>
-                    <p>{message.content}</p>
+                    <div className={`chat-bubble ${isAgent ? "chat-bubble-agent" : ""}`}>
+                      <p>{message.content}</p>
+                    </div>
                   </article>
                 );
               })}
             </div>
-            <div className="composer">
+
+            <div className="composer-dock">
               <textarea
                 rows={3}
                 value={messageInput}
@@ -575,11 +669,83 @@ function App() {
                 placeholder="Type a message, for example: @BackendDev 帮我看一下"
               />
               <button onClick={handleSendMessage} disabled={!self || !messageInput.trim()}>
-                Send message
+                Send
               </button>
             </div>
-          </div>
-        </section>
+          </section>
+
+          <aside className="right-sidebar">
+            <section className="side-card">
+              <div className="card-heading">
+                <h2>Active in Room</h2>
+                <span>{members.length}</span>
+              </div>
+              <div className="presence-list">
+                {members.map((member) => {
+                  const owner = member.ownerMemberId ? findMember(member.ownerMemberId) : null;
+
+                  return (
+                    <article key={member.id} className="presence-item">
+                      <div className={`presence-avatar ${member.type === "agent" ? "presence-avatar-agent" : ""}`}>
+                        {member.displayName.slice(0, 1)}
+                      </div>
+                      <div className="presence-copy">
+                        <div className="presence-title">
+                          <strong>{member.displayName}</strong>
+                          <span className="agent-pill">{roleLabel(member)}</span>
+                        </div>
+                        <p>
+                          {owner ? `Owner ${owner.displayName}` : "Independent member"}
+                        </p>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="side-card">
+              <div className="card-heading">
+                <h2>Pending approvals</h2>
+                <span>{pendingApprovals.length}</span>
+              </div>
+              <div className="approval-list">
+                {pendingApprovals.length === 0 ? <p className="muted-text">No pending approvals.</p> : null}
+                {pendingApprovals.map((approval) => {
+                  const agent = findMember(approval.agentMemberId);
+                  const requester = findMember(approval.requesterMemberId);
+                  const owner = findMember(approval.ownerMemberId);
+
+                  return (
+                    <article key={approval.id} className="approval-card">
+                      <div>
+                        <strong>{agent?.displayName ?? approval.agentMemberId}</strong>
+                        <p>Role: {agent ? roleLabel(agent) : "agent"}</p>
+                        <p>Requester: {requester?.displayName ?? approval.requesterMemberId}</p>
+                        <p>Owner: {owner?.displayName ?? approval.ownerMemberId}</p>
+                      </div>
+                      <div className="approval-actions">
+                        <button
+                          onClick={() => handleApproval(approval.id, "approve")}
+                          disabled={approval.ownerMemberId !== self?.memberId}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          className="ghost-button"
+                          onClick={() => handleApproval(approval.id, "reject")}
+                          disabled={approval.ownerMemberId !== self?.memberId}
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          </aside>
+        </div>
       </section>
     </main>
   );
