@@ -125,6 +125,8 @@
 
 ```json
 {
+  "actorMemberId": "mem_xxx",
+  "wsToken": "local_session_xxx",
   "displayName": "BackendDev",
   "roleKind": "assistant",
   "ownerMemberId": "mem_xxx",
@@ -141,12 +143,17 @@
 - `independent` 可不传 `ownerMemberId`
 - `assistant` 必须传 `ownerMemberId`
 - `displayName` 不允许包含空格和 `@`
+- `actorMemberId` 和 `wsToken` 必须匹配
+- 当前必须提供 `adapterType`
+- 当前必须提供 `adapterConfig`
+- 第一版支持 `local_process`
+- 成员公开数据不返回底层 adapter 配置
 
 ### 消息
 
 #### `GET /api/rooms/:roomId/messages`
 
-分页获取消息记录。
+获取消息记录。
 
 #### `POST /api/rooms/:roomId/messages`
 
@@ -170,6 +177,8 @@
 - 解析 mention
 - 广播消息事件
 - 命中 agent 时启动调度或审批
+- 命中独立 agent 时进入本地执行链路
+- 命中已批准助理 agent 时进入本地执行链路
 
 ### 审批
 
@@ -195,7 +204,7 @@
 - 仅直属 owner 可审批
 - `wsToken` 必须与 `actorMemberId` 匹配
 - 同一审批只能处理一次
-- 审批成功后，对应 session 进入 `running`
+- 审批成功后，对应 session 进入待执行状态
 - owner 不在线时，不进入待审批状态，调用直接失败
 - 待审批请求超时后，对应 approval 进入 `expired`
 - 待审批请求超时后，对应 session 进入 `rejected`
@@ -204,7 +213,7 @@
 
 拒绝一次助理调用。
 
-- 审批成功后，对应 session 进入 `rejected`
+- 审批拒绝后，对应 session 进入 `rejected`
 
 ## 3. WebSocket
 
@@ -258,6 +267,18 @@
 事件载荷以 `packages/shared` 中的 `RealtimeEvent` 定义为准。
 
 ## 4. Agent Adapter
+
+第一版约定：
+
+- 当前统一接口定义在 `packages/agent-sdk`
+- 服务端按成员上的 `adapterType` 和 `adapterConfig` 选择 adapter
+- 第一版支持 `local_process`
+- `local_process` 通过本地子进程执行
+- stdin 默认写入 prompt 文本
+- `inputFormat=json` 时，stdin 写入完整 `AgentRunInput`
+- 子进程超时后强制结束并返回失败事件
+- stdout 按增量内容广播为 `agent.stream.delta`
+- 流结束后，最终文本固化为 `agent_text` 消息
 
 统一接口：
 

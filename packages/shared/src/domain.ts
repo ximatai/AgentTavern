@@ -47,6 +47,8 @@ export type Member = {
   roleKind: AgentRoleKind;
   displayName: string;
   ownerMemberId: string | null;
+  adapterType: string | null;
+  adapterConfig: string | null;
   presenceStatus: PresenceStatus;
   createdAt: string;
 };

@@ -27,6 +27,8 @@ export const members = sqliteTable("members", {
   roleKind: text("role_kind").notNull(),
   displayName: text("display_name").notNull(),
   ownerMemberId: text("owner_member_id"),
+  adapterType: text("adapter_type"),
+  adapterConfig: text("adapter_config"),
   presenceStatus: text("presence_status").notNull(),
   createdAt: text("created_at").notNull(),
 }, (table) => ({

@@ -38,6 +38,8 @@ AgentTavern 是一个面向局域网的多人房间聊天系统。
 - `role_kind`：`none | independent | assistant`
 - `display_name`
 - `owner_member_id`
+- `adapter_type`
+- `adapter_config`
 - `presence_status`
 - `created_at`
 
@@ -46,8 +48,10 @@ AgentTavern 是一个面向局域网的多人房间聊天系统。
 - `human` 的 `role_kind` 固定为 `none`
 - `agent` 的 `role_kind` 为 `independent` 或 `assistant`
 - `assistant` 必须有 `owner_member_id`
+- `agent` 必须具备可执行的 adapter 配置
 - 同一房间内 `display_name` 必须唯一
 - `display_name` 不允许包含空格和 `@`
+- adapter 配置只在服务端保存，不作为公开成员信息返回
 
 ### Message
 
@@ -187,7 +191,9 @@ MVP 规则：
 ## 5. 执行规则
 
 - Agent 统一通过 adapter 接入
+- 第一版 adapter 类型为 `local_process`
 - 第一阶段优先接入本地 CLI Agent
+- 本地子进程需要可超时回收
 - Agent 输出以流式事件广播到房间
 - 最终输出固化为消息
 - 同一房间内，同一 Agent 默认串行执行

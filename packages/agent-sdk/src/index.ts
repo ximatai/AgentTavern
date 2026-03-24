@@ -1,8 +1,11 @@
 export type AgentRunInput = {
   roomId: string;
   agentMemberId: string;
+  agentDisplayName: string;
   requesterMemberId: string;
+  requesterDisplayName: string;
   triggerMessageId: string;
+  prompt: string;
   contextMessages: Array<{
     senderName: string;
     content: string;
@@ -18,3 +21,5 @@ export type AgentStreamEvent =
 export interface AgentAdapter {
   run(input: AgentRunInput): AsyncIterable<AgentStreamEvent>;
 }
+
+export * from "./local-process";

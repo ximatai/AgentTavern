@@ -10,6 +10,7 @@ import type {
   Room,
 } from "@agent-tavern/shared";
 
+import { queueAgentSession } from "./agents/runtime";
 import { db } from "./db/client";
 import {
   agentSessions,
@@ -41,6 +42,14 @@ function extractMentionNames(content: string): string[] {
 
 function isValidDisplayName(displayName: string): boolean {
   return /^[^\s@]+$/u.test(displayName);
+}
+
+function toPublicMember(member: Member): Member {
+  return {
+    ...member,
+    adapterType: null,
+    adapterConfig: null,
+  };
 }
 
 function createMessageCreatedEvent(roomId: string, message: Message): RealtimeEvent {
@@ -248,6 +257,8 @@ app.post("/api/rooms/:roomId/join", async (c) => {
     roleKind: "none",
     displayName,
     ownerMemberId: null,
+    adapterType: null,
+    adapterConfig: null,
     presenceStatus: "online",
     createdAt: now(),
   };
@@ -260,7 +271,7 @@ app.post("/api/rooms/:roomId/join", async (c) => {
     type: "member.joined",
     roomId,
     timestamp: now(),
-    payload: { member },
+    payload: { member: toPublicMember(member) },
   };
 
   broadcastToRoom(roomId, event);
@@ -312,6 +323,8 @@ app.post("/api/invites/:inviteToken/join", async (c) => {
     roleKind: "none",
     displayName,
     ownerMemberId: null,
+    adapterType: null,
+    adapterConfig: null,
     presenceStatus: "online",
     createdAt: now(),
   };
@@ -324,7 +337,7 @@ app.post("/api/invites/:inviteToken/join", async (c) => {
     type: "member.joined",
     roomId: room.id,
     timestamp: now(),
-    payload: { member },
+    payload: { member: toPublicMember(member) },
   };
 
   broadcastToRoom(room.id, event);
@@ -343,7 +356,8 @@ app.get("/api/rooms/:roomId/members", (c) => {
     .select()
     .from(members)
     .where(eq(members.roomId, roomId))
-    .all();
+    .all()
+    .map((member) => toPublicMember(member as Member));
 
   return c.json(roomMembers);
 });
@@ -365,13 +379,52 @@ app.post("/api/rooms/:roomId/members/agents", async (c) => {
       : null;
   const ownerMemberId =
     typeof body?.ownerMemberId === "string" ? body.ownerMemberId.trim() : null;
+  const adapterType =
+    typeof body?.adapterType === "string" ? body.adapterType.trim() : "";
+  const adapterConfig =
+    body?.adapterConfig && typeof body.adapterConfig === "object" && !Array.isArray(body.adapterConfig)
+      ? JSON.stringify(body.adapterConfig)
+      : null;
+  const actorMemberId =
+    typeof body?.actorMemberId === "string" ? body.actorMemberId.trim() : "";
+  const wsToken = typeof body?.wsToken === "string" ? body.wsToken.trim() : "";
 
   if (!displayName || !roleKind) {
     return c.json({ error: "displayName and roleKind are required" }, 400);
   }
 
+  if (!actorMemberId || !wsToken) {
+    return c.json({ error: "actorMemberId and wsToken are required" }, 400);
+  }
+
+  if (!adapterType) {
+    return c.json({ error: "adapterType is required" }, 400);
+  }
+
   if (!isValidDisplayName(displayName)) {
     return c.json({ error: "displayName must not contain spaces or @" }, 400);
+  }
+
+  if (adapterType !== "local_process") {
+    return c.json({ error: "unsupported adapterType" }, 400);
+  }
+
+  if (!adapterConfig) {
+    return c.json({ error: "adapterConfig is required" }, 400);
+  }
+
+  const actor = db
+    .select()
+    .from(members)
+    .where(and(eq(members.id, actorMemberId), eq(members.roomId, roomId)))
+    .get();
+
+  if (!actor) {
+    return c.json({ error: "actor not found in room" }, 404);
+  }
+
+  if (!verifyWsToken(wsToken, actorMemberId, roomId)) {
+    return c.json({ error: "invalid wsToken for actor" }, 403);
   }
 
   const existing = db
@@ -411,6 +464,8 @@ app.post("/api/rooms/:roomId/members/agents", async (c) => {
     roleKind,
     displayName,
     ownerMemberId,
+    adapterType,
+    adapterConfig,
     presenceStatus: "online",
     createdAt: now(),
   };
@@ -421,12 +476,12 @@ app.post("/api/rooms/:roomId/members/agents", async (c) => {
     type: "member.joined",
     roomId,
     timestamp: now(),
-    payload: { member },
+    payload: { member: toPublicMember(member) },
   };
 
   broadcastToRoom(roomId, event);
 
-  return c.json(member, 201);
+  return c.json(toPublicMember(member), 201);
 });
 
 app.get("/api/rooms/:roomId/messages", (c) => {
@@ -516,25 +571,13 @@ app.post("/api/rooms/:roomId/messages", async (c) => {
         requesterMemberId: senderMemberId,
         approvalId: null,
         approvalRequired: false,
-        status: "running" as const,
-        startedAt: now(),
+        status: "pending",
+        startedAt: null,
         endedAt: null,
       };
 
       db.insert(agentSessions).values(session).run();
-
-      const systemMessage: Message = {
-        id: createId("msg"),
-        roomId,
-        senderMemberId: target.id,
-        messageType: "system_notice",
-        content: `${target.displayName} received the request and is preparing a response.`,
-        replyToMessageId: message.id,
-        createdAt: now(),
-      };
-
-      db.insert(messages).values(systemMessage).run();
-      broadcastToRoom(roomId, createMessageCreatedEvent(roomId, systemMessage));
+      queueAgentSession(session.id);
     }
 
     if (target.type === "agent" && target.roleKind === "assistant") {
@@ -691,11 +734,17 @@ app.post("/api/approvals/:approvalId/approve", async (c) => {
   db
     .update(agentSessions)
     .set({
-      status: "running",
-      startedAt: now(),
+      status: "pending",
+      startedAt: null,
     })
     .where(eq(agentSessions.approvalId, approval.id))
     .run();
+
+  const session = db
+    .select()
+    .from(agentSessions)
+    .where(eq(agentSessions.approvalId, approval.id))
+    .get();
 
   broadcastToRoom(approval.roomId, createApprovalResolvedEvent(approval.roomId, resolvedApproval));
 
@@ -711,6 +760,10 @@ app.post("/api/approvals/:approvalId/approve", async (c) => {
 
   db.insert(messages).values(approvalMessage).run();
   broadcastToRoom(approval.roomId, createMessageCreatedEvent(approval.roomId, approvalMessage));
+
+  if (session) {
+    queueAgentSession(session.id);
+  }
 
   return c.json(resolvedApproval);
 });

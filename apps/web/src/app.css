@@ -1,0 +1,262 @@
+:root {
+  color: #2f2418;
+  background:
+    radial-gradient(circle at top, rgba(255, 240, 213, 0.96) 0%, rgba(223, 196, 153, 0.94) 42%, #7f5b35 100%);
+  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+  background: linear-gradient(135deg, #5f2c1f, #8c4e2f);
+  color: #fff9f0;
+  cursor: pointer;
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+
+button:hover {
+  transform: translateY(-1px);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.ghost-button {
+  background: rgba(95, 44, 31, 0.1);
+  color: #5f2c1f;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid rgba(79, 49, 19, 0.18);
+  border-radius: 14px;
+  padding: 0.8rem 0.95rem;
+  background: rgba(255, 249, 238, 0.88);
+  color: #2f2418;
+}
+
+textarea {
+  resize: vertical;
+}
+
+.shell {
+  min-height: 100vh;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(255, 255, 255, 0.34), transparent 28%),
+    radial-gradient(circle at 85% 12%, rgba(255, 214, 160, 0.35), transparent 22%),
+    linear-gradient(180deg, rgba(80, 45, 26, 0.18), rgba(46, 23, 14, 0.18));
+}
+
+.hero-card,
+.sidebar-card,
+.panel {
+  backdrop-filter: blur(10px);
+  background: rgba(255, 246, 232, 0.82);
+  border: 1px solid rgba(89, 55, 21, 0.12);
+  box-shadow: 0 24px 60px rgba(48, 30, 17, 0.16);
+}
+
+.hero-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(260px, 0.8fr);
+  gap: 20px;
+  padding: 28px;
+  border-radius: 28px;
+}
+
+.eyebrow {
+  margin: 0 0 10px;
+  letter-spacing: 0.18em;
+  font-size: 0.74rem;
+}
+
+.hero-card h1 {
+  margin: 0;
+  font-size: clamp(2.2rem, 4vw, 4.2rem);
+  line-height: 0.92;
+}
+
+.hero-copy {
+  margin: 16px 0 0;
+  max-width: 52rem;
+  line-height: 1.7;
+}
+
+.status-panel {
+  padding: 18px;
+  border-radius: 20px;
+  background: rgba(92, 43, 29, 0.92);
+  color: #fff5e8;
+}
+
+.status-panel span {
+  display: block;
+  font-size: 0.76rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.82;
+}
+
+.status-panel strong {
+  display: block;
+  margin: 12px 0 18px;
+  font-size: 1.6rem;
+}
+
+.error-text {
+  color: #ffcfbf;
+}
+
+.grid-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: 20px;
+  margin-top: 20px;
+}
+
+.sidebar-card {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+  padding: 18px;
+  border-radius: 24px;
+}
+
+.content-column {
+  display: grid;
+  gap: 16px;
+}
+
+.panel {
+  border-radius: 24px;
+  padding: 18px;
+}
+
+.panel h2 {
+  margin: 0 0 14px;
+  font-size: 1.15rem;
+}
+
+.panel label {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.panel label span {
+  font-size: 0.9rem;
+  opacity: 0.78;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.member-list,
+.approval-list {
+  display: grid;
+  gap: 10px;
+}
+
+.member-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.member-list li,
+.approval-card,
+.message-card {
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(255, 252, 247, 0.75);
+  border: 1px solid rgba(88, 53, 17, 0.08);
+}
+
+.member-list li span,
+.message-card header span,
+.muted-text,
+.approval-card p {
+  color: rgba(47, 36, 24, 0.72);
+}
+
+.approval-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+}
+
+.approval-card p {
+  margin: 6px 0 0;
+}
+
+.approval-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.messages-panel {
+  min-height: 520px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.message-list {
+  display: grid;
+  gap: 10px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.message-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.message-card p {
+  margin: 0;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.composer {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+@media (max-width: 960px) {
+  .hero-card,
+  .grid-layout {
+    grid-template-columns: 1fr;
+  }
+}
