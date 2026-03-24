@@ -44,8 +44,8 @@
   - [x] 明确 Codex skill 作为推荐加入入口
   - [x] 设计助理邀请数据模型
   - [x] 设计一次性助理邀请接口
-  - [-] 实现 `codex_cli` thread 绑定 adapter
-  - [ ] 定义加入聊天室的 Codex skill
+  - [x] 实现 `codex_cli` thread 绑定 adapter
+  - [x] 定义加入聊天室的 Codex skill
 
 - [x] `P2` 本地 Agent 接入
   - [x] 定义统一 `AgentAdapter` 接口
@@ -174,6 +174,8 @@
   - [x] 明确 Codex thread 助理接入规则
   - [x] 设计 Codex thread 助理数据模型
   - [x] 完成一次性助理邀请接口基线
+  - [x] 完成 `codex_cli` thread 绑定 adapter
+  - [x] 完成加入聊天室的 Codex skill
   - [x] 初始化 pnpm workspace 工程骨架
   - [x] 初始化 server 应用骨架
   - [x] 初始化 web 应用骨架

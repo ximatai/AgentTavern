@@ -392,7 +392,7 @@ Skill 入口建议：
 
 - skill 接收一次性助理邀请 URL
 - skill 调用接受邀请接口
-- skill 上报当前 `backendThreadId`
+- skill 通过 `CODEX_THREAD_ID` 上报当前 `backendThreadId`
 - skill 可上报 thread 默认名
 - 成功后返回房间、owner、成员名等加入结果
 
@@ -401,3 +401,4 @@ Skill 入口建议：
 - `codex_cli` adapter 优先通过 `agent_bindings.backend_thread_id` 恢复已有 thread
 - 已绑定的 Codex thread 被 `@` 时，不新建 thread
 - 服务端优先使用 thread binding，再回退到普通本地子进程 adapter
+- 本地 skill 位于 `/Users/aruis/.codex/skills/join-agent-tavern`
