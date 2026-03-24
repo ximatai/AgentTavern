@@ -47,6 +47,7 @@ AgentTavern 是一个面向局域网的多人房间聊天系统。
 - `agent` 的 `role_kind` 为 `independent` 或 `assistant`
 - `assistant` 必须有 `owner_member_id`
 - 同一房间内 `display_name` 必须唯一
+- `display_name` 不允许包含空格和 `@`
 
 ### Message
 
@@ -171,6 +172,7 @@ MVP 规则：
 
 - 消息中出现 `@成员显示名` 时触发解析
 - `@` 匹配直接使用房间内唯一的 `display_name`
+- 当前 `display_name` 以无空格形式约束，保证 mention 可直接匹配
 - 命中独立 Agent 时直接创建 `AgentSession`
 - 命中助理 Agent 时进入审批流程
 

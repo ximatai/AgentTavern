@@ -20,7 +20,12 @@ import {
   rooms,
 } from "./db/schema";
 import { createId, createInviteToken } from "./lib/id";
-import { broadcastToRoom, isMemberOnline, issueWsToken } from "./realtime";
+import {
+  broadcastToRoom,
+  isMemberOnline,
+  issueWsToken,
+  verifyWsToken,
+} from "./realtime";
 
 const app = new Hono();
 const approvalTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
@@ -32,6 +37,10 @@ function now(): string {
 
 function extractMentionNames(content: string): string[] {
   return [...content.matchAll(/@([^\s@]+)/g)].map((match) => match[1] ?? "");
+}
+
+function isValidDisplayName(displayName: string): boolean {
+  return /^[^\s@]+$/u.test(displayName);
 }
 
 function createMessageCreatedEvent(roomId: string, message: Message): RealtimeEvent {
@@ -218,6 +227,10 @@ app.post("/api/rooms/:roomId/join", async (c) => {
     return c.json({ error: "nickname is required" }, 400);
   }
 
+  if (!isValidDisplayName(displayName)) {
+    return c.json({ error: "displayName must not contain spaces or @" }, 400);
+  }
+
   const existing = db
     .select()
     .from(members)
@@ -276,6 +289,10 @@ app.post("/api/invites/:inviteToken/join", async (c) => {
 
   if (!displayName) {
     return c.json({ error: "nickname is required" }, 400);
+  }
+
+  if (!isValidDisplayName(displayName)) {
+    return c.json({ error: "displayName must not contain spaces or @" }, 400);
   }
 
   const existing = db
@@ -353,6 +370,10 @@ app.post("/api/rooms/:roomId/members/agents", async (c) => {
     return c.json({ error: "displayName and roleKind are required" }, 400);
   }
 
+  if (!isValidDisplayName(displayName)) {
+    return c.json({ error: "displayName must not contain spaces or @" }, 400);
+  }
+
   const existing = db
     .select()
     .from(members)
@@ -427,9 +448,10 @@ app.post("/api/rooms/:roomId/messages", async (c) => {
   const senderMemberId =
     typeof body?.senderMemberId === "string" ? body.senderMemberId.trim() : "";
   const content = typeof body?.content === "string" ? body.content.trim() : "";
+  const wsToken = typeof body?.wsToken === "string" ? body.wsToken.trim() : "";
 
-  if (!senderMemberId || !content) {
-    return c.json({ error: "senderMemberId and content are required" }, 400);
+  if (!senderMemberId || !content || !wsToken) {
+    return c.json({ error: "senderMemberId, content and wsToken are required" }, 400);
   }
 
   const sender = db
@@ -440,6 +462,10 @@ app.post("/api/rooms/:roomId/messages", async (c) => {
 
   if (!sender) {
     return c.json({ error: "sender not found in room" }, 404);
+  }
+
+  if (!verifyWsToken(wsToken, senderMemberId, roomId)) {
+    return c.json({ error: "invalid wsToken for sender" }, 403);
   }
 
   const message: Message = {
@@ -618,9 +644,10 @@ app.post("/api/approvals/:approvalId/approve", async (c) => {
   const body = await c.req.json().catch(() => null);
   const actorMemberId =
     typeof body?.actorMemberId === "string" ? body.actorMemberId.trim() : "";
+  const wsToken = typeof body?.wsToken === "string" ? body.wsToken.trim() : "";
 
-  if (!actorMemberId) {
-    return c.json({ error: "actorMemberId is required" }, 400);
+  if (!actorMemberId || !wsToken) {
+    return c.json({ error: "actorMemberId and wsToken are required" }, 400);
   }
 
   const approval = db
@@ -635,6 +662,10 @@ app.post("/api/approvals/:approvalId/approve", async (c) => {
 
   if (approval.ownerMemberId !== actorMemberId) {
     return c.json({ error: "only owner can approve" }, 403);
+  }
+
+  if (!verifyWsToken(wsToken, actorMemberId, approval.roomId)) {
+    return c.json({ error: "invalid wsToken for actor" }, 403);
   }
 
   if (approval.status !== "pending") {
@@ -688,9 +719,10 @@ app.post("/api/approvals/:approvalId/reject", async (c) => {
   const body = await c.req.json().catch(() => null);
   const actorMemberId =
     typeof body?.actorMemberId === "string" ? body.actorMemberId.trim() : "";
+  const wsToken = typeof body?.wsToken === "string" ? body.wsToken.trim() : "";
 
-  if (!actorMemberId) {
-    return c.json({ error: "actorMemberId is required" }, 400);
+  if (!actorMemberId || !wsToken) {
+    return c.json({ error: "actorMemberId and wsToken are required" }, 400);
   }
 
   const approval = db
@@ -705,6 +737,10 @@ app.post("/api/approvals/:approvalId/reject", async (c) => {
 
   if (approval.ownerMemberId !== actorMemberId) {
     return c.json({ error: "only owner can reject" }, 403);
+  }
+
+  if (!verifyWsToken(wsToken, actorMemberId, approval.roomId)) {
+    return c.json({ error: "invalid wsToken for actor" }, 403);
   }
 
   if (approval.status !== "pending") {

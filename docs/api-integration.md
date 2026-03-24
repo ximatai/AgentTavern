@@ -66,6 +66,7 @@
 约束：
 
 - 同一房间内 `displayName` 必须唯一
+- `displayName` 不允许包含空格和 `@`
 - 重名时直接返回冲突错误
 - `wsToken` 在本次加入房间时生成
 - `wsToken` 仅用于当前 member 的连接态识别
@@ -139,6 +140,7 @@
 
 - `independent` 可不传 `ownerMemberId`
 - `assistant` 必须传 `ownerMemberId`
+- `displayName` 不允许包含空格和 `@`
 
 ### 消息
 
@@ -155,6 +157,7 @@
 ```json
 {
   "senderMemberId": "mem_xxx",
+  "wsToken": "local_session_xxx",
   "content": "@BackendDev 帮我看一下这个接口设计",
   "clientMessageId": "client_xxx"
 }
@@ -162,6 +165,7 @@
 
 服务端动作：
 
+- 校验 `wsToken` 与 `senderMemberId` 绑定关系
 - 保存消息
 - 解析 mention
 - 广播消息事件
@@ -181,13 +185,15 @@
 
 ```json
 {
-  "actorMemberId": "mem_owner_xxx"
+  "actorMemberId": "mem_owner_xxx",
+  "wsToken": "local_session_xxx"
 }
 ```
 
 约束：
 
 - 仅直属 owner 可审批
+- `wsToken` 必须与 `actorMemberId` 匹配
 - 同一审批只能处理一次
 - 审批成功后，对应 session 进入 `running`
 - owner 不在线时，不进入待审批状态，调用直接失败

@@ -24,6 +24,21 @@ export function issueWsToken(memberId: string, roomId: string): string {
   return token;
 }
 
+export function verifyWsToken(
+  wsToken: string,
+  memberId: string,
+  roomId: string,
+): boolean {
+  const tokenEntry = wsTokens.get(wsToken);
+
+  return Boolean(
+    tokenEntry &&
+      tokenEntry.active &&
+      tokenEntry.memberId === memberId &&
+      tokenEntry.roomId === roomId,
+  );
+}
+
 export function revokeWsTokensForMember(memberId: string, roomId: string): void {
   for (const [token, entry] of wsTokens.entries()) {
     if (entry.memberId === memberId && entry.roomId === roomId) {
