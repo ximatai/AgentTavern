@@ -117,6 +117,8 @@
 }
 ```
 
+当前公开成员结构以 `packages/shared/src/dto.ts` 中的 `PublicMember` 为准。
+
 #### `POST /api/rooms/:roomId/members/agents`
 
 添加 Agent 成员。
@@ -154,6 +156,8 @@
 #### `GET /api/rooms/:roomId/messages`
 
 获取消息记录。
+
+当前公开消息结构以 `packages/shared/src/dto.ts` 中的 `PublicMessage` 为准。
 
 #### `POST /api/rooms/:roomId/messages`
 
@@ -215,6 +219,8 @@
 
 - 审批拒绝后，对应 session 进入 `rejected`
 
+审批接口的公开返回结构以 `packages/shared/src/dto.ts` 中的 `PublicApproval` 为准。
+
 ## 3. WebSocket
 
 连接方式：
@@ -265,6 +271,7 @@
 - `agent.session.failed`
 
 事件载荷以 `packages/shared` 中的 `RealtimeEvent` 定义为准。
+其中成员、消息、审批的公开数据分别使用 `PublicMember`、`PublicMessage`、`PublicApproval`，不直接暴露服务端内部模型。
 
 ## 4. Agent Adapter
 

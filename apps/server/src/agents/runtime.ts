@@ -17,6 +17,7 @@ import type {
 import { db } from "../db/client";
 import { agentSessions, members, messages, rooms } from "../db/schema";
 import { createId } from "../lib/id";
+import { toPublicMessage } from "../lib/public";
 import { broadcastToRoom } from "../realtime";
 
 const agentRunQueue = new Map<string, Promise<void>>();
@@ -80,7 +81,7 @@ function createMessageCreatedEvent(roomId: string, message: Message): RealtimeEv
     type: "message.created",
     roomId,
     timestamp: now(),
-    payload: { message },
+    payload: { message: toPublicMessage(message) },
   };
 }
 
@@ -95,7 +96,7 @@ function createMessageCommittedEvent(
     timestamp: now(),
     payload: {
       sessionId,
-      message,
+      message: toPublicMessage(message),
     },
   };
 }

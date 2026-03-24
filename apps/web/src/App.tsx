@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 
 import type {
-  Approval,
-  Member,
-  Message,
+  PublicApproval,
+  PublicMessage,
+  PublicMember,
   RealtimeEvent,
   Room,
 } from "@agent-tavern/shared";
@@ -96,9 +96,9 @@ function App() {
   const [assistantOwnerId, setAssistantOwnerId] = useState("");
   const [room, setRoom] = useState<Room | null>(null);
   const [self, setSelf] = useState<JoinResult | null>(null);
-  const [members, setMembers] = useState<Member[]>([]);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [pendingApprovals, setPendingApprovals] = useState<Approval[]>([]);
+  const [members, setMembers] = useState<PublicMember[]>([]);
+  const [messages, setMessages] = useState<PublicMessage[]>([]);
+  const [pendingApprovals, setPendingApprovals] = useState<PublicApproval[]>([]);
   const [streams, setStreams] = useState<Record<string, SessionStream>>({});
   const [sessionActors, setSessionActors] = useState<Record<string, SessionActor>>({});
   const [statusText, setStatusText] = useState("Ready");
@@ -124,8 +124,8 @@ function App() {
   async function hydrateRoomState(nextRoomId: string): Promise<void> {
     const [nextRoom, nextMembers, nextMessages] = await Promise.all([
       request<Room>(`/api/rooms/${nextRoomId}`),
-      request<Member[]>(`/api/rooms/${nextRoomId}/members`),
-      request<Message[]>(`/api/rooms/${nextRoomId}/messages`),
+      request<PublicMember[]>(`/api/rooms/${nextRoomId}/members`),
+      request<PublicMessage[]>(`/api/rooms/${nextRoomId}/messages`),
     ]);
 
     setRoom(nextRoom);
@@ -299,7 +299,7 @@ function App() {
     setErrorText("");
 
     try {
-      await request<Message>(`/api/rooms/${self.roomId}/messages`, {
+      await request<PublicMessage>(`/api/rooms/${self.roomId}/messages`, {
         method: "POST",
         body: JSON.stringify({
           senderMemberId: self.memberId,
@@ -321,7 +321,7 @@ function App() {
     setErrorText("");
 
     try {
-      await request<Member>(`/api/rooms/${self.roomId}/members/agents`, {
+      await request<PublicMember>(`/api/rooms/${self.roomId}/members/agents`, {
         method: "POST",
         body: JSON.stringify({
           displayName: agentName.trim(),
@@ -340,7 +340,7 @@ function App() {
           },
         }),
       });
-      const nextMembers = await request<Member[]>(`/api/rooms/${self.roomId}/members`);
+      const nextMembers = await request<PublicMember[]>(`/api/rooms/${self.roomId}/members`);
       setMembers(nextMembers);
       setStatusText("Agent added");
     } catch (error) {
@@ -356,7 +356,7 @@ function App() {
     setErrorText("");
 
     try {
-      await request<Approval>(`/api/approvals/${approvalId}/${action}`, {
+      await request<PublicApproval>(`/api/approvals/${approvalId}/${action}`, {
         method: "POST",
         body: JSON.stringify({
           actorMemberId: self.memberId,

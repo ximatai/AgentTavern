@@ -17,6 +17,8 @@ AgentTavern 是一个面向局域网的多人房间聊天系统。
 ## 2. 核心对象
 
 第一版领域模型以 `packages/shared` 中的共享类型为准。
+对外公开返回的数据结构优先以 `dto` 定义为准。
+当前公开 DTO 包括 `PublicMember`、`PublicMessage`、`PublicApproval`。
 
 ### Room
 

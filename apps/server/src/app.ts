@@ -21,6 +21,7 @@ import {
   rooms,
 } from "./db/schema";
 import { createId, createInviteToken } from "./lib/id";
+import { toPublicApproval, toPublicMember, toPublicMessage } from "./lib/public";
 import {
   broadcastToRoom,
   isMemberOnline,
@@ -44,20 +45,12 @@ function isValidDisplayName(displayName: string): boolean {
   return /^[^\s@]+$/u.test(displayName);
 }
 
-function toPublicMember(member: Member): Member {
-  return {
-    ...member,
-    adapterType: null,
-    adapterConfig: null,
-  };
-}
-
 function createMessageCreatedEvent(roomId: string, message: Message): RealtimeEvent {
   return {
     type: "message.created",
     roomId,
     timestamp: now(),
-    payload: { message },
+    payload: { message: toPublicMessage(message) },
   };
 }
 
@@ -66,7 +59,7 @@ function createApprovalRequestedEvent(roomId: string, approval: Approval): Realt
     type: "approval.requested",
     roomId,
     timestamp: now(),
-    payload: { approval },
+    payload: { approval: toPublicApproval(approval) },
   };
 }
 
@@ -75,7 +68,7 @@ function createApprovalResolvedEvent(roomId: string, approval: Approval): Realti
     type: "approval.resolved",
     roomId,
     timestamp: now(),
-    payload: { approval },
+    payload: { approval: toPublicApproval(approval) },
   };
 }
 
@@ -492,7 +485,8 @@ app.get("/api/rooms/:roomId/messages", (c) => {
     .where(eq(messages.roomId, roomId))
     .orderBy(desc(messages.createdAt))
     .all()
-    .reverse();
+    .reverse()
+    .map((message) => toPublicMessage(message as Message));
 
   return c.json(roomMessages);
 });
@@ -680,7 +674,7 @@ app.post("/api/rooms/:roomId/messages", async (c) => {
     }
   }
 
-  return c.json(message, 201);
+  return c.json(toPublicMessage(message), 201);
 });
 
 app.post("/api/approvals/:approvalId/approve", async (c) => {
@@ -765,7 +759,7 @@ app.post("/api/approvals/:approvalId/approve", async (c) => {
     queueAgentSession(session.id);
   }
 
-  return c.json(resolvedApproval);
+  return c.json(toPublicApproval(resolvedApproval));
 });
 
 app.post("/api/approvals/:approvalId/reject", async (c) => {
@@ -840,7 +834,7 @@ app.post("/api/approvals/:approvalId/reject", async (c) => {
   db.insert(messages).values(rejectionMessage).run();
   broadcastToRoom(approval.roomId, createMessageCreatedEvent(approval.roomId, rejectionMessage));
 
-  return c.json(resolvedApproval);
+  return c.json(toPublicApproval(resolvedApproval));
 });
 
 export { app };

@@ -1,11 +1,12 @@
-import type { AgentSession, Approval, Member, Message } from "./domain";
+import type { AgentSession } from "./domain";
+import type { PublicApproval, PublicMember, PublicMessage } from "./dto";
 
 export type RoomEvent =
   | {
       type: "member.joined";
       roomId: string;
       timestamp: string;
-      payload: { member: Member };
+      payload: { member: PublicMember };
     }
   | {
       type: "member.left";
@@ -17,7 +18,7 @@ export type RoomEvent =
       type: "member.updated";
       roomId: string;
       timestamp: string;
-      payload: { member: Member };
+      payload: { member: PublicMember };
     };
 
 export type MessageEvent =
@@ -25,13 +26,13 @@ export type MessageEvent =
       type: "message.created";
       roomId: string;
       timestamp: string;
-      payload: { message: Message };
+      payload: { message: PublicMessage };
     }
   | {
       type: "message.updated";
       roomId: string;
       timestamp: string;
-      payload: { message: Message };
+      payload: { message: PublicMessage };
     };
 
 export type ApprovalEvent =
@@ -39,13 +40,13 @@ export type ApprovalEvent =
       type: "approval.requested";
       roomId: string;
       timestamp: string;
-      payload: { approval: Approval };
+      payload: { approval: PublicApproval };
     }
   | {
       type: "approval.resolved";
       roomId: string;
       timestamp: string;
-      payload: { approval: Approval };
+      payload: { approval: PublicApproval };
     };
 
 export type AgentSessionEvent =
@@ -71,7 +72,7 @@ export type AgentSessionEvent =
       timestamp: string;
       payload: {
         sessionId: string;
-        message: Message;
+        message: PublicMessage;
       };
     }
   | {
