@@ -189,6 +189,13 @@
 
 - 仅直属 owner 可审批
 - 同一审批只能处理一次
+- 审批成功后，对应 session 进入 `running`
+
+#### `POST /api/approvals/:approvalId/reject`
+
+拒绝一次助理调用。
+
+- 审批成功后，对应 session 进入 `rejected`
 
 ## 3. WebSocket
 

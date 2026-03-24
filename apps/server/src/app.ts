@@ -1,10 +1,24 @@
 import { eq, desc, and } from "drizzle-orm";
 import { Hono } from "hono";
 
-import type { Member, Message, RealtimeEvent, Room } from "@agent-tavern/shared";
+import type {
+  AgentSession,
+  Approval,
+  Member,
+  Message,
+  RealtimeEvent,
+  Room,
+} from "@agent-tavern/shared";
 
 import { db } from "./db/client";
-import { agentSessions, members, mentions, messages, rooms } from "./db/schema";
+import {
+  agentSessions,
+  approvals,
+  members,
+  mentions,
+  messages,
+  rooms,
+} from "./db/schema";
 import { createId, createInviteToken } from "./lib/id";
 import { broadcastToRoom, issueWsToken } from "./realtime";
 
@@ -24,6 +38,24 @@ function createMessageCreatedEvent(roomId: string, message: Message): RealtimeEv
     roomId,
     timestamp: now(),
     payload: { message },
+  };
+}
+
+function createApprovalRequestedEvent(roomId: string, approval: Approval): RealtimeEvent {
+  return {
+    type: "approval.requested",
+    roomId,
+    timestamp: now(),
+    payload: { approval },
+  };
+}
+
+function createApprovalResolvedEvent(roomId: string, approval: Approval): RealtimeEvent {
+  return {
+    type: "approval.resolved",
+    roomId,
+    timestamp: now(),
+    payload: { approval },
   };
 }
 
@@ -379,7 +411,7 @@ app.post("/api/rooms/:roomId/messages", async (c) => {
     }).run();
 
     if (target.type === "agent" && target.roleKind === "independent") {
-      const session = {
+      const session: AgentSession = {
         id: createId("as"),
         roomId,
         agentMemberId: target.id,
@@ -407,9 +439,196 @@ app.post("/api/rooms/:roomId/messages", async (c) => {
       db.insert(messages).values(systemMessage).run();
       broadcastToRoom(roomId, createMessageCreatedEvent(roomId, systemMessage));
     }
+
+    if (target.type === "agent" && target.roleKind === "assistant") {
+      if (!target.ownerMemberId) {
+        continue;
+      }
+
+      const approval: Approval = {
+        id: createId("apr"),
+        roomId,
+        requesterMemberId: senderMemberId,
+        ownerMemberId: target.ownerMemberId,
+        agentMemberId: target.id,
+        triggerMessageId: message.id,
+        status: "pending",
+        createdAt: now(),
+        resolvedAt: null,
+      };
+
+      db.insert(approvals).values(approval).run();
+
+      const session: AgentSession = {
+        id: createId("as"),
+        roomId,
+        agentMemberId: target.id,
+        triggerMessageId: message.id,
+        requesterMemberId: senderMemberId,
+        approvalId: approval.id,
+        approvalRequired: true,
+        status: "waiting_approval",
+        startedAt: null,
+        endedAt: null,
+      };
+
+      db.insert(agentSessions).values(session).run();
+      broadcastToRoom(roomId, createApprovalRequestedEvent(roomId, approval));
+
+      const approvalMessage: Message = {
+        id: createId("msg"),
+        roomId,
+        senderMemberId: target.id,
+        messageType: "approval_request",
+        content: `${target.displayName} is waiting for owner approval.`,
+        replyToMessageId: message.id,
+        createdAt: now(),
+      };
+
+      db.insert(messages).values(approvalMessage).run();
+      broadcastToRoom(roomId, createMessageCreatedEvent(roomId, approvalMessage));
+    }
   }
 
   return c.json(message, 201);
+});
+
+app.post("/api/approvals/:approvalId/approve", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const actorMemberId =
+    typeof body?.actorMemberId === "string" ? body.actorMemberId.trim() : "";
+
+  if (!actorMemberId) {
+    return c.json({ error: "actorMemberId is required" }, 400);
+  }
+
+  const approval = db
+    .select()
+    .from(approvals)
+    .where(eq(approvals.id, c.req.param("approvalId")))
+    .get();
+
+  if (!approval) {
+    return c.json({ error: "approval not found" }, 404);
+  }
+
+  if (approval.ownerMemberId !== actorMemberId) {
+    return c.json({ error: "only owner can approve" }, 403);
+  }
+
+  if (approval.status !== "pending") {
+    return c.json({ error: "approval already resolved" }, 409);
+  }
+
+  const resolvedApproval: Approval = {
+    ...approval,
+    status: "approved",
+    resolvedAt: now(),
+  };
+
+  db
+    .update(approvals)
+    .set({
+      status: resolvedApproval.status,
+      resolvedAt: resolvedApproval.resolvedAt,
+    })
+    .where(eq(approvals.id, approval.id))
+    .run();
+
+  db
+    .update(agentSessions)
+    .set({
+      status: "running",
+      startedAt: now(),
+    })
+    .where(eq(agentSessions.approvalId, approval.id))
+    .run();
+
+  broadcastToRoom(approval.roomId, createApprovalResolvedEvent(approval.roomId, resolvedApproval));
+
+  const approvalMessage: Message = {
+    id: createId("msg"),
+    roomId: approval.roomId,
+    senderMemberId: approval.agentMemberId,
+    messageType: "approval_result",
+    content: `Approval granted for ${approval.agentMemberId}.`,
+    replyToMessageId: approval.triggerMessageId,
+    createdAt: now(),
+  };
+
+  db.insert(messages).values(approvalMessage).run();
+  broadcastToRoom(approval.roomId, createMessageCreatedEvent(approval.roomId, approvalMessage));
+
+  return c.json(resolvedApproval);
+});
+
+app.post("/api/approvals/:approvalId/reject", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const actorMemberId =
+    typeof body?.actorMemberId === "string" ? body.actorMemberId.trim() : "";
+
+  if (!actorMemberId) {
+    return c.json({ error: "actorMemberId is required" }, 400);
+  }
+
+  const approval = db
+    .select()
+    .from(approvals)
+    .where(eq(approvals.id, c.req.param("approvalId")))
+    .get();
+
+  if (!approval) {
+    return c.json({ error: "approval not found" }, 404);
+  }
+
+  if (approval.ownerMemberId !== actorMemberId) {
+    return c.json({ error: "only owner can reject" }, 403);
+  }
+
+  if (approval.status !== "pending") {
+    return c.json({ error: "approval already resolved" }, 409);
+  }
+
+  const resolvedApproval: Approval = {
+    ...approval,
+    status: "rejected",
+    resolvedAt: now(),
+  };
+
+  db
+    .update(approvals)
+    .set({
+      status: resolvedApproval.status,
+      resolvedAt: resolvedApproval.resolvedAt,
+    })
+    .where(eq(approvals.id, approval.id))
+    .run();
+
+  db
+    .update(agentSessions)
+    .set({
+      status: "rejected",
+      endedAt: now(),
+    })
+    .where(eq(agentSessions.approvalId, approval.id))
+    .run();
+
+  broadcastToRoom(approval.roomId, createApprovalResolvedEvent(approval.roomId, resolvedApproval));
+
+  const rejectionMessage: Message = {
+    id: createId("msg"),
+    roomId: approval.roomId,
+    senderMemberId: approval.agentMemberId,
+    messageType: "approval_result",
+    content: `Approval rejected for ${approval.agentMemberId}.`,
+    replyToMessageId: approval.triggerMessageId,
+    createdAt: now(),
+  };
+
+  db.insert(messages).values(rejectionMessage).run();
+  broadcastToRoom(approval.roomId, createMessageCreatedEvent(approval.roomId, rejectionMessage));
+
+  return c.json(resolvedApproval);
 });
 
 export { app };
