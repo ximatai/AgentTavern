@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import type { Member, Message, RealtimeEvent, Room } from "@agent-tavern/shared";
 
 import { db } from "./db/client";
-import { members, messages, rooms } from "./db/schema";
+import { agentSessions, members, mentions, messages, rooms } from "./db/schema";
 import { createId, createInviteToken } from "./lib/id";
 import { broadcastToRoom, issueWsToken } from "./realtime";
 
@@ -12,6 +12,19 @@ const app = new Hono();
 
 function now(): string {
   return new Date().toISOString();
+}
+
+function extractMentionNames(content: string): string[] {
+  return [...content.matchAll(/@([^\s@]+)/g)].map((match) => match[1] ?? "");
+}
+
+function createMessageCreatedEvent(roomId: string, message: Message): RealtimeEvent {
+  return {
+    type: "message.created",
+    roomId,
+    timestamp: now(),
+    payload: { message },
+  };
 }
 
 app.get("/healthz", (c) => {
@@ -338,14 +351,63 @@ app.post("/api/rooms/:roomId/messages", async (c) => {
 
   db.insert(messages).values(message).run();
 
-  const event: RealtimeEvent = {
-    type: "message.created",
-    roomId,
-    timestamp: now(),
-    payload: { message },
-  };
+  broadcastToRoom(roomId, createMessageCreatedEvent(roomId, message));
 
-  broadcastToRoom(roomId, event);
+  const mentionNames = extractMentionNames(content);
+
+  for (const mentionName of mentionNames) {
+    const target = db
+      .select()
+      .from(members)
+      .where(and(eq(members.roomId, roomId), eq(members.displayName, mentionName)))
+      .get();
+
+    if (!target) {
+      continue;
+    }
+
+    db.insert(mentions).values({
+      id: createId("men"),
+      messageId: message.id,
+      targetMemberId: target.id,
+      triggerText: `@${mentionName}`,
+      status:
+        target.type === "agent" && target.roleKind === "assistant"
+          ? "pending_approval"
+          : "triggered",
+      createdAt: now(),
+    }).run();
+
+    if (target.type === "agent" && target.roleKind === "independent") {
+      const session = {
+        id: createId("as"),
+        roomId,
+        agentMemberId: target.id,
+        triggerMessageId: message.id,
+        requesterMemberId: senderMemberId,
+        approvalId: null,
+        approvalRequired: false,
+        status: "running" as const,
+        startedAt: now(),
+        endedAt: null,
+      };
+
+      db.insert(agentSessions).values(session).run();
+
+      const systemMessage: Message = {
+        id: createId("msg"),
+        roomId,
+        senderMemberId: target.id,
+        messageType: "system_notice",
+        content: `${target.displayName} received the request and is preparing a response.`,
+        replyToMessageId: message.id,
+        createdAt: now(),
+      };
+
+      db.insert(messages).values(systemMessage).run();
+      broadcastToRoom(roomId, createMessageCreatedEvent(roomId, systemMessage));
+    }
+  }
 
   return c.json(message, 201);
 });
