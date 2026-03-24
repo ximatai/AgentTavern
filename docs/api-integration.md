@@ -219,6 +219,8 @@
 - `agent.session.completed`
 - `agent.session.failed`
 
+事件载荷以 `packages/shared` 中的 `RealtimeEvent` 定义为准。
+
 ## 4. Agent Adapter
 
 统一接口：

@@ -144,6 +144,37 @@ owner 可以是：
 3. 后端实时协议实现
 4. 本地 Agent adapter 首个实现
 
+## 开发启动
+
+安装依赖：
+
+```bash
+pnpm install
+```
+
+启动后端：
+
+```bash
+pnpm dev:server
+```
+
+启动前端：
+
+```bash
+pnpm dev:web
+```
+
+同时启动前后端：
+
+```bash
+pnpm dev
+```
+
+当前默认地址：
+
+- 后端：`http://localhost:8787`
+- 前端：`http://127.0.0.1:5173`
+
 ## License
 
 本项目使用 [MIT License](/Users/aruis/develop/workspace-github/AgentTavern/LICENSE)。

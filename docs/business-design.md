@@ -16,6 +16,8 @@ AgentTavern 是一个面向局域网的多人房间聊天系统。
 
 ## 2. 核心对象
 
+第一版领域模型以 `packages/shared` 中的共享类型为准。
+
 ### Room
 
 关键字段：
@@ -96,6 +98,7 @@ AgentTavern 是一个面向局域网的多人房间聊天系统。
 - `trigger_message_id`
 - `requester_member_id`
 - `approval_required`
+- `approval_id`
 - `status`
 - `started_at`
 - `ended_at`
@@ -119,6 +122,20 @@ AgentTavern 是一个面向局域网的多人房间聊天系统。
 - `message_committed`
 - `session_completed`
 - `session_failed`
+
+### Approval
+
+关键字段：
+
+- `id`
+- `room_id`
+- `requester_member_id`
+- `owner_member_id`
+- `agent_member_id`
+- `trigger_message_id`
+- `status`
+- `created_at`
+- `resolved_at`
 
 ## 3. 成员规则
 
@@ -173,13 +190,22 @@ MVP 规则：
 - 最终输出固化为消息
 - 同一房间内，同一 Agent 默认串行执行
 
-## 6. UI 边界
+## 6. 第一版事件协议
+
+第一版实时事件分为四类：
+
+- 房间事件：`member.joined` `member.left` `member.updated`
+- 消息事件：`message.created` `message.updated`
+- 审批事件：`approval.requested` `approval.resolved`
+- Agent 事件：`agent.session.started` `agent.stream.delta` `agent.message.committed` `agent.session.completed` `agent.session.failed`
+
+## 7. UI 边界
 
 - 后端输出标准事件，不绑定具体 UI
 - 前端只负责渲染事件
 - 标准 Web UI 与未来酒馆式像素 UI 共用同一套聊天核心
 
-## 7. 非目标
+## 8. 非目标
 
 第一阶段不包含：
 

@@ -85,6 +85,7 @@ AgentTavern/
 
 - Hono HTTP API
 - WebSocket 连接与房间广播
+- SQLite schema 与迁移
 - 消息持久化
 - Mention 解析
 - 审批流程
