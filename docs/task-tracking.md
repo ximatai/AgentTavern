@@ -47,6 +47,17 @@
   - [x] 实现 `codex_cli` thread 绑定 adapter
   - [x] 定义加入聊天室的 Codex skill
 
+- [-] `P1` 服务端结构收敛
+  - [x] 拆分 `app.ts` 路由与处理逻辑
+  - [x] 收敛 rooms / members / messages / approvals / assistant-invites 边界
+  - [x] 为后续继续开发降低单文件复杂度
+
+- [-] `P1` 收敛接口冲突与 mention 状态
+  - [x] 重复加入冲突统一返回 `409`
+  - [x] 助理邀请绑定冲突统一返回 `409`
+  - [x] mention 状态随审批与失败路径推进
+  - [x] 完成第一轮定向冒烟验证
+
 - [x] `P2` 本地 Agent 接入
   - [x] 定义统一 `AgentAdapter` 接口
   - [x] 实现本地子进程 adapter
@@ -152,10 +163,6 @@
   - [ ] 避免 Web UI 反向绑定后端模型
   - [ ] 为未来替换 UI 保持协议稳定
 
-- [ ] `P1` 服务端结构收敛
-  - [ ] 拆分 `app.ts` 路由与处理逻辑
-  - [ ] 收敛 rooms / members / messages / approvals / assistant-invites 边界
-  - [ ] 为后续继续开发降低单文件复杂度
 
 ## 6. 已完成
 
@@ -177,6 +184,8 @@
   - [x] 完成本地 Agent 接入基线
   - [x] 完成前端演示壳
   - [x] 将前端演示壳收为第一版可测试聊天页
+  - [x] 完成第一轮服务端路由结构收敛
+  - [x] 收敛第一批接口冲突与 mention 状态一致性
   - [x] 收紧 Agent 执行与管理边界
   - [x] 拆分公开 DTO 与内部模型
   - [x] 扩展公开 DTO 覆盖范围
