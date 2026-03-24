@@ -78,6 +78,30 @@
 
 重置邀请链接。
 
+#### `POST /api/rooms/:roomId/assistant-invites`
+
+创建一次性助理邀请 URL。
+
+请求体：
+
+```json
+{
+  "actorMemberId": "mem_xxx",
+  "wsToken": "local_session_xxx",
+  "presetDisplayName": "BackendThread",
+  "backendType": "codex_cli"
+}
+```
+
+约束：
+
+- `actorMemberId` 和 `wsToken` 必须匹配
+- 邀请创建者自动成为直属 owner
+- 邀请 token 一次性使用
+- `presetDisplayName` 可为空
+- 第一版 `backendType` 主要用于 `codex_cli`
+- 服务端落库到 `assistant_invites`
+
 ### 邀请链接
 
 #### `GET /api/invites/:inviteToken`
@@ -97,6 +121,43 @@
 ```
 
 行为与 `POST /api/rooms/:roomId/join` 保持一致。
+
+### 助理邀请
+
+#### `POST /api/assistant-invites/:inviteToken/accept`
+
+接受一次性助理邀请，加入为 assistant agent。
+
+请求体：
+
+```json
+{
+  "backendThreadId": "thread_xxx",
+  "displayName": "BackendThread"
+}
+```
+
+响应体：
+
+```json
+{
+  "memberId": "mem_xxx",
+  "roomId": "room_xxx",
+  "displayName": "BackendThread",
+  "ownerMemberId": "mem_owner_xxx"
+}
+```
+
+约束：
+
+- 邀请 token 一次性使用
+- `presetDisplayName` 存在时优先使用
+- 房间侧自动分配唯一 `memberId`
+- 接受时必须绑定 `backendThreadId`
+- 第一版同一个 `backendThreadId` 只允许加入一个房间
+- 第一版一个房间内不允许重复绑定同一 `backendThreadId`
+- 接受动作适合封装为 Codex skill
+- 接受成功后创建 `members` 与 `agent_bindings`
 
 ### 成员
 
@@ -316,3 +377,21 @@ interface AgentAdapter {
 
 - 上层只依赖 `AgentAdapter`
 - 本地 CLI、守护进程、远端服务都可按同一方式接入
+
+## 5. Codex Thread 接入
+
+第一版目标：
+
+- 支持将已开启的 Codex thread 作为 assistant agent 加入房间
+- thread 保留自己的原始上下文
+- thread 只在被 `@` 时接收消息
+- 第一版不自动附带最近房间聊天历史
+- 推荐通过专用 Codex skill 处理助理邀请 URL
+
+Skill 入口建议：
+
+- skill 接收一次性助理邀请 URL
+- skill 调用接受邀请接口
+- skill 上报当前 `backendThreadId`
+- skill 可上报 thread 默认名
+- 成功后返回房间、owner、成员名等加入结果

@@ -32,6 +32,16 @@ export type AgentSessionStatus =
 
 export type ApprovalStatus = "pending" | "approved" | "rejected" | "expired";
 
+export type AgentBackendType = "local_process" | "codex_cli";
+
+export type AssistantInviteStatus =
+  | "pending"
+  | "accepted"
+  | "expired"
+  | "revoked";
+
+export type AgentBindingStatus = "active" | "detached" | "failed";
+
 export type Room = {
   id: string;
   name: string;
@@ -95,4 +105,29 @@ export type AgentSession = {
   status: AgentSessionStatus;
   startedAt: string | null;
   endedAt: string | null;
+};
+
+export type AssistantInvite = {
+  id: string;
+  roomId: string;
+  ownerMemberId: string;
+  presetDisplayName: string | null;
+  backendType: AgentBackendType;
+  inviteToken: string;
+  status: AssistantInviteStatus;
+  acceptedMemberId: string | null;
+  createdAt: string;
+  expiresAt: string | null;
+  acceptedAt: string | null;
+};
+
+export type AgentBinding = {
+  id: string;
+  memberId: string;
+  backendType: AgentBackendType;
+  backendThreadId: string;
+  cwd: string | null;
+  status: AgentBindingStatus;
+  attachedAt: string;
+  detachedAt: string | null;
 };

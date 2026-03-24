@@ -144,6 +144,49 @@ AgentTavern 是一个面向局域网的多人房间聊天系统。
 - `created_at`
 - `resolved_at`
 
+### AssistantInvite
+
+关键字段：
+
+- `id`
+- `room_id`
+- `owner_member_id`
+- `preset_display_name`
+- `backend_type`
+- `invite_token`
+- `status`
+- `accepted_member_id`
+- `created_at`
+- `expires_at`
+- `accepted_at`
+
+规则：
+
+- 用于一次性助理邀请 URL
+- 创建者自动成为直属 owner
+- `invite_token` 全局唯一
+- 一次接受成功后不可复用
+
+### AgentBinding
+
+关键字段：
+
+- `id`
+- `member_id`
+- `backend_type`
+- `backend_thread_id`
+- `cwd`
+- `status`
+- `attached_at`
+- `detached_at`
+
+规则：
+
+- 用于将房间里的 agent member 绑定到真实后端实体
+- 对 Codex thread 来说，`backend_thread_id` 指向已有 thread
+- 第一版 `backend_thread_id` 全局唯一
+- 第一版一个 member 只允许一个活跃 binding
+
 ## 3. 成员规则
 
 ### 独立 Agent
@@ -159,6 +202,7 @@ AgentTavern 是一个面向局域网的多人房间聊天系统。
 - owner 可以是 human，也可以是 agent
 - 一个成员可以有多个助理
 - 助理可以继续拥有自己的助理
+- 已开启的 Codex thread 也可以作为助理加入房间
 
 显示规则：
 
@@ -171,6 +215,23 @@ MVP 规则：
 - 只检查直属 owner
 - 不做逐级审批
 - 不做跨层授权继承
+
+### Codex Thread 助理加入
+
+- 已进入房间的成员可以生成一次性助理邀请 URL
+- 助理邀请 URL 与普通房间邀请链接分离
+- 助理邀请 URL 默认绑定邀请发起者为直属 owner
+- 助理邀请 URL 可预设 `display_name`
+- 预设名优先于 thread 自报默认名
+- thread 加入时，房间侧自动分配唯一 `member_id`
+- thread 加入时需要绑定自身的 `backend_thread_id`
+- `backend_thread_id` 指向 Codex 自己已有的 thread
+- thread 保留自己的原始上下文，不切换到聊天室上下文
+- thread 只接收 `@` 到它的消息
+- 第一版不自动注入房间最近聊天历史
+- 第一版同一个 `backend_thread_id` 只允许加入一个房间
+- 第一版一个房间内不允许重复绑定同一 `backend_thread_id`
+- 推荐通过 Codex skill 完成加入动作
 
 ## 4. 触发与审批
 
@@ -195,6 +256,7 @@ MVP 规则：
 - Agent 统一通过 adapter 接入
 - 第一版 adapter 类型为 `local_process`
 - 第一阶段优先接入本地 CLI Agent
+- 真实 Codex CLI 接入优先以已有 thread 绑定方式推进
 - 本地子进程需要可超时回收
 - Agent 输出以流式事件广播到房间
 - 最终输出固化为消息
