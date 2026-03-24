@@ -1,0 +1,12 @@
+{
+  "name": "agent-tavern",
+  "private": true,
+  "packageManager": "pnpm@10.0.0",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @agent-tavern/server --filter @agent-tavern/web dev",
+    "dev:server": "pnpm --filter @agent-tavern/server dev",
+    "dev:web": "pnpm --filter @agent-tavern/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck"
+  }
+}
