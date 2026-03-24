@@ -77,6 +77,26 @@
 
 重置邀请链接。
 
+### 邀请链接
+
+#### `GET /api/invites/:inviteToken`
+
+通过邀请 token 获取房间信息。
+
+#### `POST /api/invites/:inviteToken/join`
+
+通过邀请 token 和昵称加入房间。
+
+请求体：
+
+```json
+{
+  "nickname": "Alice"
+}
+```
+
+行为与 `POST /api/rooms/:roomId/join` 保持一致。
+
 ### 成员
 
 #### `GET /api/rooms/:roomId/members`

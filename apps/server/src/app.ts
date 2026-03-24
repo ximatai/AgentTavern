@@ -68,6 +68,25 @@ app.get("/api/rooms/:roomId", (c) => {
   return c.json(room);
 });
 
+app.get("/api/invites/:inviteToken", (c) => {
+  const room = db
+    .select()
+    .from(rooms)
+    .where(eq(rooms.inviteToken, c.req.param("inviteToken")))
+    .get();
+
+  if (!room) {
+    return c.json({ error: "invite not found" }, 404);
+  }
+
+  return c.json({
+    id: room.id,
+    name: room.name,
+    inviteToken: room.inviteToken,
+    inviteUrl: `/join/${room.inviteToken}`,
+  });
+});
+
 app.post("/api/rooms/:roomId/join", async (c) => {
   const roomId = c.req.param("roomId");
   const room = db.select().from(rooms).where(eq(rooms.id, roomId)).get();
@@ -116,6 +135,66 @@ app.post("/api/rooms/:roomId/join", async (c) => {
   };
 
   broadcastToRoom(roomId, event);
+
+  return c.json({
+    memberId: member.id,
+    roomId: member.roomId,
+    displayName: member.displayName,
+    wsToken,
+  });
+});
+
+app.post("/api/invites/:inviteToken/join", async (c) => {
+  const room = db
+    .select()
+    .from(rooms)
+    .where(eq(rooms.inviteToken, c.req.param("inviteToken")))
+    .get();
+
+  if (!room) {
+    return c.json({ error: "invite not found" }, 404);
+  }
+
+  const body = await c.req.json().catch(() => null);
+  const displayName = typeof body?.nickname === "string" ? body.nickname.trim() : "";
+
+  if (!displayName) {
+    return c.json({ error: "nickname is required" }, 400);
+  }
+
+  const existing = db
+    .select()
+    .from(members)
+    .where(and(eq(members.roomId, room.id), eq(members.displayName, displayName)))
+    .get();
+
+  if (existing) {
+    return c.json({ error: "displayName already exists in room" }, 409);
+  }
+
+  const member: Member = {
+    id: createId("mem"),
+    roomId: room.id,
+    type: "human",
+    roleKind: "none",
+    displayName,
+    ownerMemberId: null,
+    presenceStatus: "online",
+    createdAt: now(),
+  };
+
+  db.insert(members).values(member).run();
+
+  const wsToken = issueWsToken(member.id, room.id);
+
+  const event: RealtimeEvent = {
+    type: "member.joined",
+    roomId: room.id,
+    timestamp: now(),
+    payload: { member },
+  };
+
+  broadcastToRoom(room.id, event);
 
   return c.json({
     memberId: member.id,
