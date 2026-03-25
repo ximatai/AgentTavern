@@ -63,6 +63,7 @@ export function recoverRuntimeState(): {
         senderMemberId: approval.agentMemberId,
         messageType: "approval_result",
         content: "Approval request expired because the server restarted.",
+        attachments: [],
         replyToMessageId: approval.triggerMessageId,
         createdAt: resolvedAt,
       };

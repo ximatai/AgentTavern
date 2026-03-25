@@ -98,6 +98,7 @@ function createFailureMessage(
     senderMemberId: agentMemberId,
     messageType: "system_notice",
     content,
+    attachments: [],
     replyToMessageId: triggerMessageId,
     createdAt: now(),
   };
@@ -141,6 +142,7 @@ export function commitSessionMessage(params: {
     senderMemberId: params.session.agentMemberId,
     messageType: "agent_text",
     content: params.content,
+    attachments: [],
     replyToMessageId: params.replyToMessageId,
     createdAt: now(),
   };

@@ -1,19 +1,31 @@
 import { and, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 
-import type { AgentSession, Approval, Message } from "@agent-tavern/shared";
+import type {
+  AgentSession,
+  Approval,
+  Message,
+} from "@agent-tavern/shared";
 
 import { queueAgentSession } from "../agents/runtime";
 import { db } from "../db/client";
 import { agentSessions, approvals, members, mentions, messages } from "../db/schema";
 import { createId } from "../lib/id";
+import {
+  MAX_MESSAGE_ATTACHMENTS,
+  attachDraftsToMessage,
+  hydrateMessagesWithAttachments,
+  resolveDraftAttachments,
+} from "../lib/message-attachments";
 import { toPublicMessage } from "../lib/public";
 import { broadcastToRoom, isMemberOnline, verifyWsToken } from "../realtime";
 import {
+  consumeAuthorization,
   createApprovalRequestedEvent,
   createApprovalResolvedEvent,
   createMessageCreatedEvent,
   extractMentionNames,
+  findActiveAuthorization,
   markMentionStatus,
   now,
   scheduleApprovalTimeout,
@@ -23,14 +35,15 @@ const messageRoutes = new Hono();
 
 messageRoutes.get("/api/rooms/:roomId/messages", (c) => {
   const roomId = c.req.param("roomId");
-  const roomMessages = db
-    .select()
-    .from(messages)
-    .where(eq(messages.roomId, roomId))
-    .orderBy(desc(messages.createdAt))
-    .all()
-    .reverse()
-    .map((message) => toPublicMessage(message as Message));
+  const roomMessages = hydrateMessagesWithAttachments(
+    db
+      .select()
+      .from(messages)
+      .where(eq(messages.roomId, roomId))
+      .orderBy(desc(messages.createdAt))
+      .all()
+      .reverse(),
+  ).map((message) => toPublicMessage(message));
 
   return c.json(roomMessages);
 });
@@ -42,9 +55,22 @@ messageRoutes.post("/api/rooms/:roomId/messages", async (c) => {
     typeof body?.senderMemberId === "string" ? body.senderMemberId.trim() : "";
   const content = typeof body?.content === "string" ? body.content.trim() : "";
   const wsToken = typeof body?.wsToken === "string" ? body.wsToken.trim() : "";
+  const attachmentIds = Array.isArray(body?.attachmentIds)
+    ? body.attachmentIds.flatMap((value: unknown) =>
+        typeof value === "string" && value.trim() ? [value.trim()] : [],
+      )
+    : [];
 
-  if (!senderMemberId || !content || !wsToken) {
-    return c.json({ error: "senderMemberId, content and wsToken are required" }, 400);
+  if (!senderMemberId || !wsToken) {
+    return c.json({ error: "senderMemberId and wsToken are required" }, 400);
+  }
+
+  if (attachmentIds.length > MAX_MESSAGE_ATTACHMENTS) {
+    return c.json({ error: `up to ${MAX_MESSAGE_ATTACHMENTS} attachments are allowed` }, 400);
+  }
+
+  if (!content && attachmentIds.length === 0) {
+    return c.json({ error: "content or attachments are required" }, 400);
   }
 
   const sender = db
@@ -61,17 +87,34 @@ messageRoutes.post("/api/rooms/:roomId/messages", async (c) => {
     return c.json({ error: "invalid wsToken for sender" }, 403);
   }
 
+  const attachments = resolveDraftAttachments({
+    roomId,
+    uploaderMemberId: senderMemberId,
+    attachmentIds,
+  });
+
+  if (attachments === null) {
+    return c.json({ error: "one or more attachments are invalid or unavailable" }, 409);
+  }
+
   const message: Message = {
     id: createId("msg"),
     roomId,
     senderMemberId,
     messageType: sender.type === "agent" ? "agent_text" : "user_text",
     content,
+    attachments,
     replyToMessageId: null,
     createdAt: now(),
   };
 
   db.insert(messages).values(message).run();
+  attachDraftsToMessage({
+    roomId,
+    uploaderMemberId: senderMemberId,
+    messageId: message.id,
+    attachmentIds,
+  });
 
   broadcastToRoom(roomId, createMessageCreatedEvent(roomId, message));
 
@@ -129,11 +172,52 @@ messageRoutes.post("/api/rooms/:roomId/messages", async (c) => {
         continue;
       }
 
+      const activeAuthorization =
+        target.ownerMemberId === senderMemberId
+          ? null
+          : findActiveAuthorization({
+              roomId,
+              ownerMemberId: target.ownerMemberId,
+              requesterMemberId: senderMemberId,
+              agentMemberId: target.id,
+            });
+
       if (target.ownerMemberId === senderMemberId) {
         markMentionStatus({
           messageId: message.id,
           targetMemberId: target.id,
           status: "triggered",
+        });
+
+        const session: AgentSession = {
+          id: createId("as"),
+          roomId,
+          agentMemberId: target.id,
+          triggerMessageId: message.id,
+          requesterMemberId: senderMemberId,
+          approvalId: null,
+          approvalRequired: false,
+          status: "pending",
+          startedAt: null,
+          endedAt: null,
+        };
+
+        db.insert(agentSessions).values(session).run();
+        queueAgentSession(session.id);
+        continue;
+      }
+
+      if (activeAuthorization) {
+        const consumedAuthorization = consumeAuthorization(activeAuthorization);
+
+        if (!consumedAuthorization && activeAuthorization.remainingUses !== null) {
+          continue;
+        }
+
+        markMentionStatus({
+          messageId: message.id,
+          targetMemberId: target.id,
+          status: "approved",
         });
 
         const session: AgentSession = {
@@ -172,6 +256,7 @@ messageRoutes.post("/api/rooms/:roomId/messages", async (c) => {
           agentMemberId: target.id,
           triggerMessageId: message.id,
           status: "expired",
+          grantDuration: "once",
           createdAt: resolvedAt,
           resolvedAt,
         };
@@ -200,6 +285,7 @@ messageRoutes.post("/api/rooms/:roomId/messages", async (c) => {
           senderMemberId: target.id,
           messageType: "approval_result",
           content: `${target.displayName} cannot start because the owner is offline.`,
+          attachments: [],
           replyToMessageId: message.id,
           createdAt: resolvedAt,
         };
@@ -217,6 +303,7 @@ messageRoutes.post("/api/rooms/:roomId/messages", async (c) => {
         agentMemberId: target.id,
         triggerMessageId: message.id,
         status: "pending",
+        grantDuration: "once",
         createdAt: now(),
         resolvedAt: null,
       };
@@ -246,6 +333,7 @@ messageRoutes.post("/api/rooms/:roomId/messages", async (c) => {
         senderMemberId: target.id,
         messageType: "approval_request",
         content: `${target.displayName} is waiting for owner approval.`,
+        attachments: [],
         replyToMessageId: message.id,
         createdAt: now(),
       };

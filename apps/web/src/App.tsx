@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type UIEvent } from "react";
 
 import type {
+  ApprovalGrantDuration,
+  MessageAttachment,
   PublicApproval,
   PublicMessage,
   PublicMember,
@@ -45,6 +47,9 @@ type MentionSuggestion = {
   roleLabel: string;
 };
 
+const MAX_ATTACHMENT_SIZE_BYTES = 5 * 1024 * 1024;
+const MAX_ATTACHMENT_COUNT = 8;
+
 function mentionSignature(mention: { start: number; query: string } | null): string {
   return mention ? `${mention.start}:${mention.query}` : "";
 }
@@ -54,6 +59,14 @@ const demoAgentArgs = [
   "-e",
   "let input='';process.stdin.on('data',c=>input+=c);process.stdin.on('end',async()=>{const lines=input.trim().split('\\n').filter(Boolean);const tail=lines.at(-1) ?? 'ready';const reply=`Tavern demo agent: ${tail}`;for (const chunk of [reply.slice(0, 18), reply.slice(18)]) { if (!chunk) continue; process.stdout.write(chunk); await new Promise(r=>setTimeout(r,120)); }});",
 ].join("\n");
+
+const approvalGrantOptions: Array<{ value: ApprovalGrantDuration; label: string }> = [
+  { value: "once", label: "仅一次" },
+  { value: "10_minutes", label: "10分钟内有效" },
+  { value: "30_minutes", label: "30分钟内有效" },
+  { value: "1_hour", label: "1小时内有效" },
+  { value: "forever", label: "永久有效" },
+];
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -112,6 +125,22 @@ function roleLabel(member: Pick<PublicMember, "type" | "roleKind">): string {
   return member.roleKind === "assistant" ? "assistant" : "agent";
 }
 
+function formatFileSize(sizeBytes: number): string {
+  if (sizeBytes < 1024) {
+    return `${sizeBytes} B`;
+  }
+
+  if (sizeBytes < 1024 * 1024) {
+    return `${(sizeBytes / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function isImageAttachment(attachment: MessageAttachment): boolean {
+  return /^(image\/png|image\/jpeg|image\/webp|image\/gif)$/.test(attachment.mimeType);
+}
+
 function runtimeLabel(member: PublicMember): string | null {
   switch (member.runtimeStatus) {
     case "ready":
@@ -160,6 +189,7 @@ function App() {
   const [nickname, setNickname] = useState("Alice");
   const [inviteInput, setInviteInput] = useState("");
   const [messageInput, setMessageInput] = useState("");
+  const [pendingAttachments, setPendingAttachments] = useState<MessageAttachment[]>([]);
   const [agentName, setAgentName] = useState("BackendDev");
   const [agentRoleKind, setAgentRoleKind] = useState<"independent" | "assistant">(
     "independent",
@@ -181,7 +211,9 @@ function App() {
   const [flashText, setFlashText] = useState("");
   const [errorText, setErrorText] = useState("");
   const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [isPreparingAttachments, setIsPreparingAttachments] = useState(false);
   const [approvalActionId, setApprovalActionId] = useState("");
+  const [approvalGrantById, setApprovalGrantById] = useState<Record<string, ApprovalGrantDuration>>({});
   const [isCopyingRoomInvite, setIsCopyingRoomInvite] = useState(false);
   const [isCopyingAssistantInvite, setIsCopyingAssistantInvite] = useState(false);
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
@@ -192,6 +224,7 @@ function App() {
   const sessionActorsRef = useRef<Record<string, SessionActor>>({});
   const messageStreamRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const autoScrollRef = useRef(true);
 
   useEffect(() => {
@@ -439,7 +472,13 @@ function App() {
   }
 
   async function handleSendMessage(): Promise<void> {
-    if (!self || !messageInput.trim() || isSendingMessage) {
+    const trimmedMessage = messageInput.trim();
+
+    if (!self || isSendingMessage || isPreparingAttachments) {
+      return;
+    }
+
+    if (!trimmedMessage && pendingAttachments.length === 0) {
       return;
     }
 
@@ -452,15 +491,118 @@ function App() {
         body: JSON.stringify({
           senderMemberId: self.memberId,
           wsToken: self.wsToken,
-          content: messageInput,
+          content: trimmedMessage,
+          attachmentIds: pendingAttachments.map((attachment) => attachment.id),
         }),
       });
       setMessageInput("");
+      setPendingAttachments([]);
       setComposerCaret(0);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : "failed to send message");
     } finally {
       setIsSendingMessage(false);
+    }
+  }
+
+  async function handleComposerFileChange(files: FileList | null): Promise<void> {
+    if (!files || files.length === 0) {
+      return;
+    }
+
+    const selectedFiles = Array.from(files);
+    const remainingSlots = MAX_ATTACHMENT_COUNT - pendingAttachments.length;
+
+    if (remainingSlots <= 0) {
+      setErrorText(`up to ${MAX_ATTACHMENT_COUNT} attachments are allowed per message`);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      return;
+    }
+
+    const acceptedFiles = selectedFiles.slice(0, remainingSlots);
+    const oversizedFile = acceptedFiles.find((file) => file.size > MAX_ATTACHMENT_SIZE_BYTES);
+
+    if (oversizedFile) {
+      setErrorText(
+        `${oversizedFile.name} exceeds ${formatFileSize(MAX_ATTACHMENT_SIZE_BYTES)} per file`,
+      );
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      return;
+    }
+
+    setErrorText("");
+    setIsPreparingAttachments(true);
+
+    try {
+      const formData = new FormData();
+      formData.set("senderMemberId", self?.memberId ?? "");
+      formData.set("wsToken", self?.wsToken ?? "");
+
+      for (const file of acceptedFiles) {
+        formData.append("files", file);
+      }
+
+      const response = await fetch(`/api/rooms/${self?.roomId ?? ""}/attachments`, {
+        method: "POST",
+        body: formData,
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | MessageAttachment[]
+        | { error?: string }
+        | null;
+
+      if (!response.ok) {
+        throw new Error(
+          payload && typeof payload === "object" && "error" in payload && payload.error
+            ? payload.error
+            : "failed to upload attachments",
+        );
+      }
+
+      const nextAttachments = payload as MessageAttachment[];
+
+      setPendingAttachments((current) => [...current, ...nextAttachments]);
+
+      if (selectedFiles.length > remainingSlots) {
+        setFlashText(`Only the first ${remainingSlots} attachments were added`);
+      }
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : "failed to read attachments");
+    } finally {
+      setIsPreparingAttachments(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  }
+
+  async function removePendingAttachment(attachmentId: string): Promise<void> {
+    if (!self) {
+      return;
+    }
+
+    setErrorText("");
+
+    try {
+      await request<{ ok: true }>(`/api/rooms/${self.roomId}/attachments/${attachmentId}`, {
+        method: "DELETE",
+        body: JSON.stringify({
+          senderMemberId: self.memberId,
+          wsToken: self.wsToken,
+        }),
+      });
+      setPendingAttachments((current) =>
+        current.filter((attachment) => attachment.id !== attachmentId),
+      );
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : "failed to remove attachment");
     }
   }
 
@@ -586,6 +728,8 @@ function App() {
         body: JSON.stringify({
           actorMemberId: self.memberId,
           wsToken: self.wsToken,
+          grantDuration:
+            action === "approve" ? (approvalGrantById[approvalId] ?? "once") : undefined,
         }),
       });
       setFlashText(action === "approve" ? "Approval granted" : "Approval rejected");
@@ -604,6 +748,7 @@ function App() {
       senderMemberId: stream.agentMemberId,
       messageType: "agent_text" as const,
       content: `${stream.content}▌`,
+      attachments: [],
       replyToMessageId: null,
       createdAt: new Date().toISOString(),
     })),
@@ -962,7 +1107,35 @@ function App() {
                       <span>{formatTime(message.createdAt)}</span>
                     </header>
                     <div className={bubbleClassName}>
-                      <p>{message.content}</p>
+                      {message.content ? <p>{message.content}</p> : null}
+                      {message.attachments.length > 0 ? (
+                        <div className="message-attachments">
+                          {message.attachments.map((attachment) => (
+                            <a
+                              key={attachment.id}
+                              className="message-attachment"
+                              href={attachment.url}
+                              download={attachment.name}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              {isImageAttachment(attachment) ? (
+                                <img
+                                  src={attachment.url}
+                                  alt={attachment.name}
+                                  className="message-attachment-preview"
+                                />
+                              ) : (
+                                <span className="message-attachment-icon">FILE</span>
+                              )}
+                              <span className="message-attachment-copy">
+                                <strong>{attachment.name}</strong>
+                                <span>{formatFileSize(attachment.sizeBytes)}</span>
+                              </span>
+                            </a>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                   </article>
                 );
@@ -989,6 +1162,49 @@ function App() {
                   ))}
                 </div>
               ) : null}
+              {pendingAttachments.length > 0 ? (
+                <div className="pending-attachments">
+                  {pendingAttachments.map((attachment) => (
+                    <div key={attachment.id} className="pending-attachment-chip">
+                      <div className="pending-attachment-copy">
+                        <strong>{attachment.name}</strong>
+                        <span>{formatFileSize(attachment.sizeBytes)}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="pending-attachment-remove"
+                        onClick={() => {
+                          void removePendingAttachment(attachment.id);
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              <div className="composer-actions">
+                <input
+                  ref={fileInputRef}
+                  className="composer-file-input"
+                  type="file"
+                  multiple
+                  onChange={(event) => {
+                    void handleComposerFileChange(event.target.files);
+                  }}
+                />
+                <button
+                  type="button"
+                  className="ghost-button"
+                  disabled={!self || isPreparingAttachments}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {isPreparingAttachments ? "Reading files..." : "Add attachments"}
+                </button>
+                <span className="composer-hint">
+                  Up to {MAX_ATTACHMENT_COUNT} files, {formatFileSize(MAX_ATTACHMENT_SIZE_BYTES)} each
+                </span>
+              </div>
               <textarea
                 ref={composerRef}
                 rows={3}
@@ -1008,8 +1224,16 @@ function App() {
                 onSelect={syncComposerCaret}
                 placeholder="Type a message, for example: @BackendDev 帮我看一下"
               />
-              <button onClick={handleSendMessage} disabled={!self || !messageInput.trim() || isSendingMessage}>
-                Send
+              <button
+                onClick={handleSendMessage}
+                disabled={
+                  !self ||
+                  isSendingMessage ||
+                  isPreparingAttachments ||
+                  (!messageInput.trim() && pendingAttachments.length === 0)
+                }
+              >
+                {isSendingMessage ? "Sending..." : "Send"}
               </button>
             </div>
           </section>
@@ -1072,6 +1296,22 @@ function App() {
                         <p>Owner: {owner?.displayName ?? approval.ownerMemberId}</p>
                       </div>
                       <div className="approval-actions">
+                        <select
+                          value={approvalGrantById[approval.id] ?? "once"}
+                          onChange={(event) =>
+                            setApprovalGrantById((current) => ({
+                              ...current,
+                              [approval.id]: event.target.value as ApprovalGrantDuration,
+                            }))
+                          }
+                          disabled={approval.ownerMemberId !== self?.memberId || approvalActionId === approval.id}
+                        >
+                          {approvalGrantOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
                         <button
                           onClick={() => handleApproval(approval.id, "approve")}
                           disabled={approval.ownerMemberId !== self?.memberId || approvalActionId === approval.id}

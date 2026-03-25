@@ -57,6 +57,20 @@
       "when": 1774422071168,
       "tag": "0007_aberrant_banshee",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1774429057596,
+      "tag": "0008_wild_anita_blake",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1774429200000,
+      "tag": "0009_calm_brood",
+      "breakpoints": true
     }
   ]
 }

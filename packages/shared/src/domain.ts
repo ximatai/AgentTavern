@@ -13,6 +13,14 @@ export type MessageType =
   | "approval_request"
   | "approval_result";
 
+export type MessageAttachment = {
+  id: string;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  url: string;
+};
+
 export type MentionStatus =
   | "detected"
   | "pending_approval"
@@ -31,6 +39,13 @@ export type AgentSessionStatus =
   | "cancelled";
 
 export type ApprovalStatus = "pending" | "approved" | "rejected" | "expired";
+
+export type ApprovalGrantDuration =
+  | "once"
+  | "10_minutes"
+  | "30_minutes"
+  | "1_hour"
+  | "forever";
 
 export type AgentBackendType = "local_process" | "codex_cli";
 
@@ -82,6 +97,7 @@ export type Message = {
   senderMemberId: string;
   messageType: MessageType;
   content: string;
+  attachments: MessageAttachment[];
   replyToMessageId: string | null;
   createdAt: string;
 };
@@ -103,8 +119,23 @@ export type Approval = {
   agentMemberId: string;
   triggerMessageId: string;
   status: ApprovalStatus;
+  grantDuration: ApprovalGrantDuration;
   createdAt: string;
   resolvedAt: string | null;
+};
+
+export type AgentAuthorization = {
+  id: string;
+  roomId: string;
+  ownerMemberId: string;
+  requesterMemberId: string;
+  agentMemberId: string;
+  grantDuration: ApprovalGrantDuration;
+  remainingUses: number | null;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type AgentSession = {

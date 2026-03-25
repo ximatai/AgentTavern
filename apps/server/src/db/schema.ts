@@ -58,6 +58,26 @@ export const messages = sqliteTable("messages", {
   createdAtIdx: index("messages_created_at_idx").on(table.createdAt),
 }));
 
+export const messageAttachments = sqliteTable("message_attachments", {
+  id: text("id").primaryKey(),
+  roomId: text("room_id")
+    .notNull()
+    .references(() => rooms.id),
+  uploaderMemberId: text("uploader_member_id")
+    .notNull()
+    .references(() => members.id),
+  messageId: text("message_id").references(() => messages.id),
+  storagePath: text("storage_path").notNull(),
+  originalName: text("original_name").notNull(),
+  mimeType: text("mime_type").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  createdAt: text("created_at").notNull(),
+}, (table) => ({
+  roomIdIdx: index("message_attachments_room_id_idx").on(table.roomId),
+  uploaderMemberIdIdx: index("message_attachments_uploader_member_id_idx").on(table.uploaderMemberId),
+  messageIdIdx: index("message_attachments_message_id_idx").on(table.messageId),
+}));
+
 export const mentions = sqliteTable("mentions", {
   id: text("id").primaryKey(),
   messageId: text("message_id")
@@ -92,6 +112,7 @@ export const approvals = sqliteTable("approvals", {
     .notNull()
     .references(() => messages.id),
   status: text("status").notNull(),
+  grantDuration: text("grant_duration").notNull().default("once"),
   createdAt: text("created_at").notNull(),
   resolvedAt: text("resolved_at"),
 }, (table) => ({
@@ -99,6 +120,40 @@ export const approvals = sqliteTable("approvals", {
   ownerMemberIdIdx: index("approvals_owner_member_id_idx").on(table.ownerMemberId),
   agentMemberIdIdx: index("approvals_agent_member_id_idx").on(table.agentMemberId),
   statusIdx: index("approvals_status_idx").on(table.status),
+}));
+
+export const agentAuthorizations = sqliteTable("agent_authorizations", {
+  id: text("id").primaryKey(),
+  roomId: text("room_id")
+    .notNull()
+    .references(() => rooms.id),
+  ownerMemberId: text("owner_member_id")
+    .notNull()
+    .references(() => members.id),
+  requesterMemberId: text("requester_member_id")
+    .notNull()
+    .references(() => members.id),
+  agentMemberId: text("agent_member_id")
+    .notNull()
+    .references(() => members.id),
+  grantDuration: text("grant_duration").notNull(),
+  remainingUses: integer("remaining_uses"),
+  expiresAt: text("expires_at"),
+  revokedAt: text("revoked_at"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => ({
+  roomIdIdx: index("agent_authorizations_room_id_idx").on(table.roomId),
+  ownerMemberIdIdx: index("agent_authorizations_owner_member_id_idx").on(table.ownerMemberId),
+  requesterMemberIdIdx: index("agent_authorizations_requester_member_id_idx").on(table.requesterMemberId),
+  agentMemberIdIdx: index("agent_authorizations_agent_member_id_idx").on(table.agentMemberId),
+  activeTupleIdx: index("agent_authorizations_active_tuple_idx").on(
+    table.roomId,
+    table.ownerMemberId,
+    table.requesterMemberId,
+    table.agentMemberId,
+    table.revokedAt,
+  ),
 }));
 
 export const agentSessions = sqliteTable("agent_sessions", {

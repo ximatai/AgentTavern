@@ -1,6 +1,8 @@
 import type {
+  ApprovalGrantDuration,
   AgentRoleKind,
   ApprovalStatus,
+  MessageAttachment,
   MemberType,
   MessageType,
   PresenceStatus,
@@ -26,6 +28,7 @@ export type PublicMessage = {
   senderMemberId: string;
   messageType: MessageType;
   content: string;
+  attachments: MessageAttachment[];
   replyToMessageId: string | null;
   createdAt: string;
 };
@@ -38,6 +41,7 @@ export type PublicApproval = {
   agentMemberId: string;
   triggerMessageId: string;
   status: ApprovalStatus;
+  grantDuration: ApprovalGrantDuration;
   createdAt: string;
   resolvedAt: string | null;
 };

@@ -19,4 +19,4 @@ const sqlite = new Database(databasePath);
 sqlite.pragma("journal_mode = WAL");
 
 export const db = drizzle(sqlite);
-export { sqlite };
+export { dataDir, databasePath, sqlite };

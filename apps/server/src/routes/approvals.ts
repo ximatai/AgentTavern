@@ -13,8 +13,10 @@ import {
   clearApprovalTimeout,
   createApprovalResolvedEvent,
   createMessageCreatedEvent,
+  isApprovalGrantDuration,
   markMentionStatus,
   now,
+  upsertAuthorization,
 } from "./support";
 
 const approvalRoutes = new Hono();
@@ -24,16 +26,24 @@ approvalRoutes.post("/api/approvals/:approvalId/approve", async (c) => {
   const actorMemberId =
     typeof body?.actorMemberId === "string" ? body.actorMemberId.trim() : "";
   const wsToken = typeof body?.wsToken === "string" ? body.wsToken.trim() : "";
+  const grantDurationProvided = Object.prototype.hasOwnProperty.call(body ?? {}, "grantDuration");
+  const grantDuration = grantDurationProvided
+    ? body?.grantDuration
+    : "once";
 
   if (!actorMemberId || !wsToken) {
     return c.json({ error: "actorMemberId and wsToken are required" }, 400);
+  }
+
+  if (!isApprovalGrantDuration(grantDuration)) {
+    return c.json({ error: "invalid grantDuration" }, 400);
   }
 
   const approval = db
     .select()
     .from(approvals)
     .where(eq(approvals.id, c.req.param("approvalId")))
-    .get();
+    .get() as Approval | undefined;
 
   if (!approval) {
     return c.json({ error: "approval not found" }, 404);
@@ -54,6 +64,7 @@ approvalRoutes.post("/api/approvals/:approvalId/approve", async (c) => {
   const resolvedApproval: Approval = {
     ...approval,
     status: "approved",
+    grantDuration,
     resolvedAt: now(),
   };
   clearApprovalTimeout(approval.id);
@@ -62,6 +73,7 @@ approvalRoutes.post("/api/approvals/:approvalId/approve", async (c) => {
     .update(approvals)
     .set({
       status: resolvedApproval.status,
+      grantDuration: resolvedApproval.grantDuration,
       resolvedAt: resolvedApproval.resolvedAt,
     })
     .where(eq(approvals.id, approval.id))
@@ -82,6 +94,14 @@ approvalRoutes.post("/api/approvals/:approvalId/approve", async (c) => {
     status: "approved",
   });
 
+  upsertAuthorization({
+    roomId: approval.roomId,
+    ownerMemberId: approval.ownerMemberId,
+    requesterMemberId: approval.requesterMemberId,
+    agentMemberId: approval.agentMemberId,
+    grantDuration,
+  });
+
   const session = db
     .select()
     .from(agentSessions)
@@ -95,7 +115,8 @@ approvalRoutes.post("/api/approvals/:approvalId/approve", async (c) => {
     roomId: approval.roomId,
     senderMemberId: approval.agentMemberId,
     messageType: "approval_result",
-    content: `Approval granted for ${approval.agentMemberId}.`,
+    content: `Approval granted for ${approval.agentMemberId} (${grantDuration}).`,
+    attachments: [],
     replyToMessageId: approval.triggerMessageId,
     createdAt: now(),
   };
@@ -124,7 +145,7 @@ approvalRoutes.post("/api/approvals/:approvalId/reject", async (c) => {
     .select()
     .from(approvals)
     .where(eq(approvals.id, c.req.param("approvalId")))
-    .get();
+    .get() as Approval | undefined;
 
   if (!approval) {
     return c.json({ error: "approval not found" }, 404);
@@ -181,6 +202,7 @@ approvalRoutes.post("/api/approvals/:approvalId/reject", async (c) => {
     senderMemberId: approval.agentMemberId,
     messageType: "approval_result",
     content: `Approval rejected for ${approval.agentMemberId}.`,
+    attachments: [],
     replyToMessageId: approval.triggerMessageId,
     createdAt: now(),
   };

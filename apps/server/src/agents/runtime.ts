@@ -139,7 +139,10 @@ function toMessage(row: {
   replyToMessageId: string | null;
   createdAt: string;
 }): Message {
-  return row as Message;
+  return {
+    ...row,
+    attachments: [],
+  } as Message;
 }
 
 function toAgentSession(row: {
@@ -251,6 +254,7 @@ function createBridgePendingMessage(params: {
     senderMemberId: params.agentMemberId,
     messageType: "system_notice",
     content: `${params.agentDisplayName} is waiting for its local bridge to reconnect.`,
+    attachments: [],
     replyToMessageId: params.triggerMessageId,
     createdAt: now(),
   };

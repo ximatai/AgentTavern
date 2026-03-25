@@ -31,6 +31,7 @@ export function toPublicMessage(message: Message): PublicMessage {
     senderMemberId: message.senderMemberId,
     messageType: message.messageType,
     content: message.content,
+    attachments: message.attachments,
     replyToMessageId: message.replyToMessageId,
     createdAt: message.createdAt,
   };
@@ -45,6 +46,7 @@ export function toPublicApproval(approval: Approval): PublicApproval {
     agentMemberId: approval.agentMemberId,
     triggerMessageId: approval.triggerMessageId,
     status: approval.status,
+    grantDuration: approval.grantDuration,
     createdAt: approval.createdAt,
     resolvedAt: approval.resolvedAt,
   };

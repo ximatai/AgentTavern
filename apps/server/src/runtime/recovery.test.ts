@@ -101,6 +101,7 @@ test("recoverRuntimeState expires pending approvals and rejects waiting sessions
     agentMemberId: "mem_agent",
     triggerMessageId: "msg_trigger",
     status: "pending",
+    grantDuration: "once",
     createdAt,
     resolvedAt: null,
   }).run();

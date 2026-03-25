@@ -39,8 +39,10 @@ const {
   agentSessions,
   agentBindings,
   assistantInvites,
+  agentAuthorizations,
   bridgeTasks,
   localBridges,
+  messageAttachments,
 } = schema;
 const { createInviteToken } = ids;
 const { issueWsToken, registerSocket } = realtime;
@@ -122,6 +124,142 @@ test("joining the same room twice with the same nickname returns 409", async () 
   assert.deepEqual(await secondResponse.json(), {
     error: "displayName already exists in room",
   });
+});
+
+test("uploads draft attachments and sends an attachment-only message", async () => {
+  const roomId = "room_message_attachments";
+  const createdAt = new Date("2026-03-25T00:30:00.000Z").toISOString();
+
+  seedRoom({
+    roomId,
+    name: "Attachment Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(members).values({
+    id: "mem_attachment_sender",
+    roomId,
+    type: "human",
+    roleKind: "none",
+    displayName: "AttachmentSender",
+    ownerMemberId: null,
+    adapterType: null,
+    adapterConfig: null,
+    presenceStatus: "online",
+    createdAt,
+  }).run();
+
+  const wsToken = issueWsToken("mem_attachment_sender", roomId);
+  const formData = new FormData();
+  formData.set("senderMemberId", "mem_attachment_sender");
+  formData.set("wsToken", wsToken);
+  formData.append("files", new File(["alpha"], "alpha.txt", { type: "text/plain" }));
+  formData.append("files", new File(["beta"], "beta.png", { type: "image/png" }));
+
+  const uploadResponse = await app.request(`http://localhost/api/rooms/${roomId}/attachments`, {
+    method: "POST",
+    body: formData,
+  });
+
+  assert.equal(uploadResponse.status, 201);
+  const uploaded = (await uploadResponse.json()) as Array<{
+    id: string;
+    name: string;
+    mimeType: string;
+    sizeBytes: number;
+    url: string;
+  }>;
+  assert.equal(uploaded.length, 2);
+  assert.match(uploaded[0]!.url, /^\/api\/attachments\/.+\/content$/);
+
+  const messageResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_attachment_sender",
+      wsToken,
+      content: "",
+      attachmentIds: uploaded.map((attachment) => attachment.id),
+    }),
+  });
+
+  assert.equal(messageResponse.status, 201);
+  const createdMessage = (await messageResponse.json()) as {
+    id: string;
+    content: string;
+    attachments: Array<{ id: string; name: string; url: string }>;
+  };
+  assert.equal(createdMessage.content, "");
+  assert.equal(createdMessage.attachments.length, 2);
+
+  const roomMessages = await app.request(`http://localhost/api/rooms/${roomId}/messages`);
+  const listedMessages = (await roomMessages.json()) as Array<{
+    id: string;
+    attachments: Array<{ id: string }>;
+  }>;
+  assert.equal(listedMessages.length, 1);
+  assert.deepEqual(
+    listedMessages[0]?.attachments.map((attachment) => attachment.id).sort(),
+    uploaded.map((attachment) => attachment.id).sort(),
+  );
+
+  const storedAttachments = db
+    .select()
+    .from(messageAttachments)
+    .where(eq(messageAttachments.roomId, roomId))
+    .all();
+  assert.equal(storedAttachments.length, 2);
+  assert.ok(storedAttachments.every((attachment) => attachment.messageId === createdMessage.id));
+
+  const contentResponse = await app.request(`http://localhost${uploaded[1]!.url}`);
+  assert.equal(contentResponse.status, 200);
+  assert.equal(contentResponse.headers.get("content-type"), "image/png");
+});
+
+test("rejects oversized attachment uploads on the server", async () => {
+  const roomId = "room_attachment_limits";
+  const createdAt = new Date("2026-03-25T00:40:00.000Z").toISOString();
+
+  seedRoom({
+    roomId,
+    name: "Attachment Limits Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(members).values({
+    id: "mem_attachment_limits",
+    roomId,
+    type: "human",
+    roleKind: "none",
+    displayName: "AttachmentLimits",
+    ownerMemberId: null,
+    adapterType: null,
+    adapterConfig: null,
+    presenceStatus: "online",
+    createdAt,
+  }).run();
+
+  const wsToken = issueWsToken("mem_attachment_limits", roomId);
+  const oversized = "x".repeat(5 * 1024 * 1024 + 1);
+  const formData = new FormData();
+  formData.set("senderMemberId", "mem_attachment_limits");
+  formData.set("wsToken", wsToken);
+  formData.append(
+    "files",
+    new File([oversized], "too-large.bin", { type: "application/octet-stream" }),
+  );
+
+  const response = await app.request(`http://localhost/api/rooms/${roomId}/attachments`, {
+    method: "POST",
+    body: formData,
+  });
+
+  assert.equal(response.status, 400);
+  assert.match((await response.json() as { error: string }).error, /exceeds/i);
+  assert.equal(
+    db.select().from(messageAttachments).where(eq(messageAttachments.roomId, roomId)).all().length,
+    0,
+  );
 });
 
 test("mentioning an assistant while the owner is offline expires approval flow", async () => {
@@ -330,6 +468,402 @@ test("approving an assistant request updates approval, session and mention state
         /approved agent:/i.test(message.content),
     ),
   );
+
+  closeOwnerSocket();
+});
+
+test("timed authorization lets the requester reuse the same assistant without a second approval", async () => {
+  const roomId = "room_authorization_window";
+  const createdAt = new Date("2026-03-25T02:30:00.000Z").toISOString();
+
+  seedRoom({
+    roomId,
+    name: "Authorization Window Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(members).values([
+    {
+      id: "mem_requester_auth_window",
+      roomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "RequesterWindow",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_owner_auth_window",
+      roomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "OwnerWindow",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_assistant_auth_window",
+      roomId,
+      type: "agent",
+      roleKind: "assistant",
+      displayName: "AssistWindow",
+      ownerMemberId: "mem_owner_auth_window",
+      adapterType: "local_process",
+      adapterConfig: JSON.stringify({
+        command: "node",
+        args: [
+          "-e",
+          "process.stdin.setEncoding('utf8');let text='';process.stdin.on('data',chunk=>text+=chunk);process.stdin.on('end',()=>process.stdout.write('window agent:' + text.trim()));",
+        ],
+        inputFormat: "text",
+      }),
+      presenceStatus: "online",
+      createdAt,
+    },
+  ]).run();
+
+  const requesterToken = issueWsToken("mem_requester_auth_window", roomId);
+  const ownerToken = issueWsToken("mem_owner_auth_window", roomId);
+  const closeOwnerSocket = markMemberOnline("mem_owner_auth_window", roomId, ownerToken);
+
+  const firstResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_requester_auth_window",
+      wsToken: requesterToken,
+      content: "@AssistWindow first pass",
+    }),
+  });
+
+  assert.equal(firstResponse.status, 201);
+
+  const pendingApproval = db
+    .select()
+    .from(approvals)
+    .where(eq(approvals.roomId, roomId))
+    .get();
+
+  assert.equal(pendingApproval?.status, "pending");
+
+  const approveResponse = await app.request(
+    `http://localhost/api/approvals/${pendingApproval?.id}/approve`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        actorMemberId: "mem_owner_auth_window",
+        wsToken: ownerToken,
+        grantDuration: "10_minutes",
+      }),
+    },
+  );
+
+  assert.equal(approveResponse.status, 200);
+
+  await waitFor(
+    () =>
+      db
+        .select()
+        .from(agentSessions)
+        .where(eq(agentSessions.roomId, roomId))
+        .all(),
+    (value) => value.filter((session) => session.status === "completed").length >= 1,
+  );
+
+  closeOwnerSocket();
+
+  const secondResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_requester_auth_window",
+      wsToken: requesterToken,
+      content: "@AssistWindow second pass",
+    }),
+  });
+
+  assert.equal(secondResponse.status, 201);
+
+  const sessions = await waitFor(
+    () =>
+      db
+        .select()
+        .from(agentSessions)
+        .where(eq(agentSessions.roomId, roomId))
+        .all(),
+    (value) => value.filter((session) => session.status === "completed").length >= 2,
+  );
+  const activeApprovalCount = db
+    .select()
+    .from(approvals)
+    .where(eq(approvals.roomId, roomId))
+    .all().length;
+  const authorization = db
+    .select()
+    .from(agentAuthorizations)
+    .where(eq(agentAuthorizations.roomId, roomId))
+    .get();
+
+  assert.equal(activeApprovalCount, 1);
+  assert.equal(sessions.length, 2);
+  assert.equal(authorization?.grantDuration, "10_minutes");
+  assert.equal(authorization?.remainingUses, null);
+});
+
+test("single-use authorization is consumed after one reuse", async () => {
+  const roomId = "room_authorization_once";
+  const createdAt = new Date("2026-03-25T02:45:00.000Z").toISOString();
+
+  seedRoom({
+    roomId,
+    name: "Authorization Once Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(members).values([
+    {
+      id: "mem_requester_auth_once",
+      roomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "RequesterOnce",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_owner_auth_once",
+      roomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "OwnerOnce",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_assistant_auth_once",
+      roomId,
+      type: "agent",
+      roleKind: "assistant",
+      displayName: "AssistOnce",
+      ownerMemberId: "mem_owner_auth_once",
+      adapterType: "local_process",
+      adapterConfig: JSON.stringify({
+        command: "node",
+        args: [
+          "-e",
+          "process.stdin.setEncoding('utf8');let text='';process.stdin.on('data',chunk=>text+=chunk);process.stdin.on('end',()=>process.stdout.write('once agent:' + text.trim()));",
+        ],
+        inputFormat: "text",
+      }),
+      presenceStatus: "online",
+      createdAt,
+    },
+  ]).run();
+
+  const requesterToken = issueWsToken("mem_requester_auth_once", roomId);
+  const ownerToken = issueWsToken("mem_owner_auth_once", roomId);
+  const closeOwnerSocket = markMemberOnline("mem_owner_auth_once", roomId, ownerToken);
+
+  const firstResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_requester_auth_once",
+      wsToken: requesterToken,
+      content: "@AssistOnce first pass",
+    }),
+  });
+
+  assert.equal(firstResponse.status, 201);
+
+  const pendingApproval = db
+    .select()
+    .from(approvals)
+    .where(eq(approvals.roomId, roomId))
+    .get();
+
+  const approveResponse = await app.request(
+    `http://localhost/api/approvals/${pendingApproval?.id}/approve`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        actorMemberId: "mem_owner_auth_once",
+        wsToken: ownerToken,
+        grantDuration: "once",
+      }),
+    },
+  );
+
+  assert.equal(approveResponse.status, 200);
+
+  await waitFor(
+    () =>
+      db
+        .select()
+        .from(agentSessions)
+        .where(eq(agentSessions.roomId, roomId))
+        .all(),
+    (value) => value.filter((session) => session.status === "completed").length >= 1,
+  );
+
+  closeOwnerSocket();
+
+  const secondResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_requester_auth_once",
+      wsToken: requesterToken,
+      content: "@AssistOnce second pass",
+    }),
+  });
+
+  assert.equal(secondResponse.status, 201);
+
+  await waitFor(
+    () =>
+      db
+        .select()
+        .from(agentSessions)
+        .where(eq(agentSessions.roomId, roomId))
+        .all(),
+    (value) => value.filter((session) => session.status === "completed").length >= 2,
+  );
+
+  const thirdResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_requester_auth_once",
+      wsToken: requesterToken,
+      content: "@AssistOnce third pass",
+    }),
+  });
+
+  assert.equal(thirdResponse.status, 201);
+
+  const finalApproval = await waitFor(
+    () =>
+      db
+        .select()
+        .from(approvals)
+        .where(eq(approvals.roomId, roomId))
+        .all(),
+    (value) => value.length >= 2,
+  );
+  const authorization = db
+    .select()
+    .from(agentAuthorizations)
+    .where(eq(agentAuthorizations.roomId, roomId))
+    .get();
+
+  assert.equal(finalApproval.length, 2);
+  assert.equal(authorization?.remainingUses, 0);
+  assert.notEqual(authorization?.revokedAt, null);
+});
+
+test("approve returns 400 when grantDuration is invalid", async () => {
+  const roomId = "room_invalid_grant_duration";
+  const createdAt = new Date("2026-03-25T02:50:00.000Z").toISOString();
+
+  seedRoom({
+    roomId,
+    name: "Invalid Grant Duration Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(members).values([
+    {
+      id: "mem_requester_invalid_grant",
+      roomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "RequesterInvalidGrant",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_owner_invalid_grant",
+      roomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "OwnerInvalidGrant",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_assistant_invalid_grant",
+      roomId,
+      type: "agent",
+      roleKind: "assistant",
+      displayName: "AssistInvalidGrant",
+      ownerMemberId: "mem_owner_invalid_grant",
+      adapterType: "local_process",
+      adapterConfig: "{\"command\":\"node\"}",
+      presenceStatus: "online",
+      createdAt,
+    },
+  ]).run();
+
+  const requesterToken = issueWsToken("mem_requester_invalid_grant", roomId);
+  const ownerToken = issueWsToken("mem_owner_invalid_grant", roomId);
+  const closeOwnerSocket = markMemberOnline("mem_owner_invalid_grant", roomId, ownerToken);
+
+  const messageResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_requester_invalid_grant",
+      wsToken: requesterToken,
+      content: "@AssistInvalidGrant please help",
+    }),
+  });
+
+  assert.equal(messageResponse.status, 201);
+
+  const pendingApproval = db
+    .select()
+    .from(approvals)
+    .where(eq(approvals.roomId, roomId))
+    .get();
+
+  const approveResponse = await app.request(
+    `http://localhost/api/approvals/${pendingApproval?.id}/approve`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        actorMemberId: "mem_owner_invalid_grant",
+        wsToken: ownerToken,
+        grantDuration: "bad_value",
+      }),
+    },
+  );
+
+  assert.equal(approveResponse.status, 400);
+  assert.deepEqual(await approveResponse.json(), {
+    error: "invalid grantDuration",
+  });
 
   closeOwnerSocket();
 });
