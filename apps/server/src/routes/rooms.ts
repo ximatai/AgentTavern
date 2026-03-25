@@ -17,7 +17,7 @@ function createJoinEvent(roomId: string, member: Member): RealtimeEvent {
     type: "member.joined",
     roomId,
     timestamp: now(),
-    payload: { member: toPublicMember(member) },
+    payload: { member: toPublicMember(member, null) },
   };
 }
 

@@ -7,7 +7,10 @@ import type {
   PublicMessage,
 } from "@agent-tavern/shared";
 
-export function toPublicMember(member: Member): PublicMember {
+export function toPublicMember(
+  member: Member,
+  runtimeStatus: PublicMember["runtimeStatus"] = null,
+): PublicMember {
   return {
     id: member.id,
     roomId: member.roomId,
@@ -16,6 +19,7 @@ export function toPublicMember(member: Member): PublicMember {
     displayName: member.displayName,
     ownerMemberId: member.ownerMemberId,
     presenceStatus: member.presenceStatus,
+    runtimeStatus,
     createdAt: member.createdAt,
   };
 }

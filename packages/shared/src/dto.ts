@@ -6,6 +6,8 @@ import type {
   PresenceStatus,
 } from "./domain";
 
+export type PublicMemberRuntimeStatus = "ready" | "pending_bridge" | "waiting_bridge" | null;
+
 export type PublicMember = {
   id: string;
   roomId: string;
@@ -14,6 +16,7 @@ export type PublicMember = {
   displayName: string;
   ownerMemberId: string | null;
   presenceStatus: PresenceStatus;
+  runtimeStatus: PublicMemberRuntimeStatus;
   createdAt: string;
 };
 

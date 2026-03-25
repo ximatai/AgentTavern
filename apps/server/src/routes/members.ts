@@ -1,11 +1,12 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { Hono } from "hono";
 
 import type { Member, RealtimeEvent } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
-import { members, rooms } from "../db/schema";
+import { agentBindings, localBridges, members, rooms } from "../db/schema";
 import { createId } from "../lib/id";
+import { resolveMemberRuntimeStatus } from "../lib/member-runtime";
 import { toPublicMember } from "../lib/public";
 import { broadcastToRoom, verifyWsToken } from "../realtime";
 import { isValidDisplayName, now } from "./support";
@@ -18,10 +19,32 @@ memberRoutes.get("/api/rooms/:roomId/members", (c) => {
     .select()
     .from(members)
     .where(eq(members.roomId, roomId))
-    .all()
-    .map((member) => toPublicMember(member as Member));
+    .all();
+  const memberIds = roomMembers.map((member) => member.id);
+  const bindings = memberIds.length
+    ? db
+        .select()
+        .from(agentBindings)
+        .where(inArray(agentBindings.memberId, memberIds))
+        .all()
+    : [];
+  const bindingByMemberId = new Map(bindings.map((binding) => [binding.memberId, binding]));
+  const bridgeIds = [...new Set(bindings.map((binding) => binding.bridgeId).filter(Boolean))] as string[];
+  const bridges = bridgeIds.length
+    ? db.select().from(localBridges).where(inArray(localBridges.id, bridgeIds)).all()
+    : [];
+  const bridgeById = new Map(bridges.map((bridge) => [bridge.id, bridge]));
+  const publicMembers = roomMembers.map((member) => {
+    const binding = bindingByMemberId.get(member.id) ?? null;
+    const bridge = binding?.bridgeId ? bridgeById.get(binding.bridgeId) ?? null : null;
 
-  return c.json(roomMembers);
+    return toPublicMember(
+      member as Member,
+      resolveMemberRuntimeStatus(member, binding, bridge),
+    );
+  });
+
+  return c.json(publicMembers);
 });
 
 memberRoutes.post("/api/rooms/:roomId/members/agents", async (c) => {
@@ -134,12 +157,12 @@ memberRoutes.post("/api/rooms/:roomId/members/agents", async (c) => {
     type: "member.joined",
     roomId,
     timestamp: now(),
-    payload: { member: toPublicMember(member) },
+    payload: { member: toPublicMember(member, "ready") },
   };
 
   broadcastToRoom(roomId, event);
 
-  return c.json(toPublicMember(member), 201);
+  return c.json(toPublicMember(member, "ready"), 201);
 });
 
 export { memberRoutes };

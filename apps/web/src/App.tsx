@@ -112,6 +112,19 @@ function roleLabel(member: Pick<PublicMember, "type" | "roleKind">): string {
   return member.roleKind === "assistant" ? "assistant" : "agent";
 }
 
+function runtimeLabel(member: PublicMember): string | null {
+  switch (member.runtimeStatus) {
+    case "ready":
+      return "connected";
+    case "pending_bridge":
+      return "pending bridge";
+    case "waiting_bridge":
+      return "waiting bridge";
+    default:
+      return null;
+  }
+}
+
 function getMentionQuery(
   input: string,
   caretIndex: number,
@@ -233,6 +246,26 @@ function App() {
       socketRef.current?.close();
     };
   }, []);
+
+  useEffect(() => {
+    if (!room?.id) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void request<PublicMember[]>(`/api/rooms/${room.id}/members`)
+        .then((nextMembers) => {
+          setMembers(nextMembers);
+        })
+        .catch(() => {
+          // Keep the current snapshot until the next successful refresh.
+        });
+    }, 10_000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [room?.id]);
 
   async function hydrateRoomState(nextRoomId: string): Promise<void> {
     const [nextRoom, nextMembers, nextMessages] = await Promise.all([
@@ -1000,6 +1033,13 @@ function App() {
                         <div className="presence-title">
                           <strong>{member.displayName}</strong>
                           <span className="agent-pill">{roleLabel(member)}</span>
+                          {runtimeLabel(member) ? (
+                            <span
+                              className={`presence-runtime-pill presence-runtime-pill-${member.runtimeStatus}`}
+                            >
+                              {runtimeLabel(member)}
+                            </span>
+                          ) : null}
                         </div>
                         <p>
                           {owner ? `Owner ${owner.displayName}` : "Independent member"}

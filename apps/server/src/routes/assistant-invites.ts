@@ -228,7 +228,7 @@ assistantInviteRoutes.post("/api/assistant-invites/:inviteToken/accept", async (
     type: "member.joined",
     roomId: member.roomId,
     timestamp: now(),
-    payload: { member: toPublicMember(member) },
+    payload: { member: toPublicMember(member, binding.status === "pending_bridge" ? "pending_bridge" : "ready") },
   };
 
   broadcastToRoom(member.roomId, event);

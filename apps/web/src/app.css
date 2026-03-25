@@ -541,6 +541,7 @@ textarea {
 .presence-title {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 4px;
 }
@@ -552,6 +553,26 @@ textarea {
 .presence-copy p,
 .approval-card p {
   margin: 0.2rem 0 0;
+}
+
+.presence-runtime-pill {
+  padding: 0.16rem 0.46rem;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.presence-runtime-pill-ready {
+  background: rgba(0, 112, 60, 0.12);
+  color: #0c6a43;
+}
+
+.presence-runtime-pill-pending_bridge,
+.presence-runtime-pill-waiting_bridge {
+  background: rgba(179, 104, 0, 0.12);
+  color: #8a4f00;
 }
 
 .approval-card {
