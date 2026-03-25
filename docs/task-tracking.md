@@ -121,6 +121,7 @@
     - [x] 复测房间创建、bridge 启动、invite、attach、执行闭环
     - [x] 复测 owner 自调用 assistant
     - [x] 复测普通成员触发 assistant 审批
+    - [x] 明确 bridge 离线时的房间可见等待提示
   - [-] 补齐本地 Bridge 执行链路自动化验证
     - [x] 增加 Bridge 侧状态与任务处理测试
     - [x] 补一条端到端本地 Bridge 执行验证
