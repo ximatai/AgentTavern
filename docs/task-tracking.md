@@ -32,7 +32,7 @@
 
 - 收紧当前实现的稳定性边界
 - 补齐关键自动化验证
-- 为下一步继续接真实本地 Agent 和后续 UI 演进打稳基线
+- 为客户端本地 Agent Bridge 接入与后续 UI 演进打稳基线
 
 ## 3. Now
 
@@ -46,12 +46,13 @@
   - [x] 覆盖服务重启时待审批请求收口
   - [x] 覆盖独立 Agent 触发执行
   - [x] 完成独立 review
-  - [ ] 扩展 Codex thread 助理链路测试
 
-- [ ] `P1` Codex thread 助理链路补强
-  - [ ] 增加自动化验证
-  - [ ] 明确失败态与提示语
-  - [ ] 复核 thread 绑定后的可维护边界
+- [-] `P1` 客户端本地 Agent Bridge 设计
+  - [x] 明确“服务端只调度，不直接执行客户端本地 Agent”
+  - [x] 明确本地 Bridge / 服务端 / provider driver 三层边界
+  - [x] 明确 Codex 方向优先使用本地 Bridge + SDK thread/resume
+  - [x] 补充设计文档
+  - [x] 完成独立 review
 
 - [ ] `P1` 运行时状态进一步收敛
   - [ ] 评估 `wsToken` / 在线状态是否需要更强恢复策略
@@ -61,10 +62,14 @@
 
 紧接着进入的开发任务。
 
-- [ ] `P1` Codex thread 助理链路自动化验证
-  - [ ] 覆盖一次性助理邀请接受
-  - [ ] 覆盖 `backend_thread_id` 绑定
-  - [ ] 覆盖 `@thread assistant` 触发链路
+- [ ] `P1` 客户端本地 Agent Bridge 开发
+  - [ ] 定义 Bridge 注册与心跳协议
+  - [ ] 定义任务下发与结果回传协议
+  - [ ] 为 `AgentBinding` 增加 Bridge 归属信息
+  - [ ] 实现第一版本地 Bridge 进程
+  - [ ] 实现 Codex driver
+  - [ ] 将 Codex thread 助理链路切到本地 Bridge 执行
+  - [ ] 补齐本地 Bridge 执行链路自动化验证
 
 - [ ] `P1` 前端可用性补强
   - [ ] 自动滚动到底部
@@ -109,6 +114,7 @@
   - [x] 收敛第一批接口冲突与 mention 状态一致性
   - [x] 完成重启语义第一刀
   - [x] 完成服务端关键链路第一轮自动化验证
+  - [x] 完成客户端本地 Agent Bridge 第一版设计
   - [x] 收紧 Agent 执行与管理边界
   - [x] 拆分公开 DTO 与内部模型
   - [x] 扩展公开 DTO 覆盖范围

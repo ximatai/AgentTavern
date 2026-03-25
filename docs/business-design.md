@@ -186,6 +186,7 @@ AgentTavern 是一个面向局域网的多人房间聊天系统。
 - 对 Codex thread 来说，`backend_thread_id` 指向已有 thread
 - 第一版 `backend_thread_id` 全局唯一
 - 第一版一个 member 只允许一个活跃 binding
+- 长期目标中，binding 还需要归属到某个客户端本地 Bridge
 
 ## 3. 成员规则
 
@@ -243,6 +244,15 @@ MVP 规则：
 - 第一版一个房间内不允许重复绑定同一 `backend_thread_id`
 - 推荐通过 Codex skill 完成加入动作
 
+### 客户端本地执行边界
+
+- 本地 Agent 的长期执行位置应在用户自己的客户端设备上
+- 服务端只负责房间、审批、任务路由与广播
+- 服务端不应直接恢复用户本地 Codex thread
+- 本地 Bridge 负责在客户端恢复或启动 Agent
+- Codex thread 的长期目标执行方式为本地 Bridge + Codex SDK thread/resume
+- CLI 直连方案仅作为过渡实现，不作为长期边界
+
 ## 4. 触发与审批
 
 ### 触发规则
@@ -266,7 +276,7 @@ MVP 规则：
 - Agent 统一通过 adapter 接入
 - 第一版 adapter 类型为 `local_process`
 - 第一阶段优先接入本地 CLI Agent
-- 真实 Codex CLI 接入优先以已有 thread 绑定方式推进
+- Codex 的长期方向为客户端本地 Bridge 执行
 - 本地子进程需要可超时回收
 - Agent 输出以流式事件广播到房间
 - 最终输出固化为消息

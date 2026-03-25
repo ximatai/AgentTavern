@@ -6,8 +6,9 @@
 
 - HTTP 负责创建、查询、提交动作
 - WebSocket 负责房间实时事件广播
-- Agent 调用通过统一 adapter 接入
+- Agent 调用通过统一执行协议接入
 - 接口表达业务语义，不绑定前端形态
+- 服务端长期不直接执行客户端本地 Agent
 
 ## 2. HTTP 接口
 
@@ -159,6 +160,45 @@
 - 第一版一个房间内不允许重复绑定同一 `backendThreadId`
 - 接受动作适合封装为 Codex skill
 - 接受成功后创建 `members` 与 `agent_bindings`
+
+### 本地 Bridge
+
+当前已冻结的目标边界：
+
+- 服务端只负责任务路由与房间广播
+- 客户端本地 Agent 由本地 Bridge 执行
+- provider 特有的 thread/session 语义不直接暴露为全局领域模型
+
+建议补充的 Bridge 协议事件：
+
+- `bridge.register`
+- `bridge.heartbeat`
+- `bridge.agent.attached`
+- `bridge.agent.detached`
+- `task.assigned`
+- `task.accepted`
+- `task.delta`
+- `task.completed`
+- `task.failed`
+
+说明：
+
+- 以上为下一阶段设计方向
+- 具体字段以 `docs/local-bridge-design.md` 为准
+- 当前服务端内置 `local_process` 仍可作为过渡执行方案
+
+后续需要补充的 binding 信息：
+
+- `bridgeId`
+- `bridgeStatus`
+- `provider`
+- provider 私有 metadata
+
+规则：
+
+- `AgentBinding` 的长期目标需要归属到某个已注册的本地 Bridge
+- invite 接受成功后，可先创建 member 与基础 binding
+- bridge 真正接管执行后，再将 binding 关联到具体 `bridgeId`
 
 ### 运行时恢复
 
