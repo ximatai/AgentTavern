@@ -195,10 +195,11 @@ assistantInviteRoutes.post("/api/assistant-invites/:inviteToken/accept", async (
   const binding: AgentBinding = {
     id: createId("agb"),
     memberId: member.id,
+    bridgeId: null,
     backendType: inviteBackendType,
     backendThreadId,
     cwd: cwd || null,
-    status: "active",
+    status: inviteBackendType === "codex_cli" ? "pending_bridge" : "active",
     attachedAt: now(),
     detachedAt: null,
   };

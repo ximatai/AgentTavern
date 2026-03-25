@@ -37,6 +37,9 @@ const {
   mentions,
   approvals,
   agentSessions,
+  agentBindings,
+  bridgeTasks,
+  localBridges,
 } = schema;
 const { createInviteToken } = ids;
 const { issueWsToken, registerSocket } = realtime;
@@ -527,4 +530,614 @@ test("mentioning an independent agent triggers execution and commits a reply", a
         /independent agent:/i.test(message.content),
     ),
   );
+});
+
+test("bridge register creates a reusable bridge identity and heartbeat refreshes it", async () => {
+  const registerResponse = await app.request("http://localhost/api/bridges/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      bridgeName: "Alice Laptop",
+      platform: "macOS",
+      version: "0.1.0",
+      metadata: { providers: ["codex"] },
+    }),
+  });
+
+  assert.equal(registerResponse.status, 201);
+  const registered = await registerResponse.json();
+  assert.equal(typeof registered.bridgeId, "string");
+  assert.equal(typeof registered.bridgeToken, "string");
+
+  const storedBridge = db
+    .select()
+    .from(localBridges)
+    .where(eq(localBridges.id, registered.bridgeId))
+    .get();
+
+  assert.equal(storedBridge?.bridgeName, "Alice Laptop");
+  assert.equal(storedBridge?.status, "online");
+
+  const reconnectResponse = await app.request("http://localhost/api/bridges/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      bridgeId: registered.bridgeId,
+      bridgeToken: registered.bridgeToken,
+      bridgeName: "Alice Laptop",
+      platform: "macOS",
+      version: "0.1.1",
+      metadata: { providers: ["codex", "local_process"] },
+    }),
+  });
+
+  assert.equal(reconnectResponse.status, 200);
+  const reconnected = await reconnectResponse.json();
+  assert.equal(reconnected.bridgeId, registered.bridgeId);
+  assert.equal(reconnected.bridgeToken, registered.bridgeToken);
+
+  const heartbeatResponse = await app.request(
+    `http://localhost/api/bridges/${registered.bridgeId}/heartbeat`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: registered.bridgeToken,
+        metadata: { activeAgents: 2 },
+      }),
+    },
+  );
+
+  assert.equal(heartbeatResponse.status, 200);
+
+  const refreshedBridge = db
+    .select()
+    .from(localBridges)
+    .where(eq(localBridges.id, registered.bridgeId))
+    .get();
+
+  assert.equal(refreshedBridge?.version, "0.1.1");
+  assert.equal(refreshedBridge?.status, "online");
+  assert.match(refreshedBridge?.metadata ?? "", /activeAgents/);
+
+  const preserveHeartbeatResponse = await app.request(
+    `http://localhost/api/bridges/${registered.bridgeId}/heartbeat`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: registered.bridgeToken,
+      }),
+    },
+  );
+
+  assert.equal(preserveHeartbeatResponse.status, 200);
+
+  const preservedBridge = db
+    .select()
+    .from(localBridges)
+    .where(eq(localBridges.id, registered.bridgeId))
+    .get();
+
+  assert.match(preservedBridge?.metadata ?? "", /activeAgents/);
+});
+
+test("bridge can attach an existing agent binding by backendThreadId", async () => {
+  const originalAttachedAt = new Date("2026-03-25T05:00:00.000Z").toISOString();
+
+  db.insert(localBridges).values({
+    id: "brg_attach",
+    bridgeName: "Attach Bridge",
+    bridgeToken: "bridge_attach_token",
+    status: "online",
+    platform: "macOS",
+    version: "0.1.0",
+    metadata: null,
+    lastSeenAt: originalAttachedAt,
+    createdAt: originalAttachedAt,
+    updatedAt: originalAttachedAt,
+  }).run();
+
+  db.insert(rooms).values({
+    id: "room_attach_binding",
+    name: "Attach Binding Room",
+    inviteToken: createInviteToken(),
+    status: "active",
+    createdAt: originalAttachedAt,
+  }).run();
+
+  db.insert(members).values({
+    id: "mem_attach_agent",
+    roomId: "room_attach_binding",
+    type: "agent",
+    roleKind: "assistant",
+    displayName: "AttachAgent",
+    ownerMemberId: null,
+    adapterType: "codex_cli",
+    adapterConfig: null,
+    presenceStatus: "offline",
+    createdAt: originalAttachedAt,
+  }).run();
+
+  db.insert(agentBindings).values({
+    id: "agb_attach",
+    memberId: "mem_attach_agent",
+    bridgeId: null,
+    backendType: "codex_cli",
+    backendThreadId: "thread_attach",
+    cwd: null,
+    status: "pending_bridge",
+    attachedAt: originalAttachedAt,
+    detachedAt: null,
+  }).run();
+
+  const response = await app.request("http://localhost/api/bridges/brg_attach/agents/attach", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      bridgeToken: "bridge_attach_token",
+      backendThreadId: "thread_attach",
+      cwd: "/tmp/bridge-cwd",
+    }),
+  });
+
+  assert.equal(response.status, 200);
+
+  const binding = db
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.id, "agb_attach"))
+    .get();
+
+  assert.equal(binding?.bridgeId, "brg_attach");
+  assert.equal(binding?.cwd, "/tmp/bridge-cwd");
+  assert.equal(binding?.status, "active");
+  assert.notEqual(binding?.attachedAt, originalAttachedAt);
+});
+
+test("bridge attach returns 409 when the binding is already owned by another bridge", async () => {
+  const createdAt = new Date("2026-03-25T05:30:00.000Z").toISOString();
+
+  db.insert(localBridges).values([
+    {
+      id: "brg_attach_owner_a",
+      bridgeName: "Attach Owner A",
+      bridgeToken: "bridge_attach_owner_a_token",
+      status: "online",
+      platform: "macOS",
+      version: "0.1.0",
+      metadata: null,
+      lastSeenAt: createdAt,
+      createdAt,
+      updatedAt: createdAt,
+    },
+    {
+      id: "brg_attach_owner_b",
+      bridgeName: "Attach Owner B",
+      bridgeToken: "bridge_attach_owner_b_token",
+      status: "online",
+      platform: "macOS",
+      version: "0.1.0",
+      metadata: null,
+      lastSeenAt: createdAt,
+      createdAt,
+      updatedAt: createdAt,
+    },
+  ]).run();
+
+  db.insert(rooms).values({
+    id: "room_attach_owner_conflict",
+    name: "Attach Owner Conflict Room",
+    inviteToken: createInviteToken(),
+    status: "active",
+    createdAt,
+  }).run();
+
+  db.insert(members).values({
+    id: "mem_attach_owner_conflict",
+    roomId: "room_attach_owner_conflict",
+    type: "agent",
+    roleKind: "assistant",
+    displayName: "AttachOwnerConflict",
+    ownerMemberId: null,
+    adapterType: "codex_cli",
+    adapterConfig: null,
+    presenceStatus: "offline",
+    createdAt,
+  }).run();
+
+  db.insert(agentBindings).values({
+    id: "agb_attach_owner_conflict",
+    memberId: "mem_attach_owner_conflict",
+    bridgeId: "brg_attach_owner_a",
+    backendType: "codex_cli",
+    backendThreadId: "thread_attach_owner_conflict",
+    cwd: "/tmp/attach-owner-a",
+    status: "active",
+    attachedAt: createdAt,
+    detachedAt: null,
+  }).run();
+
+  const response = await app.request(
+    "http://localhost/api/bridges/brg_attach_owner_b/agents/attach",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_attach_owner_b_token",
+        backendThreadId: "thread_attach_owner_conflict",
+      }),
+    },
+  );
+
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), {
+    error: "agent binding already attached to another bridge",
+  });
+});
+
+test("unattached codex binding fails with a local bridge requirement message", async () => {
+  const roomId = "room_codex_requires_bridge";
+  const createdAt = new Date("2026-03-25T06:00:00.000Z").toISOString();
+
+  seedRoom({
+    roomId,
+    name: "Codex Bridge Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(members).values([
+    {
+      id: "mem_requester_codex",
+      roomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "RequesterCodex",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_codex_agent",
+      roomId,
+      type: "agent",
+      roleKind: "independent",
+      displayName: "CodexAgent",
+      ownerMemberId: null,
+      adapterType: "codex_cli",
+      adapterConfig: null,
+      presenceStatus: "offline",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(agentBindings).values({
+    id: "agb_codex_pending_bridge",
+    memberId: "mem_codex_agent",
+    bridgeId: null,
+    backendType: "codex_cli",
+    backendThreadId: "thread_codex_pending_bridge",
+    cwd: null,
+    status: "pending_bridge",
+    attachedAt: createdAt,
+    detachedAt: null,
+  }).run();
+
+  const requesterToken = issueWsToken("mem_requester_codex", roomId);
+  const response = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_requester_codex",
+      wsToken: requesterToken,
+      content: "@CodexAgent please help",
+    }),
+  });
+
+  assert.equal(response.status, 201);
+
+  const session = await waitFor(
+    () =>
+      db
+        .select()
+        .from(agentSessions)
+        .where(eq(agentSessions.roomId, roomId))
+        .get(),
+    (value) => value?.status === "failed",
+  );
+  const roomMessages = db
+    .select()
+    .from(messages)
+    .where(eq(messages.roomId, roomId))
+    .all();
+
+  assert.equal(session?.status, "failed");
+  assert.ok(
+    roomMessages.some(
+      (message) =>
+        message.messageType === "system_notice" &&
+        /local bridge/i.test(message.content),
+    ),
+  );
+});
+
+test("attached codex binding can be pulled and completed through bridge task endpoints", async () => {
+  const roomId = "room_codex_bridge_task";
+  const createdAt = new Date("2026-03-25T07:00:00.000Z").toISOString();
+
+  seedRoom({
+    roomId,
+    name: "Codex Bridge Task Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(localBridges).values({
+    id: "brg_codex_task",
+    bridgeName: "Codex Bridge",
+    bridgeToken: "bridge_codex_task_token",
+    status: "online",
+    platform: "macOS",
+    version: "0.1.0",
+    metadata: null,
+    lastSeenAt: createdAt,
+    createdAt,
+    updatedAt: createdAt,
+  }).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_requester_bridge_task",
+      roomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "RequesterBridgeTask",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_codex_bridge_task",
+      roomId,
+      type: "agent",
+      roleKind: "independent",
+      displayName: "BridgeCodex",
+      ownerMemberId: null,
+      adapterType: "codex_cli",
+      adapterConfig: null,
+      presenceStatus: "offline",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(agentBindings).values({
+    id: "agb_codex_bridge_task",
+    memberId: "mem_codex_bridge_task",
+    bridgeId: "brg_codex_task",
+    backendType: "codex_cli",
+    backendThreadId: "thread_codex_bridge_task",
+    cwd: "/tmp/codex-bridge-task",
+    status: "active",
+    attachedAt: createdAt,
+    detachedAt: null,
+  }).run();
+
+  const requesterToken = issueWsToken("mem_requester_bridge_task", roomId);
+  const messageResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_requester_bridge_task",
+      wsToken: requesterToken,
+      content: "@BridgeCodex please help",
+    }),
+  });
+
+  assert.equal(messageResponse.status, 201);
+
+  const pullResponse = await app.request("http://localhost/api/bridges/brg_codex_task/tasks/pull", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      bridgeToken: "bridge_codex_task_token",
+    }),
+  });
+
+  assert.equal(pullResponse.status, 200);
+  const pulled = await pullResponse.json();
+  assert.equal(pulled.task.bridgeId, "brg_codex_task");
+  assert.equal(pulled.task.backendThreadId, "thread_codex_bridge_task");
+
+  const acceptResponse = await app.request(
+    `http://localhost/api/bridges/brg_codex_task/tasks/${pulled.task.id}/accept`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_codex_task_token",
+      }),
+    },
+  );
+
+  assert.equal(acceptResponse.status, 200);
+
+  const deltaResponse = await app.request(
+    `http://localhost/api/bridges/brg_codex_task/tasks/${pulled.task.id}/delta`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_codex_task_token",
+        delta: "partial output",
+      }),
+    },
+  );
+
+  assert.equal(deltaResponse.status, 200);
+
+  const completeResponse = await app.request(
+    `http://localhost/api/bridges/brg_codex_task/tasks/${pulled.task.id}/complete`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_codex_task_token",
+        finalText: "final bridge output",
+      }),
+    },
+  );
+
+  assert.equal(completeResponse.status, 200);
+
+  const duplicateCompleteResponse = await app.request(
+    `http://localhost/api/bridges/brg_codex_task/tasks/${pulled.task.id}/complete`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_codex_task_token",
+        finalText: "duplicate output",
+      }),
+    },
+  );
+
+  assert.equal(duplicateCompleteResponse.status, 409);
+
+  const session = db
+    .select()
+    .from(agentSessions)
+    .where(eq(agentSessions.roomId, roomId))
+    .get();
+  const task = db.select().from(bridgeTasks).where(eq(bridgeTasks.id, pulled.task.id)).get();
+  const roomMessages = db
+    .select()
+    .from(messages)
+    .where(eq(messages.roomId, roomId))
+    .all();
+
+  assert.equal(session?.status, "completed");
+  assert.equal(task?.status, "completed");
+  assert.ok(
+    roomMessages.some(
+      (message) =>
+        message.messageType === "agent_text" &&
+        message.content === "final bridge output",
+    ),
+  );
+});
+
+test("pull can reclaim an expired assigned bridge task lease", async () => {
+  const createdAt = new Date("2026-03-25T08:00:00.000Z").toISOString();
+  const expiredAssignedAt = new Date(Date.now() - 60_000).toISOString();
+
+  db.insert(localBridges).values({
+    id: "brg_reclaim_lease",
+    bridgeName: "Reclaim Lease Bridge",
+    bridgeToken: "bridge_reclaim_lease_token",
+    status: "online",
+    platform: "macOS",
+    version: "0.1.0",
+    metadata: null,
+    lastSeenAt: createdAt,
+    createdAt,
+    updatedAt: createdAt,
+  }).run();
+
+  db.insert(rooms).values({
+    id: "room_reclaim_lease",
+    name: "Reclaim Lease Room",
+    inviteToken: createInviteToken(),
+    status: "active",
+    createdAt,
+  }).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_requester_reclaim_lease",
+      roomId: "room_reclaim_lease",
+      type: "human",
+      roleKind: "none",
+      displayName: "RequesterReclaimLease",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_agent_reclaim_lease",
+      roomId: "room_reclaim_lease",
+      type: "agent",
+      roleKind: "independent",
+      displayName: "AgentReclaimLease",
+      ownerMemberId: null,
+      adapterType: "codex_cli",
+      adapterConfig: null,
+      presenceStatus: "offline",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(messages).values({
+    id: "msg_trigger_reclaim_lease",
+    roomId: "room_reclaim_lease",
+    senderMemberId: "mem_requester_reclaim_lease",
+    messageType: "user_text",
+    content: "@AgentReclaimLease help",
+    replyToMessageId: null,
+    createdAt,
+  }).run();
+
+  db.insert(agentSessions).values({
+    id: "ags_reclaim_lease",
+    roomId: "room_reclaim_lease",
+    agentMemberId: "mem_agent_reclaim_lease",
+    triggerMessageId: "msg_trigger_reclaim_lease",
+    requesterMemberId: "mem_requester_reclaim_lease",
+    approvalId: null,
+    approvalRequired: false,
+    status: "pending",
+    startedAt: null,
+    endedAt: null,
+  }).run();
+
+  db.insert(bridgeTasks).values({
+    id: "btsk_reclaim_lease",
+    bridgeId: "brg_reclaim_lease",
+    sessionId: "ags_reclaim_lease",
+    roomId: "room_reclaim_lease",
+    agentMemberId: "mem_agent_reclaim_lease",
+    requesterMemberId: "mem_requester_reclaim_lease",
+    backendType: "codex_cli",
+    backendThreadId: "thread_reclaim_lease",
+    outputMessageId: "msg_output_reclaim_lease",
+    prompt: "help",
+    contextPayload: null,
+    status: "assigned",
+    createdAt,
+    assignedAt: expiredAssignedAt,
+    acceptedAt: null,
+    completedAt: null,
+    failedAt: null,
+  }).run();
+
+  const pullResponse = await app.request(
+    "http://localhost/api/bridges/brg_reclaim_lease/tasks/pull",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_reclaim_lease_token",
+      }),
+    },
+  );
+
+  assert.equal(pullResponse.status, 200);
+  const pulled = await pullResponse.json();
+  assert.equal(pulled.task?.id, "btsk_reclaim_lease");
+  assert.equal(pulled.task?.status, "assigned");
+  assert.notEqual(pulled.task?.assignedAt, expiredAssignedAt);
 });

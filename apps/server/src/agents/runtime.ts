@@ -1,108 +1,34 @@
 import { desc, eq, inArray } from "drizzle-orm";
 
 import {
-  createCodexCliAdapter,
   createLocalProcessAdapter,
   type AgentAdapter,
   type AgentRunInput,
-  type CodexCliAdapterConfig,
   type LocalProcessAdapterConfig,
 } from "@agent-tavern/agent-sdk";
 import type {
   AgentBinding,
   AgentSession,
+  BridgeTask,
   Member,
   Message,
-  RealtimeEvent,
   Room,
 } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
-import { agentBindings, agentSessions, members, messages, rooms } from "../db/schema";
+import { agentBindings, agentSessions, bridgeTasks, members, messages, rooms } from "../db/schema";
 import { createId } from "../lib/id";
-import { toPublicMessage } from "../lib/public";
 import { broadcastToRoom } from "../realtime";
+import {
+  commitSessionMessage,
+  createStreamDeltaEvent,
+  failSession,
+  markSessionRunning,
+  now,
+} from "./session-events";
 
 const agentRunQueue = new Map<string, Promise<void>>();
 const CONTEXT_MESSAGE_LIMIT = Number(process.env.AGENT_CONTEXT_MESSAGE_LIMIT ?? 20);
-
-function now(): string {
-  return new Date().toISOString();
-}
-
-function createSessionStartedEvent(roomId: string, session: AgentSession): RealtimeEvent {
-  return {
-    type: "agent.session.started",
-    roomId,
-    timestamp: now(),
-    payload: { session },
-  };
-}
-
-function createSessionCompletedEvent(roomId: string, session: AgentSession): RealtimeEvent {
-  return {
-    type: "agent.session.completed",
-    roomId,
-    timestamp: now(),
-    payload: { session },
-  };
-}
-
-function createSessionFailedEvent(
-  roomId: string,
-  session: AgentSession,
-  error: string,
-): RealtimeEvent {
-  return {
-    type: "agent.session.failed",
-    roomId,
-    timestamp: now(),
-    payload: { session, error },
-  };
-}
-
-function createStreamDeltaEvent(
-  roomId: string,
-  sessionId: string,
-  messageId: string,
-  delta: string,
-): RealtimeEvent {
-  return {
-    type: "agent.stream.delta",
-    roomId,
-    timestamp: now(),
-    payload: {
-      sessionId,
-      messageId,
-      delta,
-    },
-  };
-}
-
-function createMessageCreatedEvent(roomId: string, message: Message): RealtimeEvent {
-  return {
-    type: "message.created",
-    roomId,
-    timestamp: now(),
-    payload: { message: toPublicMessage(message) },
-  };
-}
-
-function createMessageCommittedEvent(
-  roomId: string,
-  sessionId: string,
-  message: Message,
-): RealtimeEvent {
-  return {
-    type: "agent.message.committed",
-    roomId,
-    timestamp: now(),
-    payload: {
-      sessionId,
-      message: toPublicMessage(message),
-    },
-  };
-}
 
 function parseLocalProcessConfig(raw: string | null): LocalProcessAdapterConfig | null {
   if (!raw) {
@@ -158,6 +84,7 @@ function parseLocalProcessConfig(raw: string | null): LocalProcessAdapterConfig 
 function toAgentBinding(row: {
   id: string;
   memberId: string;
+  bridgeId: string | null;
   backendType: string;
   backendThreadId: string;
   cwd: string | null;
@@ -166,77 +93,6 @@ function toAgentBinding(row: {
   detachedAt: string | null;
 }): AgentBinding {
   return row as AgentBinding;
-}
-
-function buildCodexCliConfig(binding: AgentBinding): CodexCliAdapterConfig | null {
-  if (binding.backendType !== "codex_cli") {
-    return null;
-  }
-
-  return {
-    threadId: binding.backendThreadId,
-  };
-}
-
-function resolveAgentAdapter(agent: Member, binding: AgentBinding | null): AgentAdapter | null {
-  if (binding?.status === "active") {
-    const codexCliConfig = buildCodexCliConfig(binding);
-
-    if (codexCliConfig) {
-      return createCodexCliAdapter(codexCliConfig);
-    }
-  }
-
-  if (agent.adapterType !== "local_process") {
-    return null;
-  }
-
-  const config = parseLocalProcessConfig(agent.adapterConfig);
-
-  if (!config) {
-    return null;
-  }
-
-  return createLocalProcessAdapter(config);
-}
-
-function buildPrompt(input: {
-  room: Room;
-  agent: Member;
-  requester: Member;
-  triggerMessage: Message;
-  contextMessages: AgentRunInput["contextMessages"];
-}): string {
-  const context = input.contextMessages
-    .map((message) => `[${message.createdAt}] ${message.senderName}: ${message.content}`)
-    .join("\n");
-
-  return [
-    `You are ${input.agent.displayName}, a member in the room "${input.room.name}".`,
-    `Requester: ${input.requester.displayName}.`,
-    "Reply as a chat participant in plain text.",
-    "Recent room context:",
-    context || "(no context)",
-    "Current trigger message:",
-    `${input.requester.displayName}: ${input.triggerMessage.content}`,
-  ].join("\n");
-}
-
-function createFailureMessage(
-  roomId: string,
-  agentMemberId: string,
-  triggerMessageId: string,
-  content: string,
-): Message {
-  return {
-    id: createId("msg"),
-    roomId,
-    senderMemberId: agentMemberId,
-    messageType: "system_notice",
-    content,
-    replyToMessageId: triggerMessageId,
-    createdAt: now(),
-  };
 }
 
 function toRoom(row: {
@@ -291,37 +147,71 @@ function toAgentSession(row: {
   return row as AgentSession;
 }
 
-function failAgentSession(session: AgentSession, error: string): void {
-  const endedAt = now();
-  const failedSession: AgentSession = {
-    ...session,
-    status: "failed",
-    endedAt,
+function resolveLocalAdapter(agent: Member): AgentAdapter | null {
+  if (agent.adapterType !== "local_process") {
+    return null;
+  }
+
+  const config = parseLocalProcessConfig(agent.adapterConfig);
+
+  if (!config) {
+    return null;
+  }
+
+  return createLocalProcessAdapter(config);
+}
+
+function buildPrompt(input: {
+  room: Room;
+  agent: Member;
+  requester: Member;
+  triggerMessage: Message;
+  contextMessages: AgentRunInput["contextMessages"];
+}): string {
+  const context = input.contextMessages
+    .map((message) => `[${message.createdAt}] ${message.senderName}: ${message.content}`)
+    .join("\n");
+
+  return [
+    `You are ${input.agent.displayName}, a member in the room "${input.room.name}".`,
+    `Requester: ${input.requester.displayName}.`,
+    "Reply as a chat participant in plain text.",
+    "Recent room context:",
+    context || "(no context)",
+    "Current trigger message:",
+    `${input.requester.displayName}: ${input.triggerMessage.content}`,
+  ].join("\n");
+}
+
+function enqueueBridgeTask(params: {
+  session: AgentSession;
+  binding: AgentBinding;
+  prompt: string;
+  contextPayload: string;
+  outputMessageId: string;
+}): BridgeTask {
+  const task: BridgeTask = {
+    id: createId("btsk"),
+    bridgeId: params.binding.bridgeId as string,
+    sessionId: params.session.id,
+    roomId: params.session.roomId,
+    agentMemberId: params.session.agentMemberId,
+    requesterMemberId: params.session.requesterMemberId,
+    backendType: params.binding.backendType,
+    backendThreadId: params.binding.backendThreadId,
+    outputMessageId: params.outputMessageId,
+    prompt: params.prompt,
+    contextPayload: params.contextPayload,
+    status: "pending",
+    createdAt: now(),
+    assignedAt: null,
+    acceptedAt: null,
+    completedAt: null,
+    failedAt: null,
   };
 
-  db
-    .update(agentSessions)
-    .set({
-      status: failedSession.status,
-      endedAt: failedSession.endedAt,
-    })
-    .where(eq(agentSessions.id, session.id))
-    .run();
-
-  broadcastToRoom(
-    session.roomId,
-    createSessionFailedEvent(session.roomId, failedSession, error),
-  );
-
-  const failureMessage = createFailureMessage(
-    session.roomId,
-    session.agentMemberId,
-    session.triggerMessageId,
-    error,
-  );
-
-  db.insert(messages).values(failureMessage).run();
-  broadcastToRoom(session.roomId, createMessageCreatedEvent(session.roomId, failureMessage));
+  db.insert(bridgeTasks).values(task).run();
+  return task;
 }
 
 async function runAgentSession(sessionId: string): Promise<void> {
@@ -339,9 +229,7 @@ async function runAgentSession(sessionId: string): Promise<void> {
   const roomMembers = db
     .select()
     .from(members)
-    .where(
-      inArray(members.id, [session.agentMemberId, session.requesterMemberId]),
-    )
+    .where(inArray(members.id, [session.agentMemberId, session.requesterMemberId]))
     .all();
   const agent = roomMembers.find((member) => member.id === session.agentMemberId);
   const requester = roomMembers.find((member) => member.id === session.requesterMemberId);
@@ -352,7 +240,7 @@ async function runAgentSession(sessionId: string): Promise<void> {
     .get();
 
   if (!room || !agent || !requester || !triggerMessage) {
-    failAgentSession(toAgentSession(session), "Agent session dependencies are missing.");
+    failSession(toAgentSession(session), "Agent session dependencies are missing.");
     return;
   }
 
@@ -367,15 +255,6 @@ async function runAgentSession(sessionId: string): Promise<void> {
     .where(eq(agentBindings.memberId, typedAgent.id))
     .get();
   const typedBinding = bindingRow ? toAgentBinding(bindingRow) : null;
-  const adapter = resolveAgentAdapter(typedAgent, typedBinding);
-
-  if (!adapter) {
-    failAgentSession(
-      typedSession,
-      `${typedAgent.displayName} does not have a valid local agent adapter configuration.`,
-    );
-    return;
-  }
 
   const recentMessages = db
     .select()
@@ -399,29 +278,6 @@ async function runAgentSession(sessionId: string): Promise<void> {
     createdAt: message.createdAt,
   }));
 
-  const startedAt = now();
-  const runningSession: AgentSession = {
-    ...typedSession,
-    status: "running",
-    startedAt,
-    endedAt: null,
-  };
-
-  db
-    .update(agentSessions)
-    .set({
-      status: runningSession.status,
-      startedAt: runningSession.startedAt,
-      endedAt: runningSession.endedAt,
-    })
-    .where(eq(agentSessions.id, session.id))
-    .run();
-
-  broadcastToRoom(
-    session.roomId,
-    createSessionStartedEvent(session.roomId, runningSession),
-  );
-
   const outputMessageId = createId("msg");
   const input: AgentRunInput = {
     roomId: session.roomId,
@@ -440,6 +296,36 @@ async function runAgentSession(sessionId: string): Promise<void> {
     contextMessages,
   };
 
+  if (typedBinding?.backendType === "codex_cli") {
+    if (!typedBinding.bridgeId || typedBinding.status !== "active") {
+      failSession(
+        typedSession,
+        `${typedAgent.displayName} is waiting for a local bridge to attach.`,
+      );
+      return;
+    }
+
+    enqueueBridgeTask({
+      session: typedSession,
+      binding: typedBinding,
+      prompt: input.prompt,
+      contextPayload: JSON.stringify(input.contextMessages),
+      outputMessageId,
+    });
+    return;
+  }
+
+  const adapter = resolveLocalAdapter(typedAgent);
+
+  if (!adapter) {
+    failSession(
+      typedSession,
+      `${typedAgent.displayName} does not have a valid local agent adapter configuration.`,
+    );
+    return;
+  }
+
+  const runningSession = markSessionRunning(typedSession);
   let finalText = "";
   let failedError: string | null = null;
 
@@ -468,56 +354,23 @@ async function runAgentSession(sessionId: string): Promise<void> {
   }
 
   if (failedError) {
-    failAgentSession(runningSession, failedError);
+    failSession(runningSession, failedError);
     return;
   }
 
   const committedText = finalText.trim();
 
   if (!committedText) {
-    failAgentSession(runningSession, `${typedAgent.displayName} returned an empty response.`);
+    failSession(runningSession, `${typedAgent.displayName} returned an empty response.`);
     return;
   }
 
-  const committedMessage: Message = {
-    id: outputMessageId,
-    roomId: session.roomId,
-    senderMemberId: typedAgent.id,
-    messageType: "agent_text",
+  commitSessionMessage({
+    session: runningSession,
+    messageId: outputMessageId,
     content: committedText,
     replyToMessageId: typedTriggerMessage.id,
-    createdAt: now(),
-  };
-
-  db.insert(messages).values(committedMessage).run();
-  broadcastToRoom(
-    session.roomId,
-    createMessageCommittedEvent(session.roomId, session.id, committedMessage),
-  );
-  broadcastToRoom(
-    session.roomId,
-    createMessageCreatedEvent(session.roomId, committedMessage),
-  );
-
-  const completedSession: AgentSession = {
-    ...runningSession,
-    status: "completed",
-    endedAt: now(),
-  };
-
-  db
-    .update(agentSessions)
-    .set({
-      status: completedSession.status,
-      endedAt: completedSession.endedAt,
-    })
-    .where(eq(agentSessions.id, session.id))
-    .run();
-
-  broadcastToRoom(
-    session.roomId,
-    createSessionCompletedEvent(session.roomId, completedSession),
-  );
+  });
 }
 
 export function queueAgentSession(sessionId: string): void {

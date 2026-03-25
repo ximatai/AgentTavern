@@ -40,7 +40,20 @@ export type AssistantInviteStatus =
   | "expired"
   | "revoked";
 
-export type AgentBindingStatus = "active" | "detached" | "failed";
+export type AgentBindingStatus =
+  | "pending_bridge"
+  | "active"
+  | "detached"
+  | "failed";
+
+export type BridgeStatus = "online" | "offline";
+
+export type BridgeTaskStatus =
+  | "pending"
+  | "assigned"
+  | "accepted"
+  | "completed"
+  | "failed";
 
 export type Room = {
   id: string;
@@ -124,10 +137,31 @@ export type AssistantInvite = {
 export type AgentBinding = {
   id: string;
   memberId: string;
+  bridgeId: string | null;
   backendType: AgentBackendType;
   backendThreadId: string;
   cwd: string | null;
   status: AgentBindingStatus;
   attachedAt: string;
   detachedAt: string | null;
+};
+
+export type BridgeTask = {
+  id: string;
+  bridgeId: string;
+  sessionId: string;
+  roomId: string;
+  agentMemberId: string;
+  requesterMemberId: string;
+  backendType: AgentBackendType;
+  backendThreadId: string;
+  outputMessageId: string;
+  prompt: string;
+  contextPayload: string | null;
+  status: BridgeTaskStatus;
+  createdAt: string;
+  assignedAt: string | null;
+  acceptedAt: string | null;
+  completedAt: string | null;
+  failedAt: string | null;
 };

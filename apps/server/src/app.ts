@@ -2,6 +2,8 @@ import { Hono } from "hono";
 
 import { approvalRoutes } from "./routes/approvals";
 import { assistantInviteRoutes } from "./routes/assistant-invites";
+import { bridgeRoutes } from "./routes/bridges";
+import { bridgeTaskRoutes } from "./routes/bridge-tasks";
 import { memberRoutes } from "./routes/members";
 import { messageRoutes } from "./routes/messages";
 import { roomRoutes } from "./routes/rooms";
@@ -24,6 +26,8 @@ app.get("/", (c) => {
 
 app.route("/", roomRoutes);
 app.route("/", assistantInviteRoutes);
+app.route("/", bridgeRoutes);
+app.route("/", bridgeTaskRoutes);
 app.route("/", memberRoutes);
 app.route("/", messageRoutes);
 app.route("/", approvalRoutes);

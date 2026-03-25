@@ -22,6 +22,27 @@
       "when": 1774348191806,
       "tag": "0002_hot_nebula",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1774405030393,
+      "tag": "0003_vengeful_black_bolt",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1774405257895,
+      "tag": "0004_thin_hellcat",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1774406132014,
+      "tag": "0005_overconfident_firelord",
+      "breakpoints": true
     }
   ]
 }

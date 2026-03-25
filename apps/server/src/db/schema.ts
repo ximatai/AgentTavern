@@ -151,11 +151,29 @@ export const assistantInvites = sqliteTable("assistant_invites", {
   ),
 }));
 
+export const localBridges = sqliteTable("local_bridges", {
+  id: text("id").primaryKey(),
+  bridgeName: text("bridge_name").notNull(),
+  bridgeToken: text("bridge_token").notNull(),
+  status: text("status").notNull(),
+  platform: text("platform"),
+  version: text("version"),
+  metadata: text("metadata"),
+  lastSeenAt: text("last_seen_at").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => ({
+  bridgeTokenUniqueIdx: uniqueIndex("local_bridges_bridge_token_unique_idx").on(table.bridgeToken),
+  statusIdx: index("local_bridges_status_idx").on(table.status),
+  lastSeenAtIdx: index("local_bridges_last_seen_at_idx").on(table.lastSeenAt),
+}));
+
 export const agentBindings = sqliteTable("agent_bindings", {
   id: text("id").primaryKey(),
   memberId: text("member_id")
     .notNull()
     .references(() => members.id),
+  bridgeId: text("bridge_id").references(() => localBridges.id),
   backendType: text("backend_type").notNull(),
   backendThreadId: text("backend_thread_id").notNull(),
   cwd: text("cwd"),
@@ -167,5 +185,40 @@ export const agentBindings = sqliteTable("agent_bindings", {
   backendThreadIdUniqueIdx: uniqueIndex(
     "agent_bindings_backend_thread_id_unique_idx",
   ).on(table.backendThreadId),
+  bridgeIdIdx: index("agent_bindings_bridge_id_idx").on(table.bridgeId),
   statusIdx: index("agent_bindings_status_idx").on(table.status),
+}));
+
+export const bridgeTasks = sqliteTable("bridge_tasks", {
+  id: text("id").primaryKey(),
+  bridgeId: text("bridge_id")
+    .notNull()
+    .references(() => localBridges.id),
+  sessionId: text("session_id")
+    .notNull()
+    .references(() => agentSessions.id),
+  roomId: text("room_id")
+    .notNull()
+    .references(() => rooms.id),
+  agentMemberId: text("agent_member_id")
+    .notNull()
+    .references(() => members.id),
+  requesterMemberId: text("requester_member_id")
+    .notNull()
+    .references(() => members.id),
+  backendType: text("backend_type").notNull(),
+  backendThreadId: text("backend_thread_id").notNull(),
+  outputMessageId: text("output_message_id").notNull(),
+  prompt: text("prompt").notNull(),
+  contextPayload: text("context_payload"),
+  status: text("status").notNull(),
+  createdAt: text("created_at").notNull(),
+  assignedAt: text("assigned_at"),
+  acceptedAt: text("accepted_at"),
+  completedAt: text("completed_at"),
+  failedAt: text("failed_at"),
+}, (table) => ({
+  bridgeIdIdx: index("bridge_tasks_bridge_id_idx").on(table.bridgeId),
+  sessionIdUniqueIdx: uniqueIndex("bridge_tasks_session_id_unique_idx").on(table.sessionId),
+  statusIdx: index("bridge_tasks_status_idx").on(table.status),
 }));

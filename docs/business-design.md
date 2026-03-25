@@ -184,9 +184,17 @@ AgentTavern 是一个面向局域网的多人房间聊天系统。
 
 - 用于将房间里的 agent member 绑定到真实后端实体
 - 对 Codex thread 来说，`backend_thread_id` 指向已有 thread
+- `bridge_id` 用于标识当前 binding 归属的本地 Bridge
 - 第一版 `backend_thread_id` 全局唯一
 - 第一版一个 member 只允许一个活跃 binding
 - 长期目标中，binding 还需要归属到某个客户端本地 Bridge
+
+建议状态：
+
+- `pending_bridge`
+- `active`
+- `detached`
+- `failed`
 
 ## 3. 成员规则
 

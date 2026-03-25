@@ -54,6 +54,35 @@
   - [x] 补充设计文档
   - [x] 完成独立 review
 
+- [x] `P1` 客户端本地 Agent Bridge 协议基线
+  - [x] 定义 Bridge 注册协议
+  - [x] 定义 Bridge 心跳协议
+  - [x] 落地服务端表结构
+  - [x] 落地服务端接口
+  - [x] 补充自动化验证
+  - [x] 完成独立 review
+
+- [x] `P1` AgentBinding Bridge 归属基线
+  - [x] 为 `AgentBinding` 增加 `bridgeId`
+  - [x] 增加 Bridge attach 协议
+  - [x] 补充自动化验证
+  - [x] 完成独立 review
+
+- [x] `P1` 客户端本地 Agent Bridge 任务协议
+  - [x] 定义任务拉取协议
+  - [x] 定义任务 accept / delta / complete / fail 协议
+  - [x] 将已 attach 的 Codex binding 切到桥接任务流
+  - [x] 增加本地 Bridge 进程骨架
+  - [x] 补充自动化验证
+  - [x] 完成独立 review
+
+- [x] `P1` Bridge 归属与任务领取边界收紧
+  - [x] 收紧 attach 的单归属语义
+  - [x] 将 task pull 改为带租约的 claim
+  - [x] 修正 Bridge skeleton 为先 accept 再回报失败
+  - [x] 补充自动化验证
+  - [x] 完成独立 review
+
 - [ ] `P1` 运行时状态进一步收敛
   - [ ] 评估 `wsToken` / 在线状态是否需要更强恢复策略
   - [ ] 评估测试辅助与 realtime 全局状态的进一步解耦
@@ -63,10 +92,7 @@
 紧接着进入的开发任务。
 
 - [ ] `P1` 客户端本地 Agent Bridge 开发
-  - [ ] 定义 Bridge 注册与心跳协议
-  - [ ] 定义任务下发与结果回传协议
-  - [ ] 为 `AgentBinding` 增加 Bridge 归属信息
-  - [ ] 实现第一版本地 Bridge 进程
+  - [ ] 实现第一版可执行 Bridge driver
   - [ ] 实现 Codex driver
   - [ ] 将 Codex thread 助理链路切到本地 Bridge 执行
   - [ ] 补齐本地 Bridge 执行链路自动化验证
@@ -115,6 +141,10 @@
   - [x] 完成重启语义第一刀
   - [x] 完成服务端关键链路第一轮自动化验证
   - [x] 完成客户端本地 Agent Bridge 第一版设计
+  - [x] 完成客户端本地 Agent Bridge 协议基线
+  - [x] 完成 AgentBinding Bridge 归属基线
+  - [x] 完成客户端本地 Agent Bridge 任务协议基线
+  - [x] 收紧 Bridge 归属与任务领取边界
   - [x] 收紧 Agent 执行与管理边界
   - [x] 拆分公开 DTO 与内部模型
   - [x] 扩展公开 DTO 覆盖范围

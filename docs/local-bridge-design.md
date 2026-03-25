@@ -111,7 +111,7 @@ Codex 采用：
 1. 房间成员生成一次性助理邀请 URL
 2. 用户本机上的 Bridge 或 skill 接受邀请
 3. 服务端创建 `agent member` 与 `binding`
-4. binding 关联到本地 Bridge 与本地 provider 信息
+4. binding 后续通过 attach 协议关联到本地 Bridge 与本地 provider 信息
 5. 后续被 `@` 时，服务端把任务投递到该 Bridge
 
 ## 7. 任务执行
@@ -126,6 +126,24 @@ Codex 采用：
 6. driver 在本机恢复或启动 Agent
 7. Bridge 将流式事件回传服务端
 8. 服务端广播给房间并固化最终消息
+
+当前已落地的最小协议：
+
+- `register`
+- `heartbeat`
+- `attach`
+- `task pull`
+- `task accept`
+- `task delta`
+- `task complete`
+- `task fail`
+
+当前约束：
+
+- `attach` 必须保证同一 binding 在同一时刻只归属一个 Bridge
+- `task pull` 必须采用可重试的 claim 语义
+- Bridge 在执行前必须先 `accept`
+- 超过租约时间仍未 `accept` 的 `assigned` 任务可重新领取
 
 ## 8. 边界
 
@@ -148,7 +166,8 @@ Codex 采用：
 
 1. 先冻结“服务端不再直接恢复客户端本地 Codex thread”这一原则
 2. 新增本地 Bridge 协议
-3. 为 `AgentBinding` 增加 bridge 归属信息
-4. 先实现 `Codex` driver
-5. 将当前服务端 `codex_cli` 执行链路降级为过渡方案或测试方案
-6. 再考虑接入其他本地 Agent
+3. 为 `AgentBinding` 增加 `bridgeId` 归属信息
+4. 增加 Bridge attach 协议
+5. 先实现 `Codex` driver
+6. 将当前服务端 `codex_cli` 执行链路降级为过渡方案或测试方案
+7. 再考虑接入其他本地 Agent

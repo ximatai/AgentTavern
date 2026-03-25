@@ -200,6 +200,190 @@
 - invite 接受成功后，可先创建 member 与基础 binding
 - bridge 真正接管执行后，再将 binding 关联到具体 `bridgeId`
 
+#### `POST /api/bridges/register`
+
+注册或重连一个本地 Bridge。
+
+请求体：
+
+```json
+{
+  "bridgeName": "Alice Laptop",
+  "platform": "macOS",
+  "version": "0.1.0",
+  "metadata": {
+    "providers": ["codex"]
+  }
+}
+```
+
+重连时可附带：
+
+```json
+{
+  "bridgeId": "brg_xxx",
+  "bridgeToken": "xxxx"
+}
+```
+
+响应体：
+
+```json
+{
+  "bridgeId": "brg_xxx",
+  "bridgeToken": "xxxx",
+  "status": "online",
+  "lastSeenAt": "2026-03-25T10:00:00.000Z"
+}
+```
+
+规则：
+
+- 无 `bridgeId + bridgeToken` 时创建新 Bridge
+- 带有效 `bridgeId + bridgeToken` 时按原 Bridge 身份重连
+- 当前 `bridgeToken` 由服务端生成
+- 当前 `bridgeToken` 用于本地 Bridge 后续 heartbeat 认证
+
+#### `POST /api/bridges/:bridgeId/heartbeat`
+
+刷新本地 Bridge 在线状态。
+
+请求体：
+
+```json
+{
+  "bridgeToken": "xxxx",
+  "metadata": {
+    "activeAgents": 2
+  }
+}
+```
+
+规则：
+
+- `bridgeId` 与 `bridgeToken` 必须匹配
+- heartbeat 成功后更新 `lastSeenAt`
+- heartbeat 成功后当前 Bridge 状态刷新为 `online`
+- 未显式传入 `metadata` 时保留原 metadata
+
+#### `POST /api/bridges/:bridgeId/agents/attach`
+
+将已有 `AgentBinding` 归属到某个已注册 Bridge。
+
+请求体：
+
+```json
+{
+  "bridgeToken": "xxxx",
+  "backendThreadId": "thread_xxx",
+  "cwd": "/Users/alice/workspace"
+}
+```
+
+也可使用：
+
+```json
+{
+  "bridgeToken": "xxxx",
+  "memberId": "mem_xxx"
+}
+```
+
+规则：
+
+- `bridgeId` 与 `bridgeToken` 必须匹配
+- 必须提供 `backendThreadId` 或 `memberId`
+- 已绑定到其他 Bridge 的 binding 不可重复 attach
+- attach 采用条件更新，同一 binding 不会被两个 Bridge 同时 attach 成功
+- attach 成功后会更新 `agent_bindings.bridge_id`
+- `cwd` 传入时会写回当前 binding
+
+#### `POST /api/bridges/:bridgeId/tasks/pull`
+
+拉取当前 Bridge 可执行的下一个任务。
+
+请求体：
+
+```json
+{
+  "bridgeToken": "xxxx"
+}
+```
+
+规则：
+
+- 仅返回归属当前 `bridgeId` 的待执行任务
+- 领取采用条件更新，避免同一任务被重复拉取
+- 拉取成功后任务进入 `assigned`
+- 已 `assigned` 但超过租约时间仍未 `accept` 的任务可被重新领取
+
+#### `POST /api/bridges/:bridgeId/tasks/:taskId/accept`
+
+Bridge 接受任务并开始执行。
+
+规则：
+
+- 需要有效 `bridgeToken`
+- 成功后任务进入 `accepted`
+- 成功后对应 `AgentSession` 进入 `running`
+- Bridge 应在真正执行前先 `accept`
+
+#### `POST /api/bridges/:bridgeId/tasks/:taskId/delta`
+
+Bridge 回传增量输出。
+
+请求体：
+
+```json
+{
+  "bridgeToken": "xxxx",
+  "delta": "partial output"
+}
+```
+
+规则：
+
+- 当前只负责广播流式事件
+- 最终消息仍以 `complete` 为准固化
+
+#### `POST /api/bridges/:bridgeId/tasks/:taskId/complete`
+
+Bridge 提交最终输出。
+
+请求体：
+
+```json
+{
+  "bridgeToken": "xxxx",
+  "finalText": "final output"
+}
+```
+
+规则：
+
+- 成功后任务进入 `completed`
+- 成功后对应消息固化为 `agent_text`
+- 成功后对应 `AgentSession` 进入 `completed`
+
+#### `POST /api/bridges/:bridgeId/tasks/:taskId/fail`
+
+Bridge 提交失败结果。
+
+请求体：
+
+```json
+{
+  "bridgeToken": "xxxx",
+  "error": "driver not configured"
+}
+```
+
+规则：
+
+- 成功后任务进入 `failed`
+- 成功后对应 `AgentSession` 进入 `failed`
+- 房间内补写失败系统消息
+
 ### 运行时恢复
 
 当前服务端采用保守恢复语义：
