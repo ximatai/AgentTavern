@@ -353,6 +353,14 @@ textarea {
   max-width: 760px;
 }
 
+.chat-row-notice {
+  max-width: 680px;
+}
+
+.chat-row-approval {
+  max-width: 700px;
+}
+
 .chat-meta {
   display: flex;
   align-items: center;
@@ -390,6 +398,16 @@ textarea {
   box-shadow: inset 4px 0 0 rgba(84, 0, 204, 0.22);
 }
 
+.chat-bubble-notice {
+  background: rgba(0, 70, 74, 0.08);
+  box-shadow: inset 4px 0 0 rgba(0, 70, 74, 0.18);
+}
+
+.chat-bubble-approval {
+  background: rgba(179, 104, 0, 0.1);
+  box-shadow: inset 4px 0 0 rgba(179, 104, 0, 0.2);
+}
+
 .chat-bubble p {
   margin: 0;
   white-space: pre-wrap;
@@ -404,6 +422,16 @@ textarea {
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.agent-pill-system {
+  background: rgba(0, 70, 74, 0.12);
+  color: #00464a;
+}
+
+.agent-pill-workflow {
+  background: rgba(179, 104, 0, 0.14);
+  color: #8a4f00;
 }
 
 .stream-pill {

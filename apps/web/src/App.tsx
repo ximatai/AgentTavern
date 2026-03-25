@@ -873,21 +873,62 @@ function App() {
                 const isAgent = sender?.type === "agent" || message.messageType === "agent_text";
                 const isSelf = message.senderMemberId === self?.memberId;
                 const isStreaming = message.id in streams;
+                const isSystemNotice = message.messageType === "system_notice";
+                const isApprovalMessage =
+                  message.messageType === "approval_request" ||
+                  message.messageType === "approval_result";
+                const isWorkflowMessage = isSystemNotice || isApprovalMessage;
+                const bubbleClassName = [
+                  "chat-bubble",
+                  isAgent && !isWorkflowMessage ? "chat-bubble-agent" : "",
+                  isSystemNotice ? "chat-bubble-notice" : "",
+                  isApprovalMessage ? "chat-bubble-approval" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ");
+                const authorLabel =
+                  isApprovalMessage && sender
+                    ? `${sender.displayName} workflow`
+                    : isSystemNotice && sender
+                      ? `${sender.displayName} status`
+                    : sender?.displayName ?? message.senderMemberId;
+                const metaPillLabel = isApprovalMessage
+                  ? "workflow"
+                  : isSystemNotice
+                    ? "status"
+                    : sender
+                      ? roleLabel(sender)
+                      : null;
+                const metaPillClassName = isApprovalMessage
+                  ? "agent-pill-workflow"
+                  : isSystemNotice
+                    ? "agent-pill-system"
+                    : "";
 
                 return (
                   <article
                     key={message.id}
-                    className={`chat-row ${isAgent ? "chat-row-agent" : ""} ${isSelf ? "chat-row-self" : ""}`}
+                    className={`chat-row ${isAgent && !isWorkflowMessage ? "chat-row-agent" : ""} ${
+                      isSelf ? "chat-row-self" : ""
+                    } ${
+                      isApprovalMessage ? "chat-row-approval" : ""
+                    } ${
+                      isSystemNotice ? "chat-row-notice" : ""
+                    }`}
                   >
                     <header className="chat-meta">
                       <div className="chat-author">
-                        <strong>{sender?.displayName ?? message.senderMemberId}</strong>
-                        {sender ? <span className="agent-pill">{roleLabel(sender)}</span> : null}
+                        <strong>{authorLabel}</strong>
+                        {metaPillLabel ? (
+                          <span className={`agent-pill ${metaPillClassName}`.trim()}>
+                            {metaPillLabel}
+                          </span>
+                        ) : null}
                         {isStreaming ? <span className="stream-pill">streaming</span> : null}
                       </div>
                       <span>{formatTime(message.createdAt)}</span>
                     </header>
-                    <div className={`chat-bubble ${isAgent ? "chat-bubble-agent" : ""}`}>
+                    <div className={bubbleClassName}>
                       <p>{message.content}</p>
                     </div>
                   </article>
