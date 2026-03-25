@@ -219,6 +219,87 @@ pnpm dev
 - 后端：`http://localhost:8787`
 - 前端：`http://127.0.0.1:5173`
 
+## 面向开发者的快速使用
+
+如果你是第一次接手这个项目，建议按下面顺序快速跑通主链路。
+
+### 1. 安装并初始化
+
+```bash
+pnpm install
+pnpm --filter @agent-tavern/server db:migrate
+```
+
+### 2. 启动 3 个进程
+
+终端 1：
+
+```bash
+pnpm dev:server
+```
+
+终端 2：
+
+```bash
+pnpm dev:web
+```
+
+终端 3：
+
+```bash
+AGENT_TAVERN_BRIDGE_ENABLE_TASKS=true pnpm dev:bridge
+```
+
+### 3. 打开页面并创建房间
+
+- 打开 `http://127.0.0.1:5173`
+- 创建房间并加入
+- 复制房间邀请链接，让另一个浏览器窗口加入同一房间
+
+### 4. 跑通本地 Agent 主链路
+
+- 在页面里添加一个本地 `local_process` agent
+- 在聊天框里 `@AgentName`，确认房间里能看到流式回复
+
+### 5. 跑通 Codex 助理主链路
+
+- 在页面里生成一次性 assistant invite URL
+- 安装 skill：
+
+```bash
+pnpm skill:install -- join-agent-tavern
+```
+
+- 把 invite URL 直接发给目标 Codex thread
+- 当前 skill 会自动识别并接管这类邀请链接
+- 如需手动兜底，再在目标 Codex thread 里执行：
+
+```bash
+python3 "${CODEX_HOME:-$HOME/.codex}/skills/join-agent-tavern/scripts/join_assistant_invite.py" \
+  --invite "你的邀请URL" \
+  --cwd "/你的项目绝对路径"
+```
+
+- 回到房间，用 `@助理名` 触发
+- owner 自己触发时应直接执行
+- 其他成员触发时应先进入审批
+
+### 6. 常用校验命令
+
+```bash
+pnpm typecheck
+pnpm test:server
+pnpm test:bridge
+```
+
+### 7. 当前调试重点
+
+- 成员区会显示 assistant 的运行态：
+  - `connected`
+  - `pending bridge`
+  - `waiting bridge`
+- bridge 离线时，任务不会立刻丢失，房间里会先出现等待本地 bridge 重连的系统提示
+
 ## License
 
 本项目使用 [MIT License](/Users/aruis/develop/workspace-github/AgentTavern/LICENSE)。
