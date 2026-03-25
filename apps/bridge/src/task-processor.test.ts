@@ -75,6 +75,7 @@ test("processTask accepts, streams deltas, and completes", async () => {
   await processTask({
     bridgeId: "brg_1",
     bridgeToken: "tok_1",
+    bridgeInstanceId: "binst_1",
     task,
     postJson,
     drivers,
@@ -91,6 +92,7 @@ test("processTask accepts, streams deltas, and completes", async () => {
   );
   assert.deepEqual(calls.at(-1)?.body, {
     bridgeToken: "tok_1",
+    bridgeInstanceId: "binst_1",
     finalText: "hello world",
   });
 });
@@ -102,6 +104,7 @@ test("processTask fails when no driver is configured", async () => {
   await processTask({
     bridgeId: "brg_1",
     bridgeToken: "tok_1",
+    bridgeInstanceId: "binst_1",
     task,
     postJson,
     drivers: new Map(),
@@ -133,6 +136,7 @@ test("processTask reports fail when driver throws after accept", async () => {
     processTask({
       bridgeId: "brg_1",
       bridgeToken: "tok_1",
+      bridgeInstanceId: "binst_1",
       task,
       postJson,
       drivers,
@@ -156,6 +160,7 @@ test("pollAndProcessTask returns false when no task is available", async () => {
     enabled: true,
     bridgeId: "brg_1",
     bridgeToken: "tok_1",
+    bridgeInstanceId: "binst_1",
     postJson,
     drivers: new Map(),
   });

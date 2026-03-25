@@ -1,5 +1,6 @@
 import os from "node:os";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 
 import { createDriverRegistry } from "./drivers";
 import {
@@ -27,6 +28,7 @@ const persistedIdentity = readStoredBridgeIdentity({
 });
 let bridgeId = persistedIdentity?.bridgeId ?? "";
 let bridgeToken = persistedIdentity?.bridgeToken ?? "";
+const bridgeInstanceId = `binst_${randomUUID()}`;
 let taskLoopInFlight = false;
 
 const postJson: PostJson = async <T>(
@@ -52,6 +54,7 @@ async function registerBridge(): Promise<void> {
   const result = await postJson<BridgeRegistration>("/api/bridges/register", {
     bridgeId: bridgeId || undefined,
     bridgeToken: bridgeToken || undefined,
+    bridgeInstanceId,
     bridgeName,
     platform: process.platform,
     version: "0.1.0",
@@ -66,7 +69,9 @@ async function registerBridge(): Promise<void> {
   bridgeToken = result.bridgeToken;
   persistBridgeIdentity(bridgeStatePath, { bridgeId, bridgeToken });
 
-  console.log(`[bridge] registered id=${bridgeId} status=${result.status}`);
+  console.log(
+    `[bridge] registered id=${bridgeId} instance=${bridgeInstanceId} status=${result.status}`,
+  );
   console.log(`[bridge] persisted identity at ${bridgeStatePath}`);
 }
 
@@ -77,6 +82,7 @@ async function sendHeartbeat(): Promise<void> {
 
   await postJson(`/api/bridges/${bridgeId}/heartbeat`, {
     bridgeToken,
+    bridgeInstanceId,
     metadata: {
       taskLoopEnabled: enableTaskLoop,
     },
@@ -95,6 +101,7 @@ async function pollTasks(): Promise<void> {
       enabled: enableTaskLoop,
       bridgeId,
       bridgeToken,
+      bridgeInstanceId,
       postJson,
       drivers,
       logger: console,

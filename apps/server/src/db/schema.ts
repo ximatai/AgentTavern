@@ -155,6 +155,7 @@ export const localBridges = sqliteTable("local_bridges", {
   id: text("id").primaryKey(),
   bridgeName: text("bridge_name").notNull(),
   bridgeToken: text("bridge_token").notNull(),
+  currentInstanceId: text("current_instance_id"),
   status: text("status").notNull(),
   platform: text("platform"),
   version: text("version"),
@@ -215,7 +216,9 @@ export const bridgeTasks = sqliteTable("bridge_tasks", {
   status: text("status").notNull(),
   createdAt: text("created_at").notNull(),
   assignedAt: text("assigned_at"),
+  assignedInstanceId: text("assigned_instance_id"),
   acceptedAt: text("accepted_at"),
+  acceptedInstanceId: text("accepted_instance_id"),
   completedAt: text("completed_at"),
   failedAt: text("failed_at"),
 }, (table) => ({

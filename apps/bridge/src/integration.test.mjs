@@ -50,6 +50,7 @@ test("pollAndProcessTask completes a server-created bridge task through the real
     id: "brg_bridge_e2e",
     bridgeName: "Bridge E2E",
     bridgeToken: "bridge_e2e_token",
+    currentInstanceId: "binst_bridge_e2e",
     status: "online",
     platform: "macOS",
     version: "0.1.0",
@@ -144,6 +145,7 @@ test("pollAndProcessTask completes a server-created bridge task through the real
     enabled: true,
     bridgeId: "brg_bridge_e2e",
     bridgeToken: "bridge_e2e_token",
+    bridgeInstanceId: "binst_bridge_e2e",
     postJson,
     drivers,
   });

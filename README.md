@@ -168,9 +168,9 @@ pnpm skill:install -- join-agent-tavern
 
 下一阶段建议进入：
 
-1. 为 Bridge 运行时协议补齐 `bridgeInstanceId` 基线
-2. 做真实可用性回归，确保本地 Agent 接入闭环稳定可用
-3. 前端继续收敛交互细节与长期体验
+1. 做真实可用性回归，确保本地 Agent 接入闭环稳定可用
+2. 前端继续收敛交互细节与长期体验
+3. `accepted` 任务恢复继续停留在设计层
 
 ## 路线护栏
 

@@ -166,8 +166,8 @@ Codex 采用：
 - Bridge 在执行前必须先 `accept`
 - 超过租约时间仍未 `accept` 的 `assigned` 任务可重新领取
 - Bridge 必须在本机持久化自己的身份信息
-- 当前已落地接口仍只使用 `bridgeId + bridgeToken`
-- `bridgeInstanceId` 仍处于设计阶段，后续会补进所有运行时动作
+- 当前运行时接口使用 `bridgeId + bridgeToken + bridgeInstanceId`
+- `accepted` 任务恢复仍处于设计阶段
 
 当前执行基线：
 

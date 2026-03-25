@@ -631,6 +631,7 @@ test("bridge register creates a reusable bridge identity and heartbeat refreshes
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
+      bridgeInstanceId: "binst_alice_1",
       bridgeName: "Alice Laptop",
       platform: "macOS",
       version: "0.1.0",
@@ -642,6 +643,7 @@ test("bridge register creates a reusable bridge identity and heartbeat refreshes
   const registered = await registerResponse.json();
   assert.equal(typeof registered.bridgeId, "string");
   assert.equal(typeof registered.bridgeToken, "string");
+  assert.equal(registered.bridgeInstanceId, "binst_alice_1");
 
   const storedBridge = db
     .select()
@@ -650,6 +652,7 @@ test("bridge register creates a reusable bridge identity and heartbeat refreshes
     .get();
 
   assert.equal(storedBridge?.bridgeName, "Alice Laptop");
+  assert.equal(storedBridge?.currentInstanceId, "binst_alice_1");
   assert.equal(storedBridge?.status, "online");
 
   const reconnectResponse = await app.request("http://localhost/api/bridges/register", {
@@ -658,6 +661,7 @@ test("bridge register creates a reusable bridge identity and heartbeat refreshes
     body: JSON.stringify({
       bridgeId: registered.bridgeId,
       bridgeToken: registered.bridgeToken,
+      bridgeInstanceId: "binst_alice_2",
       bridgeName: "Alice Laptop",
       platform: "macOS",
       version: "0.1.1",
@@ -669,6 +673,7 @@ test("bridge register creates a reusable bridge identity and heartbeat refreshes
   const reconnected = await reconnectResponse.json();
   assert.equal(reconnected.bridgeId, registered.bridgeId);
   assert.equal(reconnected.bridgeToken, registered.bridgeToken);
+  assert.equal(reconnected.bridgeInstanceId, "binst_alice_2");
 
   const heartbeatResponse = await app.request(
     `http://localhost/api/bridges/${registered.bridgeId}/heartbeat`,
@@ -677,6 +682,7 @@ test("bridge register creates a reusable bridge identity and heartbeat refreshes
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         bridgeToken: registered.bridgeToken,
+        bridgeInstanceId: "binst_alice_2",
         metadata: { activeAgents: 2 },
       }),
     },
@@ -691,6 +697,7 @@ test("bridge register creates a reusable bridge identity and heartbeat refreshes
     .get();
 
   assert.equal(refreshedBridge?.version, "0.1.1");
+  assert.equal(refreshedBridge?.currentInstanceId, "binst_alice_2");
   assert.equal(refreshedBridge?.status, "online");
   assert.match(refreshedBridge?.metadata ?? "", /activeAgents/);
 
@@ -701,6 +708,7 @@ test("bridge register creates a reusable bridge identity and heartbeat refreshes
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         bridgeToken: registered.bridgeToken,
+        bridgeInstanceId: "binst_alice_2",
       }),
     },
   );
@@ -721,6 +729,7 @@ test("bridge register creates a reusable bridge identity and heartbeat refreshes
     body: JSON.stringify({
       bridgeId: registered.bridgeId,
       bridgeToken: registered.bridgeToken,
+      bridgeInstanceId: "binst_alice_3",
       bridgeName: "Alice Laptop",
       platform: "macOS",
       version: "0.1.2",
@@ -736,7 +745,25 @@ test("bridge register creates a reusable bridge identity and heartbeat refreshes
     .get();
 
   assert.equal(preservedAfterRegister?.version, "0.1.2");
+  assert.equal(preservedAfterRegister?.currentInstanceId, "binst_alice_3");
   assert.match(preservedAfterRegister?.metadata ?? "", /activeAgents/);
+
+  const staleHeartbeatResponse = await app.request(
+    `http://localhost/api/bridges/${registered.bridgeId}/heartbeat`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: registered.bridgeToken,
+        bridgeInstanceId: "binst_alice_2",
+      }),
+    },
+  );
+
+  assert.equal(staleHeartbeatResponse.status, 409);
+  assert.deepEqual(await staleHeartbeatResponse.json(), {
+    error: "stale bridge instance",
+  });
 });
 
 test("bridge can attach an existing agent binding by backendThreadId", async () => {
@@ -1085,6 +1112,7 @@ test("attached codex binding can be pulled and completed through bridge task end
     id: "brg_codex_task",
     bridgeName: "Codex Bridge",
     bridgeToken: "bridge_codex_task_token",
+    currentInstanceId: "binst_codex_task",
     status: "online",
     platform: "macOS",
     version: "0.1.0",
@@ -1151,6 +1179,7 @@ test("attached codex binding can be pulled and completed through bridge task end
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       bridgeToken: "bridge_codex_task_token",
+      bridgeInstanceId: "binst_codex_task",
     }),
   });
 
@@ -1159,6 +1188,7 @@ test("attached codex binding can be pulled and completed through bridge task end
   assert.equal(pulled.task.bridgeId, "brg_codex_task");
   assert.equal(pulled.task.backendThreadId, "thread_codex_bridge_task");
   assert.equal(pulled.task.cwd, "/tmp/codex-bridge-task");
+  assert.equal(pulled.task.assignedInstanceId, "binst_codex_task");
 
   const acceptResponse = await app.request(
     `http://localhost/api/bridges/brg_codex_task/tasks/${pulled.task.id}/accept`,
@@ -1167,11 +1197,30 @@ test("attached codex binding can be pulled and completed through bridge task end
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         bridgeToken: "bridge_codex_task_token",
+        bridgeInstanceId: "binst_codex_task",
       }),
     },
   );
 
   assert.equal(acceptResponse.status, 200);
+
+  const staleDeltaResponse = await app.request(
+    `http://localhost/api/bridges/brg_codex_task/tasks/${pulled.task.id}/delta`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_codex_task_token",
+        bridgeInstanceId: "binst_stale_codex_task",
+        delta: "stale output",
+      }),
+    },
+  );
+
+  assert.equal(staleDeltaResponse.status, 409);
+  assert.deepEqual(await staleDeltaResponse.json(), {
+    error: "stale bridge instance",
+  });
 
   const duplicateAcceptResponse = await app.request(
     `http://localhost/api/bridges/brg_codex_task/tasks/${pulled.task.id}/accept`,
@@ -1180,6 +1229,7 @@ test("attached codex binding can be pulled and completed through bridge task end
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         bridgeToken: "bridge_codex_task_token",
+        bridgeInstanceId: "binst_codex_task",
       }),
     },
   );
@@ -1193,6 +1243,7 @@ test("attached codex binding can be pulled and completed through bridge task end
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         bridgeToken: "bridge_codex_task_token",
+        bridgeInstanceId: "binst_codex_task",
         delta: "partial output",
       }),
     },
@@ -1207,6 +1258,7 @@ test("attached codex binding can be pulled and completed through bridge task end
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         bridgeToken: "bridge_codex_task_token",
+        bridgeInstanceId: "binst_codex_task",
         finalText: "final bridge output",
       }),
     },
@@ -1221,6 +1273,7 @@ test("attached codex binding can be pulled and completed through bridge task end
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         bridgeToken: "bridge_codex_task_token",
+        bridgeInstanceId: "binst_codex_task",
         finalText: "duplicate output",
       }),
     },
@@ -1241,6 +1294,7 @@ test("attached codex binding can be pulled and completed through bridge task end
     .all();
 
   assert.equal(session?.status, "completed");
+  assert.equal(task?.acceptedInstanceId, "binst_codex_task");
   assert.equal(task?.status, "completed");
   assert.ok(
     roomMessages.some(
@@ -1259,6 +1313,7 @@ test("pull can reclaim an expired assigned bridge task lease", async () => {
     id: "brg_reclaim_lease",
     bridgeName: "Reclaim Lease Bridge",
     bridgeToken: "bridge_reclaim_lease_token",
+    currentInstanceId: "binst_reclaim_lease",
     status: "online",
     platform: "macOS",
     version: "0.1.0",
@@ -1341,7 +1396,9 @@ test("pull can reclaim an expired assigned bridge task lease", async () => {
     status: "assigned",
     createdAt,
     assignedAt: expiredAssignedAt,
+    assignedInstanceId: "binst_old_instance",
     acceptedAt: null,
+    acceptedInstanceId: null,
     completedAt: null,
     failedAt: null,
   }).run();
@@ -1353,6 +1410,7 @@ test("pull can reclaim an expired assigned bridge task lease", async () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         bridgeToken: "bridge_reclaim_lease_token",
+        bridgeInstanceId: "binst_reclaim_lease",
       }),
     },
   );
@@ -1361,5 +1419,6 @@ test("pull can reclaim an expired assigned bridge task lease", async () => {
   const pulled = await pullResponse.json();
   assert.equal(pulled.task?.id, "btsk_reclaim_lease");
   assert.equal(pulled.task?.status, "assigned");
+  assert.equal(pulled.task?.assignedInstanceId, "binst_reclaim_lease");
   assert.notEqual(pulled.task?.assignedAt, expiredAssignedAt);
 });

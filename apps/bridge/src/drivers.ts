@@ -20,6 +20,9 @@ export type BridgeTask = {
   status: string;
   createdAt: string;
   assignedAt: string | null;
+  assignedInstanceId?: string | null;
+  acceptedAt?: string | null;
+  acceptedInstanceId?: string | null;
 };
 
 export interface BridgeDriver {

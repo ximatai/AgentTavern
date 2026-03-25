@@ -6,6 +6,7 @@ import type { BridgeDriver, BridgeTask } from "./drivers";
 export type BridgeRegistration = {
   bridgeId: string;
   bridgeToken: string;
+  bridgeInstanceId: string;
   status: string;
   lastSeenAt: string;
 };
@@ -22,14 +23,16 @@ export type PostJson = <T>(
 export async function processTask(params: {
   bridgeId: string;
   bridgeToken: string;
+  bridgeInstanceId: string;
   task: BridgeTask;
   postJson: PostJson;
   drivers: Map<AgentBackendType, BridgeDriver>;
 }): Promise<void> {
-  const { bridgeId, bridgeToken, task, postJson, drivers } = params;
+  const { bridgeId, bridgeToken, bridgeInstanceId, task, postJson, drivers } = params;
 
   await postJson(`/api/bridges/${bridgeId}/tasks/${task.id}/accept`, {
     bridgeToken,
+    bridgeInstanceId,
   });
 
   const driver = drivers.get(task.backendType);
@@ -37,6 +40,7 @@ export async function processTask(params: {
   if (!driver) {
     await postJson(`/api/bridges/${bridgeId}/tasks/${task.id}/fail`, {
       bridgeToken,
+      bridgeInstanceId,
       error: `No bridge driver configured for backend ${task.backendType}.`,
     });
     return;
@@ -50,6 +54,7 @@ export async function processTask(params: {
         finalText += event.text;
         await postJson(`/api/bridges/${bridgeId}/tasks/${task.id}/delta`, {
           bridgeToken,
+          bridgeInstanceId,
           delta: event.text,
         });
         continue;
@@ -61,6 +66,7 @@ export async function processTask(params: {
 
         await postJson(`/api/bridges/${bridgeId}/tasks/${task.id}/complete`, {
           bridgeToken,
+          bridgeInstanceId,
           finalText: completedText,
         });
         return;
@@ -68,6 +74,7 @@ export async function processTask(params: {
 
       await postJson(`/api/bridges/${bridgeId}/tasks/${task.id}/fail`, {
         bridgeToken,
+        bridgeInstanceId,
         error: event.error,
       });
       return;
@@ -75,11 +82,13 @@ export async function processTask(params: {
 
     await postJson(`/api/bridges/${bridgeId}/tasks/${task.id}/complete`, {
       bridgeToken,
+      bridgeInstanceId,
       finalText: finalText || "(no output)",
     });
   } catch (error) {
     await postJson(`/api/bridges/${bridgeId}/tasks/${task.id}/fail`, {
       bridgeToken,
+      bridgeInstanceId,
       error: error instanceof Error ? error.message : String(error),
     });
     throw error;
@@ -90,18 +99,20 @@ export async function pollAndProcessTask(params: {
   enabled: boolean;
   bridgeId: string;
   bridgeToken: string;
+  bridgeInstanceId: string;
   postJson: PostJson;
   drivers: Map<AgentBackendType, BridgeDriver>;
   logger?: Pick<Console, "log">;
 }): Promise<boolean> {
-  const { enabled, bridgeId, bridgeToken, postJson, drivers, logger } = params;
+  const { enabled, bridgeId, bridgeToken, bridgeInstanceId, postJson, drivers, logger } = params;
 
-  if (!enabled || !bridgeId || !bridgeToken) {
+  if (!enabled || !bridgeId || !bridgeToken || !bridgeInstanceId) {
     return false;
   }
 
   const result = await postJson<BridgeTaskEnvelope>(`/api/bridges/${bridgeId}/tasks/pull`, {
     bridgeToken,
+    bridgeInstanceId,
   });
 
   if (!result.task) {
@@ -115,6 +126,7 @@ export async function pollAndProcessTask(params: {
   await processTask({
     bridgeId,
     bridgeToken,
+    bridgeInstanceId,
     task: result.task,
     postJson,
     drivers,

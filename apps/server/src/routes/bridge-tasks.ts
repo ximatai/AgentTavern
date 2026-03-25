@@ -19,7 +19,11 @@ const TASK_ASSIGNMENT_LEASE_MS = Number(
   process.env.AGENT_TAVERN_BRIDGE_TASK_LEASE_MS ?? 15_000,
 );
 
-function loadAuthorizedBridge(bridgeId: string, bridgeToken: string) {
+function loadAuthorizedBridge(
+  bridgeId: string,
+  bridgeToken: string,
+  bridgeInstanceId?: string,
+) {
   const bridge = db
     .select()
     .from(localBridges)
@@ -32,6 +36,13 @@ function loadAuthorizedBridge(bridgeId: string, bridgeToken: string) {
 
   if (bridge.bridgeToken !== bridgeToken) {
     return { error: { status: 403 as const, body: { error: "invalid bridge credentials" } }, bridge: null };
+  }
+
+  if (bridgeInstanceId && bridge.currentInstanceId && bridge.currentInstanceId !== bridgeInstanceId) {
+    return {
+      error: { status: 409 as const, body: { error: "stale bridge instance" } },
+      bridge: null,
+    };
   }
 
   return { error: null, bridge };
@@ -56,12 +67,14 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/pull", async (c) => {
   const bridgeId = c.req.param("bridgeId");
   const body = await c.req.json().catch(() => null);
   const bridgeToken = typeof body?.bridgeToken === "string" ? body.bridgeToken.trim() : "";
+  const bridgeInstanceId =
+    typeof body?.bridgeInstanceId === "string" ? body.bridgeInstanceId.trim() : "";
 
-  if (!bridgeToken) {
-    return c.json({ error: "bridgeToken is required" }, 400);
+  if (!bridgeToken || !bridgeInstanceId) {
+    return c.json({ error: "bridgeToken and bridgeInstanceId are required" }, 400);
   }
 
-  const auth = loadAuthorizedBridge(bridgeId, bridgeToken);
+  const auth = loadAuthorizedBridge(bridgeId, bridgeToken, bridgeInstanceId);
   if (auth.error) {
     return c.json(auth.error.body, { status: auth.error.status });
   }
@@ -94,6 +107,7 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/pull", async (c) => {
       .set({
         status: "assigned",
         assignedAt,
+        assignedInstanceId: bridgeInstanceId,
       })
       .where(
         and(
@@ -113,6 +127,7 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/pull", async (c) => {
           ...task,
           status: "assigned",
           assignedAt,
+          assignedInstanceId: bridgeInstanceId,
         },
       });
     }
@@ -126,12 +141,14 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/accept", async (c) =
   const taskId = c.req.param("taskId");
   const body = await c.req.json().catch(() => null);
   const bridgeToken = typeof body?.bridgeToken === "string" ? body.bridgeToken.trim() : "";
+  const bridgeInstanceId =
+    typeof body?.bridgeInstanceId === "string" ? body.bridgeInstanceId.trim() : "";
 
-  if (!bridgeToken) {
-    return c.json({ error: "bridgeToken is required" }, 400);
+  if (!bridgeToken || !bridgeInstanceId) {
+    return c.json({ error: "bridgeToken and bridgeInstanceId are required" }, 400);
   }
 
-  const auth = loadAuthorizedBridge(bridgeId, bridgeToken);
+  const auth = loadAuthorizedBridge(bridgeId, bridgeToken, bridgeInstanceId);
   if (auth.error) {
     return c.json(auth.error.body, { status: auth.error.status });
   }
@@ -150,12 +167,17 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/accept", async (c) =
     return c.json({ error: "task is not available for acceptance" }, 409);
   }
 
+  if (task.status === "assigned" && task.assignedInstanceId && task.assignedInstanceId !== bridgeInstanceId) {
+    return c.json({ error: "task is assigned to another bridge instance" }, 409);
+  }
+
   const acceptedAt = now();
   const result = db
     .update(bridgeTasks)
     .set({
       status: "accepted",
       acceptedAt,
+      acceptedInstanceId: bridgeInstanceId,
     })
     .where(
       and(
@@ -187,6 +209,7 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/accept", async (c) =
     sessionId: runningSession.id,
     status: "accepted",
     acceptedAt,
+    bridgeInstanceId,
   });
 });
 
@@ -195,13 +218,15 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/delta", async (c) =>
   const taskId = c.req.param("taskId");
   const body = await c.req.json().catch(() => null);
   const bridgeToken = typeof body?.bridgeToken === "string" ? body.bridgeToken.trim() : "";
+  const bridgeInstanceId =
+    typeof body?.bridgeInstanceId === "string" ? body.bridgeInstanceId.trim() : "";
   const delta = typeof body?.delta === "string" ? body.delta : "";
 
-  if (!bridgeToken || !delta) {
-    return c.json({ error: "bridgeToken and delta are required" }, 400);
+  if (!bridgeToken || !bridgeInstanceId || !delta) {
+    return c.json({ error: "bridgeToken, bridgeInstanceId, and delta are required" }, 400);
   }
 
-  const auth = loadAuthorizedBridge(bridgeId, bridgeToken);
+  const auth = loadAuthorizedBridge(bridgeId, bridgeToken, bridgeInstanceId);
   if (auth.error) {
     return c.json(auth.error.body, { status: auth.error.status });
   }
@@ -220,6 +245,10 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/delta", async (c) =>
     return c.json({ error: "task is not accepting deltas" }, 409);
   }
 
+  if (task.acceptedInstanceId !== bridgeInstanceId) {
+    return c.json({ error: "task is owned by another bridge instance" }, 409);
+  }
+
   broadcastToRoom(
     task.roomId,
     createStreamDeltaEvent(task.roomId, task.sessionId, task.outputMessageId, delta),
@@ -233,13 +262,15 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
   const taskId = c.req.param("taskId");
   const body = await c.req.json().catch(() => null);
   const bridgeToken = typeof body?.bridgeToken === "string" ? body.bridgeToken.trim() : "";
+  const bridgeInstanceId =
+    typeof body?.bridgeInstanceId === "string" ? body.bridgeInstanceId.trim() : "";
   const finalText = typeof body?.finalText === "string" ? body.finalText.trim() : "";
 
-  if (!bridgeToken || !finalText) {
-    return c.json({ error: "bridgeToken and finalText are required" }, 400);
+  if (!bridgeToken || !bridgeInstanceId || !finalText) {
+    return c.json({ error: "bridgeToken, bridgeInstanceId, and finalText are required" }, 400);
   }
 
-  const auth = loadAuthorizedBridge(bridgeId, bridgeToken);
+  const auth = loadAuthorizedBridge(bridgeId, bridgeToken, bridgeInstanceId);
   if (auth.error) {
     return c.json(auth.error.body, { status: auth.error.status });
   }
@@ -256,6 +287,10 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
 
   if (task.status !== "accepted") {
     return c.json({ error: "task is not ready to complete" }, 409);
+  }
+
+  if (task.acceptedInstanceId !== bridgeInstanceId) {
+    return c.json({ error: "task is owned by another bridge instance" }, 409);
   }
 
   const session = db
@@ -297,13 +332,15 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/fail", async (c) => 
   const taskId = c.req.param("taskId");
   const body = await c.req.json().catch(() => null);
   const bridgeToken = typeof body?.bridgeToken === "string" ? body.bridgeToken.trim() : "";
+  const bridgeInstanceId =
+    typeof body?.bridgeInstanceId === "string" ? body.bridgeInstanceId.trim() : "";
   const errorMessage = typeof body?.error === "string" ? body.error.trim() : "";
 
-  if (!bridgeToken || !errorMessage) {
-    return c.json({ error: "bridgeToken and error are required" }, 400);
+  if (!bridgeToken || !bridgeInstanceId || !errorMessage) {
+    return c.json({ error: "bridgeToken, bridgeInstanceId, and error are required" }, 400);
   }
 
-  const auth = loadAuthorizedBridge(bridgeId, bridgeToken);
+  const auth = loadAuthorizedBridge(bridgeId, bridgeToken, bridgeInstanceId);
   if (auth.error) {
     return c.json(auth.error.body, { status: auth.error.status });
   }
@@ -320,6 +357,10 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/fail", async (c) => 
 
   if (task.status !== "accepted") {
     return c.json({ error: "task is not ready to fail" }, 409);
+  }
+
+  if (task.acceptedInstanceId !== bridgeInstanceId) {
+    return c.json({ error: "task is owned by another bridge instance" }, 409);
   }
 
   const session = db

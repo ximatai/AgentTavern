@@ -16,6 +16,7 @@ type StoredBridge = {
   id: string;
   bridgeName: string;
   bridgeToken: string;
+  currentInstanceId: string | null;
   status: string;
   platform: string | null;
   version: string | null;
@@ -32,6 +33,8 @@ bridgeRoutes.post("/api/bridges/register", async (c) => {
     typeof body?.bridgeId === "string" ? body.bridgeId.trim() : "";
   const existingBridgeToken =
     typeof body?.bridgeToken === "string" ? body.bridgeToken.trim() : "";
+  const bridgeInstanceId =
+    typeof body?.bridgeInstanceId === "string" ? body.bridgeInstanceId.trim() : "";
   const platform = normalizeOptionalString(body?.platform);
   const version = normalizeOptionalString(body?.version);
   const metadataProvided = Object.prototype.hasOwnProperty.call(body ?? {}, "metadata");
@@ -42,6 +45,10 @@ bridgeRoutes.post("/api/bridges/register", async (c) => {
 
   if (!bridgeName) {
     return c.json({ error: "bridgeName is required" }, 400);
+  }
+
+  if (!bridgeInstanceId) {
+    return c.json({ error: "bridgeInstanceId is required" }, 400);
   }
 
   const timestamp = now();
@@ -61,6 +68,7 @@ bridgeRoutes.post("/api/bridges/register", async (c) => {
       .update(localBridges)
       .set({
         bridgeName,
+        currentInstanceId: bridgeInstanceId,
         status: "online",
         platform,
         version,
@@ -74,6 +82,7 @@ bridgeRoutes.post("/api/bridges/register", async (c) => {
     return c.json({
       bridgeId: bridge.id,
       bridgeToken: bridge.bridgeToken,
+      bridgeInstanceId,
       status: "online",
       lastSeenAt: timestamp,
     });
@@ -83,6 +92,7 @@ bridgeRoutes.post("/api/bridges/register", async (c) => {
     id: createId("brg"),
     bridgeName,
     bridgeToken: createInviteToken(),
+    currentInstanceId: bridgeInstanceId,
     status: "online",
     platform,
     version,
@@ -98,6 +108,7 @@ bridgeRoutes.post("/api/bridges/register", async (c) => {
     {
       bridgeId: bridge.id,
       bridgeToken: bridge.bridgeToken,
+      bridgeInstanceId,
       status: bridge.status,
       lastSeenAt: bridge.lastSeenAt,
     },
@@ -109,14 +120,16 @@ bridgeRoutes.post("/api/bridges/:bridgeId/heartbeat", async (c) => {
   const bridgeId = c.req.param("bridgeId");
   const body = await c.req.json().catch(() => null);
   const bridgeToken = typeof body?.bridgeToken === "string" ? body.bridgeToken.trim() : "";
+  const bridgeInstanceId =
+    typeof body?.bridgeInstanceId === "string" ? body.bridgeInstanceId.trim() : "";
   const metadataProvided = Object.prototype.hasOwnProperty.call(body ?? {}, "metadata");
   const metadata =
     body?.metadata && typeof body.metadata === "object"
       ? JSON.stringify(body.metadata)
       : null;
 
-  if (!bridgeToken) {
-    return c.json({ error: "bridgeToken is required" }, 400);
+  if (!bridgeToken || !bridgeInstanceId) {
+    return c.json({ error: "bridgeToken and bridgeInstanceId are required" }, 400);
   }
 
   const bridge = db
@@ -133,11 +146,16 @@ bridgeRoutes.post("/api/bridges/:bridgeId/heartbeat", async (c) => {
     return c.json({ error: "invalid bridge credentials" }, 403);
   }
 
+  if (bridge.currentInstanceId && bridge.currentInstanceId !== bridgeInstanceId) {
+    return c.json({ error: "stale bridge instance" }, 409);
+  }
+
   const timestamp = now();
 
   db
     .update(localBridges)
     .set({
+      currentInstanceId: bridgeInstanceId,
       status: "online",
       metadata: metadataProvided ? metadata : bridge.metadata,
       lastSeenAt: timestamp,
@@ -148,6 +166,7 @@ bridgeRoutes.post("/api/bridges/:bridgeId/heartbeat", async (c) => {
 
   return c.json({
     bridgeId,
+    bridgeInstanceId,
     status: "online",
     lastSeenAt: timestamp,
   });

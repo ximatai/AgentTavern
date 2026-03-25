@@ -42,8 +42,7 @@
 
 当前短期路线：
 
-- 先补 `bridgeInstanceId` 协议基线
-- 再做真实可用性回归
+- 先做真实可用性回归
 - 再收前端体验
 - `accepted` 任务恢复维持设计先行，暂不深挖实现
 
@@ -99,10 +98,10 @@
   - [x] 补充自动化验证
   - [ ] 完成独立 review
 
-- [ ] `P1` Bridge 运行时协议基线
-  - [ ] 为 `heartbeat / pull / accept / delta / complete / fail` 落地 `bridgeInstanceId`
-  - [ ] 补充自动化验证
-  - [ ] 完成独立 review
+- [-] `P1` Bridge 运行时协议基线
+  - [x] 为 `register / heartbeat / pull / accept / delta / complete / fail` 落地 `bridgeInstanceId`
+  - [x] 补充自动化验证
+  - [x] 完成独立 review
 
 - [x] `P1` 助理 owner 自调用直通
   - [x] owner 自己 `@` 自己的助理时跳过审批
@@ -119,9 +118,9 @@
   - [x] 将接受邀请后的 Codex 助理 attach 到本地 Bridge
   - [-] 将 Codex thread 助理链路切到本地 Bridge 执行
   - [-] 做真实可用性回归
-    - [ ] 复测房间创建、bridge 启动、invite、attach、执行闭环
-    - [ ] 复测 owner 自调用 assistant
-    - [ ] 复测普通成员触发 assistant 审批
+    - [x] 复测房间创建、bridge 启动、invite、attach、执行闭环
+    - [x] 复测 owner 自调用 assistant
+    - [x] 复测普通成员触发 assistant 审批
   - [-] 补齐本地 Bridge 执行链路自动化验证
     - [x] 增加 Bridge 侧状态与任务处理测试
     - [x] 补一条端到端本地 Bridge 执行验证
