@@ -151,14 +151,24 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/accept", async (c) =
   }
 
   const acceptedAt = now();
-  db
+  const result = db
     .update(bridgeTasks)
     .set({
       status: "accepted",
       acceptedAt,
     })
-    .where(eq(bridgeTasks.id, taskId))
+    .where(
+      and(
+        eq(bridgeTasks.id, taskId),
+        eq(bridgeTasks.bridgeId, bridgeId),
+        or(eq(bridgeTasks.status, "pending"), eq(bridgeTasks.status, "assigned")),
+      ),
+    )
     .run();
+
+  if (result.changes === 0) {
+    return c.json({ error: "task is not available for acceptance" }, 409);
+  }
 
   const session = db
     .select()

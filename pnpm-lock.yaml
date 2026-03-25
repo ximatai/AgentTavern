@@ -10,6 +10,9 @@ importers:
 
   apps/bridge:
     dependencies:
+      '@agent-tavern/agent-sdk':
+        specifier: workspace:*
+        version: link:../../packages/agent-sdk
       '@agent-tavern/shared':
         specifier: workspace:*
         version: link:../../packages/shared

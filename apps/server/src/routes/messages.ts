@@ -129,6 +129,31 @@ messageRoutes.post("/api/rooms/:roomId/messages", async (c) => {
         continue;
       }
 
+      if (target.ownerMemberId === senderMemberId) {
+        markMentionStatus({
+          messageId: message.id,
+          targetMemberId: target.id,
+          status: "triggered",
+        });
+
+        const session: AgentSession = {
+          id: createId("as"),
+          roomId,
+          agentMemberId: target.id,
+          triggerMessageId: message.id,
+          requesterMemberId: senderMemberId,
+          approvalId: null,
+          approvalRequired: false,
+          status: "pending",
+          startedAt: null,
+          endedAt: null,
+        };
+
+        db.insert(agentSessions).values(session).run();
+        queueAgentSession(session.id);
+        continue;
+      }
+
       const ownerOnline = isMemberOnline(target.ownerMemberId, roomId);
 
       if (!ownerOnline) {

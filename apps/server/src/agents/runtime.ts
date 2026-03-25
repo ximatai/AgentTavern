@@ -199,6 +199,7 @@ function enqueueBridgeTask(params: {
     requesterMemberId: params.session.requesterMemberId,
     backendType: params.binding.backendType,
     backendThreadId: params.binding.backendThreadId,
+    cwd: params.binding.cwd,
     outputMessageId: params.outputMessageId,
     prompt: params.prompt,
     contextPayload: params.contextPayload,

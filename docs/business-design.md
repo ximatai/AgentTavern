@@ -270,6 +270,7 @@ MVP 规则：
 - 当前 `display_name` 以无空格形式约束，保证 mention 可直接匹配
 - 命中独立 Agent 时直接创建 `AgentSession`
 - 命中助理 Agent 时进入审批流程
+- owner 自己命中自己的助理 Agent 时直接创建 `AgentSession`
 
 ### 审批规则
 
@@ -277,6 +278,7 @@ MVP 规则：
 - 仅直属 owner 可审批
 - owner 在线时才可审批
 - owner 不在线时，本次调用失败
+- owner 自己 `@` 自己的助理时跳过审批
 - 审批结果写入房间系统消息
 
 ## 5. 执行规则

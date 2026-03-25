@@ -34,6 +34,7 @@ bridgeRoutes.post("/api/bridges/register", async (c) => {
     typeof body?.bridgeToken === "string" ? body.bridgeToken.trim() : "";
   const platform = normalizeOptionalString(body?.platform);
   const version = normalizeOptionalString(body?.version);
+  const metadataProvided = Object.prototype.hasOwnProperty.call(body ?? {}, "metadata");
   const metadata =
     body?.metadata && typeof body.metadata === "object"
       ? JSON.stringify(body.metadata)
@@ -63,7 +64,7 @@ bridgeRoutes.post("/api/bridges/register", async (c) => {
         status: "online",
         platform,
         version,
-        metadata,
+        metadata: metadataProvided ? metadata : bridge.metadata,
         lastSeenAt: timestamp,
         updatedAt: timestamp,
       })

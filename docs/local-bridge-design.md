@@ -142,8 +142,17 @@ Codex 采用：
 
 - `attach` 必须保证同一 binding 在同一时刻只归属一个 Bridge
 - `task pull` 必须采用可重试的 claim 语义
+- `task accept` 必须采用条件更新
 - Bridge 在执行前必须先 `accept`
 - 超过租约时间仍未 `accept` 的 `assigned` 任务可重新领取
+- Bridge 必须在本机持久化自己的身份信息
+
+当前执行基线：
+
+- 本地 Bridge 已有 driver 分层
+- 第一版 `codex_cli` driver 在 Bridge 本机执行
+- 当前 `codex_cli` driver 仍是过渡实现，长期目标仍是 SDK thread/resume
+- Codex 助理 skill 在接受邀请成功后，会尽量按本机 bridge 身份自动 attach
 
 ## 8. 边界
 

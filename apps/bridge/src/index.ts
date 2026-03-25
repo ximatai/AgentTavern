@@ -1,38 +1,38 @@
-type BridgeRegistration = {
-  bridgeId: string;
-  bridgeToken: string;
-  status: string;
-  lastSeenAt: string;
-};
+import os from "node:os";
+import path from "node:path";
 
-type BridgeTaskEnvelope = {
-  task: null | {
-    id: string;
-    sessionId: string;
-    roomId: string;
-    agentMemberId: string;
-    requesterMemberId: string;
-    backendType: string;
-    backendThreadId: string;
-    outputMessageId: string;
-    prompt: string;
-    contextPayload: string | null;
-    status: string;
-    createdAt: string;
-    assignedAt: string | null;
-  };
-};
+import { createDriverRegistry } from "./drivers";
+import {
+  type BridgeRegistration,
+  type PostJson,
+  pollAndProcessTask,
+} from "./task-processor";
+import { persistBridgeIdentity, readStoredBridgeIdentity } from "./state";
 
 const serverBaseUrl = process.env.AGENT_TAVERN_SERVER_URL ?? "http://127.0.0.1:8787";
 const bridgeName = process.env.AGENT_TAVERN_BRIDGE_NAME ?? "Local Bridge";
 const heartbeatMs = Number(process.env.AGENT_TAVERN_BRIDGE_HEARTBEAT_MS ?? 10_000);
 const pollMs = Number(process.env.AGENT_TAVERN_BRIDGE_POLL_MS ?? 3_000);
 const enableTaskLoop = process.env.AGENT_TAVERN_BRIDGE_ENABLE_TASKS === "true";
+const bridgeStatePath =
+  process.env.AGENT_TAVERN_BRIDGE_STATE_PATH ??
+  path.join(os.homedir(), ".agent-tavern", "bridge-state.json");
+const drivers = createDriverRegistry();
 
-let bridgeId = process.env.AGENT_TAVERN_BRIDGE_ID ?? "";
-let bridgeToken = process.env.AGENT_TAVERN_BRIDGE_TOKEN ?? "";
+const persistedIdentity = readStoredBridgeIdentity({
+  bridgeStatePath,
+  configuredBridgeId: process.env.AGENT_TAVERN_BRIDGE_ID,
+  configuredBridgeToken: process.env.AGENT_TAVERN_BRIDGE_TOKEN,
+  logger: console,
+});
+let bridgeId = persistedIdentity?.bridgeId ?? "";
+let bridgeToken = persistedIdentity?.bridgeToken ?? "";
+let taskLoopInFlight = false;
 
-async function postJson<T>(path: string, body: Record<string, unknown>): Promise<T> {
+const postJson: PostJson = async <T>(
+  path: string,
+  body: Record<string, unknown>,
+): Promise<T> => {
   const response = await fetch(`${serverBaseUrl}${path}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -46,7 +46,7 @@ async function postJson<T>(path: string, body: Record<string, unknown>): Promise
   }
 
   return data;
-}
+};
 
 async function registerBridge(): Promise<void> {
   const result = await postJson<BridgeRegistration>("/api/bridges/register", {
@@ -64,10 +64,10 @@ async function registerBridge(): Promise<void> {
 
   bridgeId = result.bridgeId;
   bridgeToken = result.bridgeToken;
+  persistBridgeIdentity(bridgeStatePath, { bridgeId, bridgeToken });
 
   console.log(`[bridge] registered id=${bridgeId} status=${result.status}`);
-  console.log(`[bridge] export AGENT_TAVERN_BRIDGE_ID=${bridgeId}`);
-  console.log(`[bridge] export AGENT_TAVERN_BRIDGE_TOKEN=${bridgeToken}`);
+  console.log(`[bridge] persisted identity at ${bridgeStatePath}`);
 }
 
 async function sendHeartbeat(): Promise<void> {
@@ -84,30 +84,26 @@ async function sendHeartbeat(): Promise<void> {
 }
 
 async function pollTasks(): Promise<void> {
-  if (!enableTaskLoop || !bridgeId || !bridgeToken) {
+  if (!enableTaskLoop || !bridgeId || !bridgeToken || taskLoopInFlight) {
     return;
   }
 
-  const result = await postJson<BridgeTaskEnvelope>(`/api/bridges/${bridgeId}/tasks/pull`, {
-    bridgeToken,
-  });
+  taskLoopInFlight = true;
 
-  if (!result.task) {
-    return;
+  try {
+    await pollAndProcessTask({
+      enabled: enableTaskLoop,
+      bridgeId,
+      bridgeToken,
+      postJson,
+      drivers,
+      logger: console,
+    });
+  } catch (error) {
+    throw error;
+  } finally {
+    taskLoopInFlight = false;
   }
-
-  console.log(
-    `[bridge] pulled task=${result.task.id} backend=${result.task.backendType} session=${result.task.sessionId}`,
-  );
-
-  await postJson(`/api/bridges/${bridgeId}/tasks/${result.task.id}/accept`, {
-    bridgeToken,
-  });
-
-  await postJson(`/api/bridges/${bridgeId}/tasks/${result.task.id}/fail`, {
-    bridgeToken,
-    error: "No provider drivers configured yet in local bridge skeleton.",
-  });
 }
 
 async function main(): Promise<void> {

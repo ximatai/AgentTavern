@@ -6,9 +6,11 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
+    "test": "node --import tsx --test src/**/*.test.ts src/**/*.test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@agent-tavern/agent-sdk": "workspace:*",
     "@agent-tavern/shared": "workspace:*"
   },
   "devDependencies": {

@@ -1,0 +1,1 @@
+ALTER TABLE `bridge_tasks` ADD `cwd` text;

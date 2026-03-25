@@ -155,6 +155,7 @@ export type BridgeTask = {
   requesterMemberId: string;
   backendType: AgentBackendType;
   backendThreadId: string;
+  cwd: string | null;
   outputMessageId: string;
   prompt: string;
   contextPayload: string | null;

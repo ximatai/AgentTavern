@@ -208,6 +208,7 @@ export const bridgeTasks = sqliteTable("bridge_tasks", {
     .references(() => members.id),
   backendType: text("backend_type").notNull(),
   backendThreadId: text("backend_thread_id").notNull(),
+  cwd: text("cwd"),
   outputMessageId: text("output_message_id").notNull(),
   prompt: text("prompt").notNull(),
   contextPayload: text("context_payload"),

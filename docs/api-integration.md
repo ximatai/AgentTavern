@@ -243,6 +243,7 @@
 - 带有效 `bridgeId + bridgeToken` 时按原 Bridge 身份重连
 - 当前 `bridgeToken` 由服务端生成
 - 当前 `bridgeToken` 用于本地 Bridge 后续 heartbeat 认证
+- 本地 Bridge 应在本机持久化 `bridgeId + bridgeToken`
 
 #### `POST /api/bridges/:bridgeId/heartbeat`
 
@@ -327,6 +328,7 @@ Bridge 接受任务并开始执行。
 - 成功后任务进入 `accepted`
 - 成功后对应 `AgentSession` 进入 `running`
 - Bridge 应在真正执行前先 `accept`
+- `accept` 采用条件更新，重复 accept 同一任务返回 `409`
 
 #### `POST /api/bridges/:bridgeId/tasks/:taskId/delta`
 
@@ -480,6 +482,7 @@ Bridge 提交失败结果。
 - 命中 agent 时启动调度或审批
 - 命中独立 agent 时进入本地执行链路
 - 命中已批准助理 agent 时进入本地执行链路
+- owner 自己 `@` 自己的助理 agent 时直接进入本地执行链路
 
 ### 审批
 
@@ -507,6 +510,7 @@ Bridge 提交失败结果。
 - 同一审批只能处理一次
 - 审批成功后，对应 session 进入待执行状态
 - owner 不在线时，不进入待审批状态，调用直接失败
+- owner 自己触发自己的助理时，不创建 approval，直接进入待执行状态
 - 待审批请求超时后，对应 approval 进入 `expired`
 - 待审批请求超时后，对应 session 进入 `rejected`
 
@@ -630,6 +634,7 @@ Skill 入口建议：
 - skill 调用接受邀请接口
 - skill 通过 `CODEX_THREAD_ID` 上报当前 `backendThreadId`
 - skill 可上报 thread 默认名
+- skill 在本机存在 bridge 身份时应继续调用 attach 接口
 - 成功后返回房间、owner、成员名等加入结果
 
 当前实现方向：

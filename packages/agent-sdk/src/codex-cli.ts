@@ -4,6 +4,7 @@ import type { AgentAdapter, AgentRunInput, AgentStreamEvent } from "./index";
 
 export type CodexCliAdapterConfig = {
   threadId: string;
+  cwd?: string;
   maxRuntimeMs?: number;
   gracefulShutdownMs?: number;
 };
@@ -53,6 +54,7 @@ export function createCodexCliAdapter(config: CodexCliAdapterConfig): AgentAdapt
           "-",
         ],
         {
+          cwd: config.cwd,
           stdio: ["pipe", "pipe", "pipe"],
         },
       );

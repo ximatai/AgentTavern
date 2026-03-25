@@ -83,19 +83,35 @@
   - [x] 补充自动化验证
   - [x] 完成独立 review
 
+- [x] `P1` Bridge 重连与 accept 边界收紧
+  - [x] 增加 Bridge 身份本地持久化
+  - [x] 收紧 register 重连时的 metadata 保留语义
+  - [x] 将 task accept 改为条件更新
+  - [x] 补充自动化验证
+  - [ ] 完成独立 review
+
 - [ ] `P1` 运行时状态进一步收敛
   - [ ] 评估 `wsToken` / 在线状态是否需要更强恢复策略
   - [ ] 评估测试辅助与 realtime 全局状态的进一步解耦
+
+- [x] `P1` 助理 owner 自调用直通
+  - [x] owner 自己 `@` 自己的助理时跳过审批
+  - [x] 补充自动化验证
 
 ## 4. Next
 
 紧接着进入的开发任务。
 
 - [ ] `P1` 客户端本地 Agent Bridge 开发
-  - [ ] 实现第一版可执行 Bridge driver
-  - [ ] 实现 Codex driver
-  - [ ] 将 Codex thread 助理链路切到本地 Bridge 执行
-  - [ ] 补齐本地 Bridge 执行链路自动化验证
+  - [x] 实现第一版可执行 Bridge driver
+  - [x] 实现第一版 Codex driver 过渡实现
+  - [x] 拆分 Bridge 状态与任务处理模块
+  - [x] 将接受邀请后的 Codex 助理 attach 到本地 Bridge
+  - [-] 将 Codex thread 助理链路切到本地 Bridge 执行
+  - [-] 补齐本地 Bridge 执行链路自动化验证
+    - [x] 增加 Bridge 侧状态与任务处理测试
+    - [x] 补一条端到端本地 Bridge 执行验证
+  - [ ] 完成独立 review
 
 - [ ] `P1` 前端可用性补强
   - [ ] 自动滚动到底部
@@ -145,6 +161,7 @@
   - [x] 完成 AgentBinding Bridge 归属基线
   - [x] 完成客户端本地 Agent Bridge 任务协议基线
   - [x] 收紧 Bridge 归属与任务领取边界
+  - [x] 收紧 Bridge 重连与 accept 边界
   - [x] 收紧 Agent 执行与管理边界
   - [x] 拆分公开 DTO 与内部模型
   - [x] 扩展公开 DTO 覆盖范围

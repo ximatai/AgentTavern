@@ -38,6 +38,7 @@ const {
   approvals,
   agentSessions,
   agentBindings,
+  assistantInvites,
   bridgeTasks,
   localBridges,
 } = schema;
@@ -447,6 +448,99 @@ test("rejecting an assistant request keeps the session rejected and mention reje
   closeOwnerSocket();
 });
 
+test("owner mentioning their own assistant bypasses approval", async () => {
+  const roomId = "room_owner_bypass";
+  const createdAt = new Date("2026-03-25T03:30:00.000Z").toISOString();
+
+  seedRoom({
+    roomId,
+    name: "Owner Bypass Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(members).values([
+    {
+      id: "mem_owner_bypass",
+      roomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "OwnerBypass",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_assistant_bypass",
+      roomId,
+      type: "agent",
+      roleKind: "assistant",
+      displayName: "AssistBypass",
+      ownerMemberId: "mem_owner_bypass",
+      adapterType: "local_process",
+      adapterConfig: JSON.stringify({
+        command: "node",
+        args: [
+          "-e",
+          "process.stdin.setEncoding('utf8');let text='';process.stdin.on('data',chunk=>text+=chunk);process.stdin.on('end',()=>process.stdout.write('owner bypass:' + text.trim()));",
+        ],
+        inputFormat: "text",
+      }),
+      presenceStatus: "online",
+      createdAt,
+    },
+  ]).run();
+
+  const ownerToken = issueWsToken("mem_owner_bypass", roomId);
+
+  const messageResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_owner_bypass",
+      wsToken: ownerToken,
+      content: "@AssistBypass please help",
+    }),
+  });
+
+  assert.equal(messageResponse.status, 201);
+
+  const approval = db.select().from(approvals).where(eq(approvals.roomId, roomId)).get();
+  const session = await waitFor(
+    () =>
+      db
+        .select()
+        .from(agentSessions)
+        .where(eq(agentSessions.roomId, roomId))
+        .get(),
+    (value) => value?.status === "completed",
+  );
+  const mention = db
+    .select()
+    .from(mentions)
+    .where(eq(mentions.targetMemberId, "mem_assistant_bypass"))
+    .get();
+  const roomMessages = db
+    .select()
+    .from(messages)
+    .where(eq(messages.roomId, roomId))
+    .all();
+
+  assert.equal(approval, undefined);
+  assert.equal(session?.approvalRequired, false);
+  assert.equal(session?.status, "completed");
+  assert.equal(mention?.status, "triggered");
+  assert.ok(
+    roomMessages.some(
+      (message) =>
+        message.messageType === "agent_text" &&
+        /owner bypass:/i.test(message.content),
+    ),
+  );
+  assert.ok(!roomMessages.some((message) => message.messageType === "approval_request"));
+});
+
 test("mentioning an independent agent triggers execution and commits a reply", async () => {
   const roomId = "room_independent_agent";
   const createdAt = new Date("2026-03-25T04:00:00.000Z").toISOString();
@@ -620,6 +714,29 @@ test("bridge register creates a reusable bridge identity and heartbeat refreshes
     .get();
 
   assert.match(preservedBridge?.metadata ?? "", /activeAgents/);
+
+  const preserveRegisterResponse = await app.request("http://localhost/api/bridges/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      bridgeId: registered.bridgeId,
+      bridgeToken: registered.bridgeToken,
+      bridgeName: "Alice Laptop",
+      platform: "macOS",
+      version: "0.1.2",
+    }),
+  });
+
+  assert.equal(preserveRegisterResponse.status, 200);
+
+  const preservedAfterRegister = db
+    .select()
+    .from(localBridges)
+    .where(eq(localBridges.id, registered.bridgeId))
+    .get();
+
+  assert.equal(preservedAfterRegister?.version, "0.1.2");
+  assert.match(preservedAfterRegister?.metadata ?? "", /activeAgents/);
 });
 
 test("bridge can attach an existing agent binding by backendThreadId", async () => {
@@ -774,6 +891,97 @@ test("bridge attach returns 409 when the binding is already owned by another bri
   assert.deepEqual(await response.json(), {
     error: "agent binding already attached to another bridge",
   });
+});
+
+test("accepted assistant invite can be attached to a bridge by memberId", async () => {
+  const createdAt = new Date("2026-03-25T05:45:00.000Z").toISOString();
+
+  db.insert(rooms).values({
+    id: "room_invite_attach",
+    name: "Invite Attach Room",
+    inviteToken: createInviteToken(),
+    status: "active",
+    createdAt,
+  }).run();
+
+  db.insert(members).values({
+    id: "mem_owner_invite_attach",
+    roomId: "room_invite_attach",
+    type: "human",
+    roleKind: "none",
+    displayName: "OwnerInviteAttach",
+    ownerMemberId: null,
+    adapterType: null,
+    adapterConfig: null,
+    presenceStatus: "online",
+    createdAt,
+  }).run();
+
+  db.insert(assistantInvites).values({
+    id: "ainv_attach",
+    roomId: "room_invite_attach",
+    ownerMemberId: "mem_owner_invite_attach",
+    presetDisplayName: "ThreadAttach",
+    backendType: "codex_cli",
+    inviteToken: "invite_attach_token",
+    status: "pending",
+    acceptedMemberId: null,
+    createdAt,
+    expiresAt: null,
+    acceptedAt: null,
+  }).run();
+
+  db.insert(localBridges).values({
+    id: "brg_invite_attach",
+    bridgeName: "Invite Attach Bridge",
+    bridgeToken: "bridge_invite_attach_token",
+    status: "online",
+    platform: "macOS",
+    version: "0.1.0",
+    metadata: null,
+    lastSeenAt: createdAt,
+    createdAt,
+    updatedAt: createdAt,
+  }).run();
+
+  const acceptResponse = await app.request(
+    "http://localhost/api/assistant-invites/invite_attach_token/accept",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        backendThreadId: "thread_invite_attach",
+      }),
+    },
+  );
+
+  assert.equal(acceptResponse.status, 201);
+  const accepted = await acceptResponse.json();
+
+  const attachResponse = await app.request(
+    "http://localhost/api/bridges/brg_invite_attach/agents/attach",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_invite_attach_token",
+        memberId: accepted.memberId,
+        cwd: "/tmp/invite-attach",
+      }),
+    },
+  );
+
+  assert.equal(attachResponse.status, 200);
+
+  const binding = db
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.memberId, accepted.memberId))
+    .get();
+
+  assert.equal(binding?.bridgeId, "brg_invite_attach");
+  assert.equal(binding?.status, "active");
+  assert.equal(binding?.cwd, "/tmp/invite-attach");
 });
 
 test("unattached codex binding fails with a local bridge requirement message", async () => {
@@ -950,6 +1158,7 @@ test("attached codex binding can be pulled and completed through bridge task end
   const pulled = await pullResponse.json();
   assert.equal(pulled.task.bridgeId, "brg_codex_task");
   assert.equal(pulled.task.backendThreadId, "thread_codex_bridge_task");
+  assert.equal(pulled.task.cwd, "/tmp/codex-bridge-task");
 
   const acceptResponse = await app.request(
     `http://localhost/api/bridges/brg_codex_task/tasks/${pulled.task.id}/accept`,
@@ -963,6 +1172,19 @@ test("attached codex binding can be pulled and completed through bridge task end
   );
 
   assert.equal(acceptResponse.status, 200);
+
+  const duplicateAcceptResponse = await app.request(
+    `http://localhost/api/bridges/brg_codex_task/tasks/${pulled.task.id}/accept`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_codex_task_token",
+      }),
+    },
+  );
+
+  assert.equal(duplicateAcceptResponse.status, 409);
 
   const deltaResponse = await app.request(
     `http://localhost/api/bridges/brg_codex_task/tasks/${pulled.task.id}/delta`,
