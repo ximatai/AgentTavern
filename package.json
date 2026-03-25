@@ -10,7 +10,8 @@
     "build": "pnpm -r build",
     "test:server": "pnpm --filter @agent-tavern/server test",
     "test:bridge": "pnpm --filter @agent-tavern/bridge test",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "skill:install": "python3 tools/install-skill.py"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

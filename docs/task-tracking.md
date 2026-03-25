@@ -113,6 +113,14 @@
     - [x] 补一条端到端本地 Bridge 执行验证
   - [ ] 完成独立 review
 
+- [-] `P1` Codex 助理 skill 版本化基线
+  - [x] 将 `join-agent-tavern` skill 源文件收回仓库
+  - [x] 提供通用安装入口
+  - [x] 对齐文档
+  - [x] 收口 skill 的结构化失败结果
+  - [x] 在 accept 阶段持久化 `cwd`
+  - [ ] 完成独立 review
+
 - [ ] `P1` 前端可用性补强
   - [ ] 自动滚动到底部
   - [ ] 更清晰的流式状态展示

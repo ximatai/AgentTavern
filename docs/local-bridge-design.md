@@ -153,6 +153,7 @@ Codex 采用：
 - 第一版 `codex_cli` driver 在 Bridge 本机执行
 - 当前 `codex_cli` driver 仍是过渡实现，长期目标仍是 SDK thread/resume
 - Codex 助理 skill 在接受邀请成功后，会尽量按本机 bridge 身份自动 attach
+- `join-agent-tavern` skill 的仓库内源文件基线已建立，仓库内路径为 `tools/skills/join-agent-tavern`
 
 ## 8. 边界
 
