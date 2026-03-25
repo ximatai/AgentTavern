@@ -7,8 +7,11 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.resolve(currentDir, "../..");
-const dataDir = path.join(appDir, "data");
-const databasePath = path.join(dataDir, "agent-tavern.db");
+const defaultDataDir = path.join(appDir, "data");
+const databasePath =
+  process.env.AGENT_TAVERN_DB_PATH ??
+  path.join(process.env.AGENT_TAVERN_DATA_DIR ?? defaultDataDir, "agent-tavern.db");
+const dataDir = path.dirname(databasePath);
 
 fs.mkdirSync(dataDir, { recursive: true });
 
@@ -16,3 +19,4 @@ const sqlite = new Database(databasePath);
 sqlite.pragma("journal_mode = WAL");
 
 export const db = drizzle(sqlite);
+export { sqlite };

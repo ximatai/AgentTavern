@@ -73,6 +73,7 @@
 - member 主动离开房间后，原 `wsToken` 失效
 - 断线重连时可继续使用未失效的 `wsToken`
 - 同一 member 允许存在多个并发连接
+- 服务重启后，旧 `wsToken` 全部失效
 
 #### `POST /api/rooms/:roomId/invite/reset`
 
@@ -158,6 +159,17 @@
 - 第一版一个房间内不允许重复绑定同一 `backendThreadId`
 - 接受动作适合封装为 Codex skill
 - 接受成功后创建 `members` 与 `agent_bindings`
+
+### 运行时恢复
+
+当前服务端采用保守恢复语义：
+
+- 服务重启后，旧 `wsToken` 全部失效
+- 服务重启后，内存中的在线状态全部丢失
+- 服务启动时会扫描 `pending` 的审批请求
+- 扫描到的 `pending approvals` 会统一转成 `expired`
+- 对应的 `agent_sessions` 会统一转成 `rejected`
+- 服务端会补写一条 `approval_result` 系统消息，说明该审批因服务重启而失效
 
 ### 成员
 

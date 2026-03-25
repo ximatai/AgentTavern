@@ -5,8 +5,10 @@ import { WebSocketServer, type WebSocket } from "ws";
 
 import { app } from "./app";
 import { registerSocket } from "./realtime";
+import { recoverRuntimeState } from "./runtime/recovery";
 
 const port = Number(process.env.PORT ?? 8787);
+const recoveryResult = recoverRuntimeState();
 
 const server = serve({
   fetch: app.fetch,
@@ -29,5 +31,15 @@ wss.on("connection", (socket: WebSocket, request) => {
     }),
   );
 });
+
+if (
+  recoveryResult.expiredApprovals > 0 ||
+  recoveryResult.rejectedSessions > 0 ||
+  recoveryResult.systemMessages > 0
+) {
+  console.log(
+    `runtime recovery: expiredApprovals=${recoveryResult.expiredApprovals} rejectedSessions=${recoveryResult.rejectedSessions} systemMessages=${recoveryResult.systemMessages}`,
+  );
+}
 
 console.log(`server listening on http://localhost:${port}`);
