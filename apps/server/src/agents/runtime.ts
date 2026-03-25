@@ -16,8 +16,17 @@ import type {
 } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
-import { agentBindings, agentSessions, bridgeTasks, members, messages, rooms } from "../db/schema";
+import {
+  agentBindings,
+  agentSessions,
+  bridgeTasks,
+  localBridges,
+  members,
+  messages,
+  rooms,
+} from "../db/schema";
 import { createId } from "../lib/id";
+import { toPublicMessage } from "../lib/public";
 import { broadcastToRoom } from "../realtime";
 import {
   commitSessionMessage,
@@ -29,6 +38,7 @@ import {
 
 const agentRunQueue = new Map<string, Promise<void>>();
 const CONTEXT_MESSAGE_LIMIT = Number(process.env.AGENT_CONTEXT_MESSAGE_LIMIT ?? 20);
+const BRIDGE_STALE_AFTER_MS = Number(process.env.AGENT_TAVERN_BRIDGE_STALE_AFTER_MS ?? 20_000);
 
 function parseLocalProcessConfig(raw: string | null): LocalProcessAdapterConfig | null {
   if (!raw) {
@@ -215,6 +225,37 @@ function enqueueBridgeTask(params: {
   return task;
 }
 
+function isBridgeAvailable(bridgeId: string): boolean {
+  const bridge = db
+    .select()
+    .from(localBridges)
+    .where(eq(localBridges.id, bridgeId))
+    .get();
+
+  if (!bridge || bridge.status !== "online") {
+    return false;
+  }
+
+  return Date.now() - new Date(bridge.lastSeenAt).getTime() <= BRIDGE_STALE_AFTER_MS;
+}
+
+function createBridgePendingMessage(params: {
+  roomId: string;
+  agentMemberId: string;
+  agentDisplayName: string;
+  triggerMessageId: string;
+}): Message {
+  return {
+    id: createId("msg"),
+    roomId: params.roomId,
+    senderMemberId: params.agentMemberId,
+    messageType: "system_notice",
+    content: `${params.agentDisplayName} is waiting for its local bridge to reconnect.`,
+    replyToMessageId: params.triggerMessageId,
+    createdAt: now(),
+  };
+}
+
 async function runAgentSession(sessionId: string): Promise<void> {
   const session = db
     .select()
@@ -313,6 +354,24 @@ async function runAgentSession(sessionId: string): Promise<void> {
       contextPayload: JSON.stringify(input.contextMessages),
       outputMessageId,
     });
+
+    if (!isBridgeAvailable(typedBinding.bridgeId)) {
+      const waitingMessage = createBridgePendingMessage({
+        roomId: typedSession.roomId,
+        agentMemberId: typedAgent.id,
+        agentDisplayName: typedAgent.displayName,
+        triggerMessageId: typedTriggerMessage.id,
+      });
+
+      db.insert(messages).values(waitingMessage).run();
+      broadcastToRoom(typedSession.roomId, {
+        type: "message.created",
+        roomId: typedSession.roomId,
+        timestamp: now(),
+        payload: { message: toPublicMessage(waitingMessage) },
+      });
+    }
+
     return;
   }
 

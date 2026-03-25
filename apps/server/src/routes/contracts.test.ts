@@ -1305,6 +1305,116 @@ test("attached codex binding can be pulled and completed through bridge task end
   );
 });
 
+test("attached codex binding emits a waiting notice when its bridge heartbeat is stale", async () => {
+  const roomId = "room_codex_bridge_waiting";
+  const staleSeenAt = new Date(Date.now() - 60_000).toISOString();
+
+  seedRoom({
+    roomId,
+    name: "Codex Bridge Waiting Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(localBridges).values({
+    id: "brg_codex_waiting",
+    bridgeName: "Stale Codex Bridge",
+    bridgeToken: "bridge_codex_waiting_token",
+    currentInstanceId: "binst_codex_waiting",
+    status: "online",
+    platform: "macOS",
+    version: "0.1.0",
+    metadata: null,
+    lastSeenAt: staleSeenAt,
+    createdAt: staleSeenAt,
+    updatedAt: staleSeenAt,
+  }).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_requester_codex_waiting",
+      roomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "RequesterWaiting",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt: staleSeenAt,
+    },
+    {
+      id: "mem_codex_waiting",
+      roomId,
+      type: "agent",
+      roleKind: "independent",
+      displayName: "WaitingCodex",
+      ownerMemberId: null,
+      adapterType: "codex_cli",
+      adapterConfig: null,
+      presenceStatus: "offline",
+      createdAt: staleSeenAt,
+    },
+  ]).run();
+
+  db.insert(agentBindings).values({
+    id: "agb_codex_waiting",
+    memberId: "mem_codex_waiting",
+    bridgeId: "brg_codex_waiting",
+    backendType: "codex_cli",
+    backendThreadId: "thread_codex_waiting",
+    cwd: "/tmp/codex-waiting",
+    status: "active",
+    attachedAt: staleSeenAt,
+    detachedAt: null,
+  }).run();
+
+  const requesterToken = issueWsToken("mem_requester_codex_waiting", roomId);
+  const response = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_requester_codex_waiting",
+      wsToken: requesterToken,
+      content: "@WaitingCodex are you there?",
+    }),
+  });
+
+  assert.equal(response.status, 201);
+
+  const queuedTask = await waitFor(
+    () =>
+      db
+        .select()
+        .from(bridgeTasks)
+        .where(eq(bridgeTasks.bridgeId, "brg_codex_waiting"))
+        .get(),
+    (value) => value?.status === "pending",
+  );
+  const roomMessages = await waitFor(
+    () =>
+      db
+        .select()
+        .from(messages)
+        .where(eq(messages.roomId, roomId))
+        .all(),
+    (value) =>
+      value.some(
+        (message) =>
+          message.messageType === "system_notice" &&
+          /waiting for its local bridge to reconnect/i.test(message.content),
+      ),
+  );
+
+  assert.equal(queuedTask?.status, "pending");
+  assert.ok(
+    roomMessages.some(
+      (message) =>
+        message.messageType === "system_notice" &&
+        /waiting for its local bridge to reconnect/i.test(message.content),
+    ),
+  );
+});
+
 test("pull can reclaim an expired assigned bridge task lease", async () => {
   const createdAt = new Date("2026-03-25T08:00:00.000Z").toISOString();
   const expiredAssignedAt = new Date(Date.now() - 60_000).toISOString();
