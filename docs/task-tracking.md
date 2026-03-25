@@ -11,6 +11,8 @@
 - 范围变化时，及时调整优先级和任务拆分
 - 已完成工作必须保留记录，不直接删除
 - 已完成工作按树结构标记，便于追踪父任务和子任务的完成情况
+- 若某项工作不能直接提升“本地 Agent 可接入性”“真实可用性”“UI 可替换性”，默认不得长期占用当前阶段主线
+- 对基础设施类任务，若连续两轮仍未转化为用户可感知收益，应降级优先级或先冻结为设计项
 
 状态约定：
 
@@ -30,15 +32,22 @@
 
 当前目标：
 
-- 收紧当前实现的稳定性边界
-- 补齐关键自动化验证
-- 为客户端本地 Agent Bridge 接入与后续 UI 演进打稳基线
+- 先保证本地 Agent 接入闭环稳定可用
+- 先保证真实联调和日常使用可持续
+- 在不偏离主线的前提下，为后续 UI 演进打稳基线
 
 ## 3. Now
 
 当前 1 到 2 周内优先处理的事项。
 
-- [-] `P1` 服务端关键链路自动化验证
+当前短期路线：
+
+- 先补 `bridgeInstanceId` 协议基线
+- 再做真实可用性回归
+- 再收前端体验
+- `accepted` 任务恢复维持设计先行，暂不深挖实现
+
+- [x] `P1` 服务端关键链路自动化验证
   - [x] 覆盖重复加入返回 `409`
   - [x] 覆盖 owner 不在线时助理调用收口
   - [x] 覆盖审批通过链路
@@ -47,7 +56,7 @@
   - [x] 覆盖独立 Agent 触发执行
   - [x] 完成独立 review
 
-- [-] `P1` 客户端本地 Agent Bridge 设计
+- [x] `P1` 客户端本地 Agent Bridge 设计
   - [x] 明确“服务端只调度，不直接执行客户端本地 Agent”
   - [x] 明确本地 Bridge / 服务端 / provider driver 三层边界
   - [x] 明确 Codex 方向优先使用本地 Bridge + SDK thread/resume
@@ -83,16 +92,17 @@
   - [x] 补充自动化验证
   - [x] 完成独立 review
 
-- [x] `P1` Bridge 重连与 accept 边界收紧
+- [-] `P1` Bridge 重连与 accept 边界收紧
   - [x] 增加 Bridge 身份本地持久化
   - [x] 收紧 register 重连时的 metadata 保留语义
   - [x] 将 task accept 改为条件更新
   - [x] 补充自动化验证
   - [ ] 完成独立 review
 
-- [ ] `P1` 运行时状态进一步收敛
-  - [ ] 评估 `wsToken` / 在线状态是否需要更强恢复策略
-  - [ ] 评估测试辅助与 realtime 全局状态的进一步解耦
+- [ ] `P1` Bridge 运行时协议基线
+  - [ ] 为 `heartbeat / pull / accept / delta / complete / fail` 落地 `bridgeInstanceId`
+  - [ ] 补充自动化验证
+  - [ ] 完成独立 review
 
 - [x] `P1` 助理 owner 自调用直通
   - [x] owner 自己 `@` 自己的助理时跳过审批
@@ -108,17 +118,32 @@
   - [x] 拆分 Bridge 状态与任务处理模块
   - [x] 将接受邀请后的 Codex 助理 attach 到本地 Bridge
   - [-] 将 Codex thread 助理链路切到本地 Bridge 执行
+  - [-] 做真实可用性回归
+    - [ ] 复测房间创建、bridge 启动、invite、attach、执行闭环
+    - [ ] 复测 owner 自调用 assistant
+    - [ ] 复测普通成员触发 assistant 审批
   - [-] 补齐本地 Bridge 执行链路自动化验证
     - [x] 增加 Bridge 侧状态与任务处理测试
     - [x] 补一条端到端本地 Bridge 执行验证
   - [ ] 完成独立 review
 
-- [-] `P1` Codex 助理 skill 版本化基线
+- [x] `P1` Codex 助理 skill 版本化基线
   - [x] 将 `join-agent-tavern` skill 源文件收回仓库
   - [x] 提供通用安装入口
   - [x] 对齐文档
   - [x] 收口 skill 的结构化失败结果
   - [x] 在 accept 阶段持久化 `cwd`
+  - [x] 完成独立 review
+
+- [-] `P1` Bridge 任务恢复设计
+  - [x] 对齐 skill 版本化的独立 review 结果
+  - [x] 明确 `accepted` 任务的 fenced recovery 语义
+  - [x] 明确恢复过程中的 session 状态收口
+  - [x] 补充设计文档
+  - [x] 统一 `bridgeInstanceId` 的接口口径
+  - [x] 统一协议命名
+  - [x] 补充设计级验证
+  - [x] 明确当前只停留在设计层，未完成 `bridgeInstanceId` 基线和真实回归前不进入实现
   - [ ] 完成独立 review
 
 - [ ] `P1` 前端可用性补强
@@ -133,6 +158,7 @@
 - [ ] `P2` 更强的运行时恢复策略
   - [ ] 评估重启后的会话恢复边界
   - [ ] 评估更稳定的 presence / token 模型
+  - [ ] 仅在成为真实阻塞项后再进入实现
 
 - [ ] `P2` 面向酒馆式像素 UI 的表现层预留
   - [ ] 整理事件消费边界

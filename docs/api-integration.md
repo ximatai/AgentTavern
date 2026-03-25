@@ -169,7 +169,7 @@
 - 客户端本地 Agent 由本地 Bridge 执行
 - provider 特有的 thread/session 语义不直接暴露为全局领域模型
 
-建议补充的 Bridge 协议事件：
+建议补充的 Bridge 领域事件：
 
 - `bridge.register`
 - `bridge.heartbeat`
@@ -180,12 +180,14 @@
 - `task.delta`
 - `task.completed`
 - `task.failed`
+- `task.recover`（设计中）
 
 说明：
 
-- 以上为下一阶段设计方向
+- 以上为下一阶段领域事件方向
 - 具体字段以 `docs/local-bridge-design.md` 为准
 - 当前服务端内置 `local_process` 仍可作为过渡执行方案
+- 当前已落地的是 HTTP 接口，不是这些 dotted name 事件
 
 后续需要补充的 binding 信息：
 
@@ -199,6 +201,8 @@
 - `AgentBinding` 的长期目标需要归属到某个已注册的本地 Bridge
 - invite 接受成功后，可先创建 member 与基础 binding
 - bridge 真正接管执行后，再将 binding 关联到具体 `bridgeId`
+- `accepted` 任务的恢复不应采用无条件重排队，后续需要引入实例级 fencing
+- 引入 fenced recovery 后，运行时动作会逐步补充 `bridgeInstanceId`
 
 #### `POST /api/bridges/register`
 
@@ -244,12 +248,13 @@
 - 当前 `bridgeToken` 由服务端生成
 - 当前 `bridgeToken` 用于本地 Bridge 后续 heartbeat 认证
 - 本地 Bridge 应在本机持久化 `bridgeId + bridgeToken`
+- fenced recovery 设计落地后，Bridge 进程启动时还需要生成新的 `bridgeInstanceId`
 
 #### `POST /api/bridges/:bridgeId/heartbeat`
 
 刷新本地 Bridge 在线状态。
 
-请求体：
+当前实现请求体：
 
 ```json
 {
@@ -260,9 +265,22 @@
 }
 ```
 
+fenced recovery 计划形状：
+
+```json
+{
+  "bridgeToken": "xxxx",
+  "bridgeInstanceId": "binst_xxx",
+  "metadata": {
+    "activeAgents": 2
+  }
+}
+```
+
 规则：
 
 - `bridgeId` 与 `bridgeToken` 必须匹配
+- fenced recovery 设计下，`bridgeInstanceId` 也要参与活跃实例判定
 - heartbeat 成功后更新 `lastSeenAt`
 - heartbeat 成功后当前 Bridge 状态刷新为 `online`
 - 未显式传入 `metadata` 时保留原 metadata
@@ -303,11 +321,20 @@
 
 拉取当前 Bridge 可执行的下一个任务。
 
-请求体：
+当前实现请求体：
 
 ```json
 {
   "bridgeToken": "xxxx"
+}
+```
+
+fenced recovery 计划形状：
+
+```json
+{
+  "bridgeToken": "xxxx",
+  "bridgeInstanceId": "binst_xxx"
 }
 ```
 
@@ -317,14 +344,33 @@
 - 领取采用条件更新，避免同一任务被重复拉取
 - 拉取成功后任务进入 `assigned`
 - 已 `assigned` 但超过租约时间仍未 `accept` 的任务可被重新领取
+- fenced recovery 设计下，领取方还需要显式声明当前 `bridgeInstanceId`
 
 #### `POST /api/bridges/:bridgeId/tasks/:taskId/accept`
 
 Bridge 接受任务并开始执行。
 
+当前实现请求体：
+
+```json
+{
+  "bridgeToken": "xxxx"
+}
+```
+
+fenced recovery 计划形状：
+
+```json
+{
+  "bridgeToken": "xxxx",
+  "bridgeInstanceId": "binst_xxx"
+}
+```
+
 规则：
 
 - 需要有效 `bridgeToken`
+- fenced recovery 设计下，需要有效 `bridgeInstanceId`
 - 成功后任务进入 `accepted`
 - 成功后对应 `AgentSession` 进入 `running`
 - Bridge 应在真正执行前先 `accept`
@@ -334,7 +380,7 @@ Bridge 接受任务并开始执行。
 
 Bridge 回传增量输出。
 
-请求体：
+当前实现请求体：
 
 ```json
 {
@@ -343,16 +389,27 @@ Bridge 回传增量输出。
 }
 ```
 
+fenced recovery 计划形状：
+
+```json
+{
+  "bridgeToken": "xxxx",
+  "bridgeInstanceId": "binst_xxx",
+  "delta": "partial output"
+}
+```
+
 规则：
 
 - 当前只负责广播流式事件
+- fenced recovery 设计下，delta 需要校验实例归属
 - 最终消息仍以 `complete` 为准固化
 
 #### `POST /api/bridges/:bridgeId/tasks/:taskId/complete`
 
 Bridge 提交最终输出。
 
-请求体：
+当前实现请求体：
 
 ```json
 {
@@ -361,9 +418,20 @@ Bridge 提交最终输出。
 }
 ```
 
+fenced recovery 计划形状：
+
+```json
+{
+  "bridgeToken": "xxxx",
+  "bridgeInstanceId": "binst_xxx",
+  "finalText": "final output"
+}
+```
+
 规则：
 
 - 成功后任务进入 `completed`
+- fenced recovery 设计下，complete 需要校验实例归属
 - 成功后对应消息固化为 `agent_text`
 - 成功后对应 `AgentSession` 进入 `completed`
 
@@ -371,7 +439,7 @@ Bridge 提交最终输出。
 
 Bridge 提交失败结果。
 
-请求体：
+当前实现请求体：
 
 ```json
 {
@@ -380,11 +448,45 @@ Bridge 提交失败结果。
 }
 ```
 
+fenced recovery 计划形状：
+
+```json
+{
+  "bridgeToken": "xxxx",
+  "bridgeInstanceId": "binst_xxx",
+  "error": "driver not configured"
+}
+```
+
 规则：
 
 - 成功后任务进入 `failed`
+- fenced recovery 设计下，fail 需要校验实例归属
 - 成功后对应 `AgentSession` 进入 `failed`
 - 房间内补写失败系统消息
+
+#### `POST /api/bridges/:bridgeId/tasks/recover`
+
+说明：
+
+- 当前仍处于设计阶段，尚未落地实现
+- 用于 fenced recovery 下由新实例发起恢复动作
+
+计划请求体：
+
+```json
+{
+  "bridgeToken": "xxxx",
+  "bridgeInstanceId": "binst_xxx",
+  "targetTaskIds": ["btsk_xxx"]
+}
+```
+
+计划规则：
+
+- 只能恢复已超过 accepted lease 的任务
+- 必须校验当前实例是否具备接管资格
+- 恢复时必须同步处理 `bridge_tasks` 与 `agent_sessions`
 
 ### 运行时恢复
 
