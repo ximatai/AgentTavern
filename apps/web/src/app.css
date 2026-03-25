@@ -167,6 +167,17 @@ textarea {
   letter-spacing: 0.12em;
 }
 
+.flash-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.38rem 0.72rem;
+  border-radius: 999px;
+  background: rgba(0, 70, 74, 0.08);
+  color: #00464a;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .live-dot {
   width: 8px;
   height: 8px;
@@ -395,6 +406,17 @@ textarea {
   text-transform: uppercase;
 }
 
+.stream-pill {
+  padding: 0.18rem 0.48rem;
+  border-radius: 999px;
+  background: rgba(0, 70, 74, 0.09);
+  color: #00464a;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .composer-dock {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -405,6 +427,44 @@ textarea {
   background: rgba(255, 255, 255, 0.84);
   backdrop-filter: blur(16px);
   box-shadow: 0 22px 44px rgba(25, 28, 29, 0.09);
+}
+
+.mention-menu {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+}
+
+.mention-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 0.72rem 0.9rem;
+  border-radius: 16px;
+  background: rgba(0, 70, 74, 0.06);
+  color: #00464a;
+  box-shadow: none;
+}
+
+.mention-option:hover {
+  box-shadow: none;
+}
+
+.mention-option-active {
+  background: rgba(0, 70, 74, 0.14);
+}
+
+.mention-option strong {
+  font-size: 0.9rem;
+}
+
+.mention-option span {
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .composer-dock textarea {

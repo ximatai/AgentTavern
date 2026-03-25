@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type UIEvent } from "react";
 
 import type {
   PublicApproval,
@@ -38,6 +38,16 @@ type AssistantInviteResult = {
   expiresAt: string;
   createdAt: string;
 };
+
+type MentionSuggestion = {
+  memberId: string;
+  displayName: string;
+  roleLabel: string;
+};
+
+function mentionSignature(mention: { start: number; query: string } | null): string {
+  return mention ? `${mention.start}:${mention.query}` : "";
+}
 
 const demoAgentArgs = [
   "--input-type=module",
@@ -102,6 +112,36 @@ function roleLabel(member: Pick<PublicMember, "type" | "roleKind">): string {
   return member.roleKind === "assistant" ? "assistant" : "agent";
 }
 
+function getMentionQuery(
+  input: string,
+  caretIndex: number,
+): { start: number; end: number; query: string } | null {
+  const safeCaret = Math.max(0, Math.min(caretIndex, input.length));
+  const beforeCaret = input.slice(0, safeCaret);
+  const atIndex = beforeCaret.lastIndexOf("@");
+
+  if (atIndex < 0) {
+    return null;
+  }
+
+  const prevChar = atIndex === 0 ? "" : beforeCaret[atIndex - 1] ?? "";
+  if (prevChar && /[\p{L}\p{N}_]/u.test(prevChar)) {
+    return null;
+  }
+
+  const query = beforeCaret.slice(atIndex + 1);
+  if (/\s/.test(query)) {
+    return null;
+  }
+
+  let end = atIndex + 1;
+  while (end < input.length && !/[\s@]/.test(input[end] ?? "")) {
+    end += 1;
+  }
+
+  return { start: atIndex, end, query };
+}
+
 function App() {
   const [roomName, setRoomName] = useState("Tavern Room");
   const [nickname, setNickname] = useState("Alice");
@@ -125,10 +165,21 @@ function App() {
   const [streams, setStreams] = useState<Record<string, SessionStream>>({});
   const [sessionActors, setSessionActors] = useState<Record<string, SessionActor>>({});
   const [statusText, setStatusText] = useState("Ready");
+  const [flashText, setFlashText] = useState("");
   const [errorText, setErrorText] = useState("");
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [approvalActionId, setApprovalActionId] = useState("");
+  const [isCopyingRoomInvite, setIsCopyingRoomInvite] = useState(false);
+  const [isCopyingAssistantInvite, setIsCopyingAssistantInvite] = useState(false);
+  const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
+  const [composerCaret, setComposerCaret] = useState(0);
+  const [dismissedMentionSignature, setDismissedMentionSignature] = useState("");
   const socketRef = useRef<WebSocket | null>(null);
   const selfRef = useRef<JoinResult | null>(null);
   const sessionActorsRef = useRef<Record<string, SessionActor>>({});
+  const messageStreamRef = useRef<HTMLDivElement | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const autoScrollRef = useRef(true);
 
   useEffect(() => {
     selfRef.current = self;
@@ -137,6 +188,45 @@ function App() {
   useEffect(() => {
     sessionActorsRef.current = sessionActors;
   }, [sessionActors]);
+
+  useEffect(() => {
+    if (!flashText) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setFlashText("");
+    }, 2200);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [flashText]);
+
+  useEffect(() => {
+    setSelectedMentionIndex(0);
+  }, [messageInput]);
+
+  useEffect(() => {
+    const nextMentionQuery = getMentionQuery(messageInput, composerCaret);
+
+    if (mentionSignature(nextMentionQuery) !== dismissedMentionSignature) {
+      setDismissedMentionSignature("");
+    }
+  }, [composerCaret, dismissedMentionSignature, messageInput]);
+
+  useEffect(() => {
+    const container = messageStreamRef.current;
+
+    if (!container || !autoScrollRef.current) {
+      return;
+    }
+
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior: "smooth",
+    });
+  }, [messages, streams]);
 
   useEffect(() => {
     return () => {
@@ -151,6 +241,7 @@ function App() {
       request<PublicMessage[]>(`/api/rooms/${nextRoomId}/messages`),
     ]);
 
+    autoScrollRef.current = true;
     setRoom(nextRoom);
     setMembers(nextMembers);
     setMessages(sortByCreatedAt(nextMessages));
@@ -315,11 +406,12 @@ function App() {
   }
 
   async function handleSendMessage(): Promise<void> {
-    if (!self || !messageInput.trim()) {
+    if (!self || !messageInput.trim() || isSendingMessage) {
       return;
     }
 
     setErrorText("");
+    setIsSendingMessage(true);
 
     try {
       await request<PublicMessage>(`/api/rooms/${self.roomId}/messages`, {
@@ -331,9 +423,38 @@ function App() {
         }),
       });
       setMessageInput("");
+      setComposerCaret(0);
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : "failed to send message");
+    } finally {
+      setIsSendingMessage(false);
     }
+  }
+
+  function applyMentionSuggestion(suggestion: MentionSuggestion): void {
+    const textarea = composerRef.current;
+    const currentValue = messageInput;
+    const caretIndex = textarea?.selectionStart ?? currentValue.length;
+    const mentionQuery = getMentionQuery(currentValue, caretIndex);
+
+    if (!mentionQuery) {
+      return;
+    }
+
+    const before = currentValue.slice(0, mentionQuery.start);
+    const after = currentValue.slice(mentionQuery.end);
+    const nextValue = `${before}@${suggestion.displayName} ${after}`;
+    const nextCaretIndex = `${before}@${suggestion.displayName} `.length;
+
+    setMessageInput(nextValue);
+    setSelectedMentionIndex(0);
+    setComposerCaret(nextCaretIndex);
+    setDismissedMentionSignature("");
+
+    window.requestAnimationFrame(() => {
+      textarea?.focus();
+      textarea?.setSelectionRange(nextCaretIndex, nextCaretIndex);
+    });
   }
 
   async function handleCreateAgent(): Promise<void> {
@@ -394,7 +515,7 @@ function App() {
 
       const fullInviteUrl = new URL(invite.inviteUrl, window.location.origin).toString();
       setAssistantInviteUrl(fullInviteUrl);
-      setStatusText("Assistant invite ready");
+      setFlashText("Assistant invite ready");
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : "failed to create assistant invite");
     }
@@ -406,12 +527,15 @@ function App() {
     }
 
     setErrorText("");
+    setIsCopyingAssistantInvite(true);
 
     try {
       await navigator.clipboard.writeText(assistantInviteUrl);
-      setStatusText("Assistant invite copied");
+      setFlashText("Assistant invite copied");
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : "failed to copy invite");
+    } finally {
+      setIsCopyingAssistantInvite(false);
     }
   }
 
@@ -421,6 +545,7 @@ function App() {
     }
 
     setErrorText("");
+    setApprovalActionId(approvalId);
 
     try {
       await request<PublicApproval>(`/api/approvals/${approvalId}/${action}`, {
@@ -430,8 +555,11 @@ function App() {
           wsToken: self.wsToken,
         }),
       });
+      setFlashText(action === "approve" ? "Approval granted" : "Approval rejected");
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : `failed to ${action} approval`);
+    } finally {
+      setApprovalActionId("");
     }
   }
 
@@ -449,6 +577,22 @@ function App() {
   ]);
 
   const roomInviteUrl = room ? new URL(`/join/${room.inviteToken}`, window.location.origin).toString() : "";
+  const mentionQuery = getMentionQuery(messageInput, composerCaret);
+  const mentionMenuVisible =
+    !!mentionQuery && mentionSignature(mentionQuery) !== dismissedMentionSignature;
+  const mentionSuggestions =
+    mentionMenuVisible && mentionQuery && self
+      ? members
+          .filter((member) => member.id !== self.memberId)
+          .filter((member) =>
+            member.displayName.toLowerCase().startsWith(mentionQuery.query.toLowerCase()),
+          )
+          .map((member) => ({
+            memberId: member.id,
+            displayName: member.displayName,
+            roleLabel: roleLabel(member),
+          }))
+      : [];
 
   function findMember(memberId: string): PublicMember | undefined {
     return members.find((member) => member.id === memberId);
@@ -459,6 +603,69 @@ function App() {
       hour: "2-digit",
       minute: "2-digit",
     });
+  }
+
+  function handleMessageStreamScroll(event: UIEvent<HTMLDivElement>): void {
+    const container = event.currentTarget;
+    const distanceToBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
+    autoScrollRef.current = distanceToBottom < 48;
+  }
+
+  function syncComposerCaret(): void {
+    const textarea = composerRef.current;
+    if (!textarea) {
+      return;
+    }
+
+    setComposerCaret(textarea.selectionStart ?? textarea.value.length);
+  }
+
+  async function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): Promise<void> {
+    const nativeEvent = event.nativeEvent as { isComposing?: boolean; keyCode?: number };
+    if (nativeEvent.isComposing || nativeEvent.keyCode === 229) {
+      return;
+    }
+
+    if (mentionSuggestions.length > 0) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setSelectedMentionIndex((current) => (current + 1) % mentionSuggestions.length);
+        return;
+      }
+
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setSelectedMentionIndex((current) =>
+          (current - 1 + mentionSuggestions.length) % mentionSuggestions.length,
+        );
+        return;
+      }
+
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        applyMentionSuggestion(
+          mentionSuggestions[
+            Math.max(0, Math.min(selectedMentionIndex, mentionSuggestions.length - 1))
+          ],
+        );
+        return;
+      }
+
+      if (event.key === "Escape") {
+        if (mentionQuery) {
+          setDismissedMentionSignature(mentionSignature(mentionQuery));
+        }
+        setSelectedMentionIndex(0);
+        event.preventDefault();
+        return;
+      }
+    }
+
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      await handleSendMessage();
+    }
   }
 
   return (
@@ -487,11 +694,28 @@ function App() {
               <span className="live-dot" />
               <span>{statusText}</span>
             </div>
+            {flashText ? <div className="flash-badge">{flashText}</div> : null}
           </div>
           <div className="topbar-meta">
             {roomInviteUrl ? (
-              <button className="ghost-button" onClick={() => navigator.clipboard.writeText(roomInviteUrl)}>
-                Copy room invite
+              <button
+                className="ghost-button"
+                disabled={isCopyingRoomInvite}
+                onClick={async () => {
+                  setErrorText("");
+                  setIsCopyingRoomInvite(true);
+
+                  try {
+                    await navigator.clipboard.writeText(roomInviteUrl);
+                    setFlashText("Room invite copied");
+                  } catch (error) {
+                    setErrorText(error instanceof Error ? error.message : "failed to copy room invite");
+                  } finally {
+                    setIsCopyingRoomInvite(false);
+                  }
+                }}
+              >
+                {isCopyingRoomInvite ? "Copying..." : "Copy room invite"}
               </button>
             ) : null}
             {errorText ? <p className="error-inline">{errorText}</p> : null}
@@ -554,8 +778,12 @@ function App() {
                 <div className="invite-result">
                   <p className="muted-text">One-time invite URL</p>
                   <textarea readOnly rows={4} value={assistantInviteUrl} />
-                  <button className="ghost-button" onClick={handleCopyAssistantInvite}>
-                    Copy invite URL
+                  <button
+                    className="ghost-button"
+                    disabled={isCopyingAssistantInvite}
+                    onClick={handleCopyAssistantInvite}
+                  >
+                    {isCopyingAssistantInvite ? "Copying..." : "Copy invite URL"}
                   </button>
                 </div>
               ) : null}
@@ -635,11 +863,16 @@ function App() {
 
           <section className="chat-stage">
             <div className="day-marker">Today</div>
-            <div className="message-stream">
+            <div
+              ref={messageStreamRef}
+              className="message-stream"
+              onScroll={handleMessageStreamScroll}
+            >
               {visibleMessages.map((message) => {
                 const sender = findMember(message.senderMemberId);
                 const isAgent = sender?.type === "agent" || message.messageType === "agent_text";
                 const isSelf = message.senderMemberId === self?.memberId;
+                const isStreaming = message.id in streams;
 
                 return (
                   <article
@@ -650,6 +883,7 @@ function App() {
                       <div className="chat-author">
                         <strong>{sender?.displayName ?? message.senderMemberId}</strong>
                         {sender ? <span className="agent-pill">{roleLabel(sender)}</span> : null}
+                        {isStreaming ? <span className="stream-pill">streaming</span> : null}
                       </div>
                       <span>{formatTime(message.createdAt)}</span>
                     </header>
@@ -662,13 +896,45 @@ function App() {
             </div>
 
             <div className="composer-dock">
+              {mentionSuggestions.length > 0 ? (
+                <div className="mention-menu">
+                  {mentionSuggestions.map((suggestion, index) => (
+                    <button
+                      key={suggestion.memberId}
+                      className={`mention-option ${index === selectedMentionIndex ? "mention-option-active" : ""}`}
+                      type="button"
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        applyMentionSuggestion(suggestion);
+                      }}
+                      onClick={() => applyMentionSuggestion(suggestion)}
+                    >
+                      <strong>{suggestion.displayName}</strong>
+                      <span>{suggestion.roleLabel}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               <textarea
+                ref={composerRef}
                 rows={3}
                 value={messageInput}
-                onChange={(event) => setMessageInput(event.target.value)}
+                onChange={(event) => {
+                  setMessageInput(event.target.value);
+                  setComposerCaret(event.target.selectionStart ?? event.target.value.length);
+                }}
+                onKeyDown={(event) => void handleComposerKeyDown(event)}
+                onBlur={() => {
+                  if (mentionQuery) {
+                    setDismissedMentionSignature(mentionSignature(mentionQuery));
+                  }
+                }}
+                onClick={syncComposerCaret}
+                onKeyUp={syncComposerCaret}
+                onSelect={syncComposerCaret}
                 placeholder="Type a message, for example: @BackendDev 帮我看一下"
               />
-              <button onClick={handleSendMessage} disabled={!self || !messageInput.trim()}>
+              <button onClick={handleSendMessage} disabled={!self || !messageInput.trim() || isSendingMessage}>
                 Send
               </button>
             </div>
@@ -727,14 +993,14 @@ function App() {
                       <div className="approval-actions">
                         <button
                           onClick={() => handleApproval(approval.id, "approve")}
-                          disabled={approval.ownerMemberId !== self?.memberId}
+                          disabled={approval.ownerMemberId !== self?.memberId || approvalActionId === approval.id}
                         >
-                          Approve
+                          {approvalActionId === approval.id ? "Working..." : "Approve"}
                         </button>
                         <button
                           className="ghost-button"
                           onClick={() => handleApproval(approval.id, "reject")}
-                          disabled={approval.ownerMemberId !== self?.memberId}
+                          disabled={approval.ownerMemberId !== self?.memberId || approvalActionId === approval.id}
                         >
                           Reject
                         </button>
