@@ -1229,7 +1229,6 @@ function App() {
       ).slice(-4),
     [visibleMessages],
   );
-
   function findPendingApproval(approvalId: string | null | undefined): PublicApproval | undefined {
     if (!approvalId) {
       return undefined;
@@ -1402,6 +1401,12 @@ function App() {
             </button>
           </details>
         </section>
+
+        <div className="sidebar-footer">
+          <button type="button" className="sidebar-create-room-button" onClick={handleCreateRoom}>
+            新建聊天室
+          </button>
+        </div>
       </aside>
 
       <section className="chat-shell">
@@ -1411,7 +1416,7 @@ function App() {
               <strong>AgentTavern</strong>
               <nav className="chat-header-nav" aria-label="房间导航">
                 <button type="button" className="header-nav-item header-nav-item-active">
-                  当前房间
+                  房间
                 </button>
                 <button type="button" className="header-nav-item">
                   邀请
@@ -1465,7 +1470,11 @@ function App() {
 
         <div className="chat-layout">
           <section className="message-panel">
-            <div className="day-marker">今天</div>
+            <div className="message-divider">
+              <div className="message-divider-line" />
+              <div className="day-marker">今天</div>
+              <div className="message-divider-line" />
+            </div>
 
             <div
               ref={messageStreamRef}
@@ -1771,11 +1780,11 @@ function App() {
                 />
                 <button
                   type="button"
-                  className="ghost-button"
+                  className="composer-icon-button"
                   disabled={!self || isPreparingAttachments}
                   onClick={() => fileInputRef.current?.click()}
                 >
-                  {isPreparingAttachments ? "上传中..." : "添加附件"}
+                  {isPreparingAttachments ? "…" : "＋"}
                 </button>
                 <span className="composer-hint">
                   最多 {MAX_ATTACHMENT_COUNT} 个附件，单个 {formatFileSize(MAX_ATTACHMENT_SIZE_BYTES)}
@@ -1802,7 +1811,21 @@ function App() {
                   onSelect={syncComposerCaret}
                   placeholder="输入消息，使用 @成员名 触发协作..."
                 />
+                <div className="composer-side-actions">
+                  <button type="button" className="composer-mini-button">
+                    @
+                  </button>
+                  <button
+                    type="button"
+                    className="composer-mini-button"
+                    disabled={!self || isPreparingAttachments}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    附
+                  </button>
+                </div>
                 <button
+                  className="composer-send-button"
                   onClick={handleSendMessage}
                   disabled={
                     !self ||
@@ -1811,7 +1834,7 @@ function App() {
                     (!messageInput.trim() && pendingAttachments.length === 0)
                   }
                 >
-                  {isSendingMessage ? "发送中..." : "发送"}
+                  {isSendingMessage ? "…" : "➜"}
                 </button>
               </div>
               <p className="composer-footnote">回车发送，Shift + Enter 换行</p>
@@ -1998,19 +2021,9 @@ function App() {
                   ) : (
                     assistantTree.map(({ owner, assistants }) => (
                       <div key={owner.id} className="assistant-branch">
-                        <div className="assistant-owner">
-                          <div className={`member-avatar ${owner.type === "agent" ? "member-avatar-agent" : ""}`}>
-                            {owner.displayName.slice(0, 1)}
-                          </div>
-                          <div className="member-copy">
-                            <div className="member-title">
-                              <strong>{owner.displayName}</strong>
-                              <span className={`role-pill role-pill-${roleTone(owner)}`}>
-                                {roleLabel(owner)}
-                              </span>
-                            </div>
-                            <p>名下助理 {assistants.length} 位</p>
-                          </div>
+                        <div className="assistant-owner-label">
+                          <span>归属于 {owner.displayName}</span>
+                          <div className="assistant-owner-line" />
                         </div>
 
                         <div className="assistant-children">

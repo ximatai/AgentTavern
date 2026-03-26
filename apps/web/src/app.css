@@ -14,6 +14,7 @@ html,
 body,
 #root {
   min-height: 100%;
+  height: 100%;
 }
 
 body {
@@ -98,9 +99,10 @@ textarea {
 }
 
 .lan-shell {
-  min-height: 100vh;
+  height: 100vh;
   display: grid;
   grid-template-columns: 292px minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .room-sidebar {
@@ -108,6 +110,11 @@ textarea {
   gap: 18px;
   align-content: start;
   padding: 28px 18px;
+  background: #f3f4f5;
+  border-right: 1px solid rgba(193, 200, 194, 0.32);
+  height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .brand-card,
@@ -273,10 +280,12 @@ textarea {
 
 .chat-shell {
   min-width: 0;
+  height: 100vh;
   display: grid;
   grid-template-rows: 74px auto minmax(0, 1fr);
   padding: 12px 16px 18px 12px;
   background: #f8f9fa;
+  overflow: hidden;
 }
 
 .chat-header {
@@ -397,10 +406,24 @@ textarea {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 312px;
   gap: 16px;
+  overflow: hidden;
+}
+
+.message-divider {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.message-divider-line {
+  flex: 1;
+  height: 1px;
+  background: #edeeef;
 }
 
 .message-panel {
   min-height: 0;
+  height: 100%;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 12px;
@@ -408,6 +431,7 @@ textarea {
   border-radius: 34px;
   background: #ffffff;
   box-shadow: none;
+  overflow: hidden;
 }
 
 .day-marker {
@@ -419,6 +443,7 @@ textarea {
 
 .message-stream {
   min-height: 0;
+  height: 100%;
   overflow: auto;
   display: grid;
   gap: 18px;
@@ -851,8 +876,41 @@ textarea {
   flex-wrap: wrap;
 }
 
+.composer-icon-button,
+.composer-mini-button {
+  display: inline-grid;
+  place-items: center;
+  background: transparent;
+  color: #717973;
+  box-shadow: none;
+}
+
+.composer-icon-button {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 1.25rem;
+}
+
+.composer-mini-button {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 10px;
+  font-size: 0.95rem;
+}
+
+.composer-icon-button:hover,
+.composer-mini-button:hover {
+  box-shadow: none;
+  background: #eef2ef;
+  color: #214f43;
+}
+
 .composer-main {
   align-items: stretch;
+  gap: 6px;
 }
 
 .composer-main textarea {
@@ -864,11 +922,21 @@ textarea {
   padding-right: 0;
 }
 
+.composer-side-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .composer-main button {
   min-width: 52px;
   min-height: 52px;
   padding: 0;
   border-radius: 14px;
+}
+
+.composer-send-button {
+  font-size: 1rem;
 }
 
 .composer-footnote {
@@ -878,17 +946,25 @@ textarea {
 
 .member-sidebar {
   min-height: 0;
+  height: 100%;
   display: grid;
-  gap: 16px;
-  align-content: start;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 14px;
   background: #f3f4f5;
   border-left: 1px solid rgba(193, 200, 194, 0.32);
   padding: 14px 14px 18px;
   border-radius: 0 0 22px 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.member-sidebar .side-card {
+  min-height: 0;
+  overflow: visible;
 }
 
 .member-section + .member-section {
-  margin-top: 22px;
+  margin-top: 18px;
 }
 
 .member-row,
@@ -936,6 +1012,28 @@ textarea {
   border-radius: 0;
   padding: 0;
   background: transparent;
+}
+
+.assistant-owner-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.assistant-owner-label span {
+  color: rgba(65, 72, 68, 0.48);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-family: "Manrope", "Inter", sans-serif;
+}
+
+.assistant-owner-line {
+  flex: 1;
+  height: 1px;
+  background: rgba(193, 200, 194, 0.24);
 }
 
 .assistant-children {
@@ -1043,6 +1141,7 @@ textarea {
   padding: 14px 16px;
   border-radius: 14px;
   background: rgba(0, 69, 46, 0.06);
+  overflow: hidden;
 }
 
 .protocol-title {
@@ -1072,6 +1171,16 @@ textarea {
   line-height: 1.45;
 }
 
+.sidebar-footer {
+  margin-top: auto;
+  padding-top: 12px;
+}
+
+.sidebar-create-room-button {
+  justify-content: center;
+  border-radius: 14px;
+}
+
 @media (max-width: 1280px) {
   .lan-shell {
     grid-template-columns: 276px minmax(0, 1fr);
@@ -1090,10 +1199,22 @@ textarea {
 @media (max-width: 1024px) {
   .lan-shell {
     grid-template-columns: 1fr;
+    height: auto;
+    overflow: auto;
   }
 
+  .room-sidebar,
   .chat-shell {
+    height: auto;
+    overflow: visible;
     padding-top: 0;
+  }
+
+  .member-sidebar,
+  .message-panel,
+  .chat-layout {
+    overflow: visible;
+    height: auto;
   }
 }
 
@@ -1124,6 +1245,10 @@ textarea {
   .chat-header-nav {
     width: 100%;
     flex-wrap: wrap;
+  }
+
+  .room-sidebar {
+    border-right: 0;
   }
 
   .inline-actions,
