@@ -3,12 +3,15 @@ import { Hono } from "hono";
 import { db } from "../db/client";
 import { members } from "../db/schema";
 import {
+  ALLOWED_ATTACHMENT_MIME_TYPES,
   MAX_ATTACHMENT_SIZE_BYTES,
   MAX_MESSAGE_ATTACHMENTS,
   MAX_TOTAL_ATTACHMENT_BYTES,
+  buildAttachmentContentDisposition,
   cleanupExpiredDraftAttachments,
   createDraftAttachments,
   deleteDraftAttachment,
+  normalizeAttachmentMimeType,
   readAttachmentContent,
 } from "../lib/message-attachments";
 import { verifyWsToken } from "../realtime";
@@ -52,6 +55,16 @@ attachmentRoutes.post("/api/rooms/:roomId/attachments", async (c) => {
   if (oversizedFile) {
     return c.json(
       { error: `${oversizedFile.name} exceeds ${MAX_ATTACHMENT_SIZE_BYTES} bytes` },
+      400,
+    );
+  }
+
+  const unsupportedFile = files.find((file) => !normalizeAttachmentMimeType(file.type));
+  if (unsupportedFile) {
+    return c.json(
+      {
+        error: `${unsupportedFile.name} has unsupported type ${unsupportedFile.type || "unknown"}. Allowed types: ${Array.from(ALLOWED_ATTACHMENT_MIME_TYPES).join(", ")}`,
+      },
       400,
     );
   }
@@ -125,11 +138,15 @@ attachmentRoutes.get("/api/attachments/:attachmentId/content", (c) => {
     return c.json({ error: "attachment not found" }, 404);
   }
 
-  c.header("content-type", content.inline ? content.mimeType : "application/octet-stream");
+  c.header("content-type", content.mimeType);
   c.header(
     "content-disposition",
-    `${content.inline ? "inline" : "attachment"}; filename="${encodeURIComponent(content.fileName)}"`,
+    buildAttachmentContentDisposition({
+      fileName: content.fileName,
+      inline: content.inline,
+    }),
   );
+  c.header("x-content-type-options", "nosniff");
   c.header("cache-control", "private, max-age=31536000, immutable");
   return new Response(new Uint8Array(content.body), {
     headers: c.res.headers,

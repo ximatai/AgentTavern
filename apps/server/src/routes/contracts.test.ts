@@ -214,6 +214,8 @@ test("uploads draft attachments and sends an attachment-only message", async () 
   const contentResponse = await app.request(`http://localhost${uploaded[1]!.url}`);
   assert.equal(contentResponse.status, 200);
   assert.equal(contentResponse.headers.get("content-type"), "image/png");
+  assert.match(contentResponse.headers.get("content-disposition") ?? "", /^inline;/);
+  assert.equal(contentResponse.headers.get("x-content-type-options"), "nosniff");
 });
 
 test("rejects oversized attachment uploads on the server", async () => {
@@ -260,6 +262,94 @@ test("rejects oversized attachment uploads on the server", async () => {
     db.select().from(messageAttachments).where(eq(messageAttachments.roomId, roomId)).all().length,
     0,
   );
+});
+
+test("rejects unsupported attachment mime types on the server", async () => {
+  const roomId = "room_attachment_type_limits";
+  const createdAt = new Date("2026-03-25T00:45:00.000Z").toISOString();
+
+  seedRoom({
+    roomId,
+    name: "Attachment Type Limits Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(members).values({
+    id: "mem_attachment_type_limits",
+    roomId,
+    type: "human",
+    roleKind: "none",
+    displayName: "AttachmentTypeLimits",
+    ownerMemberId: null,
+    adapterType: null,
+    adapterConfig: null,
+    presenceStatus: "online",
+    createdAt,
+  }).run();
+
+  const wsToken = issueWsToken("mem_attachment_type_limits", roomId);
+  const formData = new FormData();
+  formData.set("senderMemberId", "mem_attachment_type_limits");
+  formData.set("wsToken", wsToken);
+  formData.append("files", new File(["{}"], "payload.html", { type: "text/html" }));
+
+  const response = await app.request(`http://localhost/api/rooms/${roomId}/attachments`, {
+    method: "POST",
+    body: formData,
+  });
+
+  assert.equal(response.status, 400);
+  assert.match((await response.json() as { error: string }).error, /unsupported type/i);
+  assert.equal(
+    db.select().from(messageAttachments).where(eq(messageAttachments.roomId, roomId)).all().length,
+    0,
+  );
+});
+
+test("serves non-preview attachments as downloads with sanitized filenames", async () => {
+  const roomId = "room_attachment_download_headers";
+  const createdAt = new Date("2026-03-25T00:50:00.000Z").toISOString();
+
+  seedRoom({
+    roomId,
+    name: "Attachment Download Headers Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(members).values({
+    id: "mem_attachment_download_headers",
+    roomId,
+    type: "human",
+    roleKind: "none",
+    displayName: "AttachmentDownloadHeaders",
+    ownerMemberId: null,
+    adapterType: null,
+    adapterConfig: null,
+    presenceStatus: "online",
+    createdAt,
+  }).run();
+
+  const wsToken = issueWsToken("mem_attachment_download_headers", roomId);
+  const formData = new FormData();
+  formData.set("senderMemberId", "mem_attachment_download_headers");
+  formData.set("wsToken", wsToken);
+  formData.append("files", new File(["notes"], "../bad\"name.txt", { type: "text/plain" }));
+
+  const uploadResponse = await app.request(`http://localhost/api/rooms/${roomId}/attachments`, {
+    method: "POST",
+    body: formData,
+  });
+
+  assert.equal(uploadResponse.status, 201);
+  const [uploaded] = (await uploadResponse.json()) as Array<{ url: string; name: string }>;
+  assert.equal(uploaded?.name, "bad_name.txt");
+
+  const contentResponse = await app.request(`http://localhost${uploaded!.url}`);
+  assert.equal(contentResponse.status, 200);
+  assert.equal(contentResponse.headers.get("content-type"), "text/plain");
+  assert.match(contentResponse.headers.get("content-disposition") ?? "", /^attachment;/);
+  assert.match(contentResponse.headers.get("content-disposition") ?? "", /filename="bad_name.txt"/);
+  assert.equal(contentResponse.headers.get("x-content-type-options"), "nosniff");
 });
 
 test("mentioning an assistant while the owner is offline expires approval flow", async () => {

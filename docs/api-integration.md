@@ -578,6 +578,8 @@ Bridge 提交失败结果。
 - 当前单次请求最多 `8` 个附件
 - 单文件最大 `5 MB`
 - 单次上传总量最大 `20 MB`
+- 仅允许这些 MIME 类型：`image/png` `image/jpeg` `image/webp` `image/gif` `text/plain` `text/markdown` `text/csv` `application/json` `application/pdf` `application/zip` `application/x-zip-compressed`
+- 文件名会在服务端做规范化，移除路径片段和不安全字符
 - 未绑定到消息的草稿附件会按 TTL 自动清理，默认 `24h`
 
 #### `DELETE /api/rooms/:roomId/attachments/:attachmentId`
@@ -605,6 +607,8 @@ Bridge 提交失败结果。
 
 - 图片类型以 `inline` 返回，适合前端直接预览
 - 其他文件以下载方式返回
+- 响应带 `X-Content-Type-Options: nosniff`
+- 下载响应会返回规范化后的 `Content-Disposition`
 - 当前附件正文保存在服务端本地文件系统
 
 ### 审批

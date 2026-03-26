@@ -12,6 +12,19 @@ import { createId } from "./id";
 export const MAX_MESSAGE_ATTACHMENTS = 8;
 export const MAX_ATTACHMENT_SIZE_BYTES = 5 * 1024 * 1024;
 export const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+export const ALLOWED_ATTACHMENT_MIME_TYPES = new Set([
+  "application/json",
+  "application/pdf",
+  "application/zip",
+  "application/x-zip-compressed",
+  "image/gif",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "text/csv",
+  "text/markdown",
+  "text/plain",
+]);
 export const DRAFT_ATTACHMENT_TTL_MS = Number(
   process.env.AGENT_TAVERN_DRAFT_ATTACHMENT_TTL_MS ?? 24 * 60 * 60 * 1000,
 );
@@ -25,8 +38,43 @@ fs.mkdirSync(attachmentsDir, { recursive: true });
 type MessageAttachmentRow = typeof messageAttachments.$inferSelect;
 
 function sanitizeAttachmentName(name: string): string {
-  const trimmed = name.trim().replace(/\s+/g, " ");
-  return trimmed.slice(0, 255) || "attachment";
+  const baseName = path.basename(name);
+  const trimmed = baseName.trim().replace(/\s+/g, " ");
+  const withoutUnsafeChars = trimmed.replace(/[\u0000-\u001f\u007f"%;/\\]/g, "_");
+  const withoutLeadingDots = withoutUnsafeChars.replace(/^\.+/, "");
+  return withoutLeadingDots.slice(0, 255) || "attachment";
+}
+
+export function normalizeAttachmentMimeType(mimeType: string): string | null {
+  const normalized = mimeType.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  return ALLOWED_ATTACHMENT_MIME_TYPES.has(normalized) ? normalized : null;
+}
+
+function toContentDispositionFileName(fileName: string): {
+  asciiFallback: string;
+  utf8Encoded: string;
+} {
+  const asciiFallback = fileName
+    .replace(/[^\x20-\x7e]/g, "_")
+    .replace(/["\\]/g, "_")
+    .slice(0, 255) || "attachment";
+
+  return {
+    asciiFallback,
+    utf8Encoded: encodeURIComponent(fileName),
+  };
+}
+
+export function buildAttachmentContentDisposition(params: {
+  fileName: string;
+  inline: boolean;
+}): string {
+  const { asciiFallback, utf8Encoded } = toContentDispositionFileName(params.fileName);
+  return `${params.inline ? "inline" : "attachment"}; filename="${asciiFallback}"; filename*=UTF-8''${utf8Encoded}`;
 }
 
 function removeStoredAttachmentFile(storagePath: string): void {
@@ -105,6 +153,12 @@ export async function createDraftAttachments(params: {
   const created: MessageAttachment[] = [];
 
   for (const file of params.files) {
+    const mimeType = normalizeAttachmentMimeType(file.type);
+    if (!mimeType) {
+      throw new Error(`unsupported attachment type: ${file.type || "unknown"}`);
+    }
+
+    const originalName = sanitizeAttachmentName(file.name);
     const attachmentId = createId("att");
     const storagePath = path.join(attachmentsDir, attachmentId);
     const buffer = Buffer.from(await file.arrayBuffer());
@@ -116,16 +170,16 @@ export async function createDraftAttachments(params: {
       uploaderMemberId: params.uploaderMemberId,
       messageId: null,
       storagePath,
-      originalName: sanitizeAttachmentName(file.name),
-      mimeType: file.type || "application/octet-stream",
+      originalName,
+      mimeType,
       sizeBytes: file.size,
       createdAt: params.createdAt,
     }).run();
 
     created.push({
       id: attachmentId,
-      name: sanitizeAttachmentName(file.name),
-      mimeType: file.type || "application/octet-stream",
+      name: originalName,
+      mimeType,
       sizeBytes: file.size,
       url: buildAttachmentUrl(attachmentId),
     });
