@@ -141,6 +141,19 @@ function isImageAttachment(attachment: MessageAttachment): boolean {
   return /^(image\/png|image\/jpeg|image\/webp|image\/gif)$/.test(attachment.mimeType);
 }
 
+function summarizeMessage(message: PublicMessage): string {
+  const trimmed = message.content.trim();
+  if (trimmed) {
+    return trimmed.length > 120 ? `${trimmed.slice(0, 117)}...` : trimmed;
+  }
+
+  if (message.attachments.length > 0) {
+    return `${message.attachments.length} attachment${message.attachments.length > 1 ? "s" : ""}`;
+  }
+
+  return "Empty message";
+}
+
 function runtimeLabel(member: PublicMember): string | null {
   switch (member.runtimeStatus) {
     case "ready":
@@ -189,6 +202,7 @@ function App() {
   const [nickname, setNickname] = useState("Alice");
   const [inviteInput, setInviteInput] = useState("");
   const [messageInput, setMessageInput] = useState("");
+  const [replyTargetId, setReplyTargetId] = useState<string | null>(null);
   const [pendingAttachments, setPendingAttachments] = useState<MessageAttachment[]>([]);
   const [agentName, setAgentName] = useState("BackendDev");
   const [agentRoleKind, setAgentRoleKind] = useState<"independent" | "assistant">(
@@ -493,9 +507,11 @@ function App() {
           wsToken: self.wsToken,
           content: trimmedMessage,
           attachmentIds: pendingAttachments.map((attachment) => attachment.id),
+          replyToMessageId: replyTargetId,
         }),
       });
       setMessageInput("");
+      setReplyTargetId(null);
       setPendingAttachments([]);
       setComposerCaret(0);
       if (fileInputRef.current) {
@@ -776,6 +792,14 @@ function App() {
     return members.find((member) => member.id === memberId);
   }
 
+  function findMessage(messageId: string | null): PublicMessage | undefined {
+    if (!messageId) {
+      return undefined;
+    }
+
+    return visibleMessages.find((message) => message.id === messageId);
+  }
+
   function formatTime(value: string): string {
     return new Date(value).toLocaleTimeString([], {
       hour: "2-digit",
@@ -845,6 +869,11 @@ function App() {
       await handleSendMessage();
     }
   }
+
+  const selectedReplyTarget = findMessage(replyTargetId);
+  const selectedReplyTargetSender = selectedReplyTarget
+    ? findMember(selectedReplyTarget.senderMemberId)
+    : undefined;
 
   return (
     <main className="lan-shell">
@@ -1048,6 +1077,10 @@ function App() {
             >
               {visibleMessages.map((message) => {
                 const sender = findMember(message.senderMemberId);
+                const replyTarget = findMessage(message.replyToMessageId);
+                const replyTargetSender = replyTarget
+                  ? findMember(replyTarget.senderMemberId)
+                  : undefined;
                 const isAgent = sender?.type === "agent" || message.messageType === "agent_text";
                 const isSelf = message.senderMemberId === self?.memberId;
                 const isStreaming = message.id in streams;
@@ -1107,6 +1140,26 @@ function App() {
                       <span>{formatTime(message.createdAt)}</span>
                     </header>
                     <div className={bubbleClassName}>
+                      {message.replyToMessageId ? (
+                        <button
+                          type="button"
+                          className="reply-preview"
+                          onClick={() => {
+                            if (!replyTarget) {
+                              return;
+                            }
+
+                            setReplyTargetId(replyTarget.id);
+                            setFlashText("Reply target loaded");
+                            composerRef.current?.focus();
+                          }}
+                        >
+                          <strong>
+                            Replying to {replyTargetSender?.displayName ?? "message"}
+                          </strong>
+                          <span>{summarizeMessage(replyTarget ?? message)}</span>
+                        </button>
+                      ) : null}
                       {message.content ? <p>{message.content}</p> : null}
                       {message.attachments.length > 0 ? (
                         <div className="message-attachments">
@@ -1137,12 +1190,47 @@ function App() {
                         </div>
                       ) : null}
                     </div>
+                    {!isWorkflowMessage ? (
+                      <div className="chat-actions">
+                        <button
+                          type="button"
+                          className="chat-action-button"
+                          onClick={() => {
+                            setReplyTargetId(message.id);
+                            composerRef.current?.focus();
+                          }}
+                        >
+                          Reply
+                        </button>
+                      </div>
+                    ) : null}
                   </article>
                 );
               })}
             </div>
 
             <div className="composer-dock">
+              {replyTargetId ? (
+                <div className="reply-banner">
+                  <div className="reply-banner-copy">
+                    <strong>
+                      Replying to {selectedReplyTargetSender?.displayName ?? "message"}
+                    </strong>
+                    <span>
+                      {selectedReplyTarget
+                        ? summarizeMessage(selectedReplyTarget)
+                        : "Original message unavailable"}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="reply-banner-clear"
+                    onClick={() => setReplyTargetId(null)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : null}
               {mentionSuggestions.length > 0 ? (
                 <div className="mention-menu">
                   {mentionSuggestions.map((suggestion, index) => (

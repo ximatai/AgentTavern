@@ -523,7 +523,8 @@ Bridge 提交失败结果。
   "senderMemberId": "mem_xxx",
   "wsToken": "local_session_xxx",
   "content": "@BackendDev 帮我看一下这个接口设计",
-  "attachmentIds": ["att_xxx", "att_yyy"]
+  "attachmentIds": ["att_xxx", "att_yyy"],
+  "replyToMessageId": "msg_xxx"
 }
 ```
 
@@ -532,6 +533,7 @@ Bridge 提交失败结果。
 - 校验 `wsToken` 与 `senderMemberId` 绑定关系
 - 校验 `content` 和 `attachmentIds` 至少存在一项
 - 校验 `attachmentIds` 里的附件属于当前发送者在当前房间上传的草稿附件
+- 如果提供 `replyToMessageId`，校验它属于当前房间已有消息
 - 保存消息
 - 解析 mention
 - 广播消息事件

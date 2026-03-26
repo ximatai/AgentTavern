@@ -124,4 +124,29 @@ test.describe("chat attachments", () => {
     await expect(page.locator(".pending-attachment-chip", { hasText: "note-8.txt" })).toHaveCount(1);
     await expect(page.locator(".pending-attachment-chip", { hasText: "note-9.txt" })).toHaveCount(0);
   });
+
+  test("creates and renders a quoted reply", async ({ page }) => {
+    await createRoom(page, "Reply Flow Room", "Alice");
+
+    const composer = page.getByPlaceholder("Type a message, for example: @BackendDev 帮我看一下");
+    await composer.fill("Base message for reply");
+    await page.getByRole("button", { name: "Send" }).click();
+
+    const baseMessage = page.locator(".chat-row").filter({ hasText: "Base message for reply" }).last();
+    await expect(baseMessage).toBeVisible();
+
+    await baseMessage.getByRole("button", { name: "Reply" }).click();
+    await expect(page.locator(".reply-banner")).toContainText("Replying to Alice");
+    await expect(page.locator(".reply-banner")).toContainText("Base message for reply");
+
+    await composer.fill("Quoted follow-up");
+    await page.getByRole("button", { name: "Send" }).click();
+
+    await expect(page.locator(".reply-banner")).toHaveCount(0);
+
+    const replyMessage = page.locator(".chat-row").filter({ hasText: "Quoted follow-up" }).last();
+    await expect(replyMessage).toBeVisible();
+    await expect(replyMessage.locator(".reply-preview")).toContainText("Replying to Alice");
+    await expect(replyMessage.locator(".reply-preview")).toContainText("Base message for reply");
+  });
 });

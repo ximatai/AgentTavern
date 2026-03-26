@@ -302,6 +302,7 @@ export function submitMessage(params: {
   sender: Member;
   content: string;
   attachments: MessageAttachment[];
+  replyToMessageId?: string | null;
 }): Message {
   const message: Message = {
     id: createId("msg"),
@@ -310,7 +311,7 @@ export function submitMessage(params: {
     messageType: params.sender.type === "agent" ? "agent_text" : "user_text",
     content: params.content,
     attachments: params.attachments,
-    replyToMessageId: null,
+    replyToMessageId: params.replyToMessageId ?? null,
     createdAt: now(),
   };
 

@@ -218,6 +218,104 @@ test("uploads draft attachments and sends an attachment-only message", async () 
   assert.equal(contentResponse.headers.get("x-content-type-options"), "nosniff");
 });
 
+test("creates a quoted reply and rejects cross-room reply targets", async () => {
+  const roomId = "room_message_reply";
+  const otherRoomId = "room_message_reply_other";
+  const createdAt = new Date("2026-03-25T00:35:00.000Z").toISOString();
+
+  seedRoom({
+    roomId,
+    name: "Reply Room",
+    inviteToken: createInviteToken(),
+  });
+  seedRoom({
+    roomId: otherRoomId,
+    name: "Other Reply Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(members).values([
+    {
+      id: "mem_reply_sender",
+      roomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "ReplySender",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_reply_other",
+      roomId: otherRoomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "ReplyOther",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(messages).values([
+    {
+      id: "msg_reply_base",
+      roomId,
+      senderMemberId: "mem_reply_sender",
+      messageType: "user_text",
+      content: "Base message",
+      replyToMessageId: null,
+      createdAt,
+    },
+    {
+      id: "msg_reply_other_room",
+      roomId: otherRoomId,
+      senderMemberId: "mem_reply_other",
+      messageType: "user_text",
+      content: "Other room message",
+      replyToMessageId: null,
+      createdAt,
+    },
+  ]).run();
+
+  const wsToken = issueWsToken("mem_reply_sender", roomId);
+
+  const successResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_reply_sender",
+      wsToken,
+      content: "Quoted reply",
+      replyToMessageId: "msg_reply_base",
+    }),
+  });
+
+  assert.equal(successResponse.status, 201);
+  const createdReply = (await successResponse.json()) as { replyToMessageId: string | null };
+  assert.equal(createdReply.replyToMessageId, "msg_reply_base");
+
+  const rejectedResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_reply_sender",
+      wsToken,
+      content: "Invalid quoted reply",
+      replyToMessageId: "msg_reply_other_room",
+    }),
+  });
+
+  assert.equal(rejectedResponse.status, 409);
+  assert.deepEqual(await rejectedResponse.json(), {
+    error: "reply target not found in room",
+  });
+});
+
 test("rejects oversized attachment uploads on the server", async () => {
   const roomId = "room_attachment_limits";
   const createdAt = new Date("2026-03-25T00:40:00.000Z").toISOString();

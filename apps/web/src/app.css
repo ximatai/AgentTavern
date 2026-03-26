@@ -413,6 +413,36 @@ textarea {
   white-space: pre-wrap;
 }
 
+.reply-preview {
+  width: 100%;
+  display: grid;
+  gap: 4px;
+  margin-bottom: 12px;
+  padding: 0.72rem 0.9rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.62);
+  color: inherit;
+  text-align: left;
+  box-shadow: inset 0 0 0 1px rgba(111, 121, 121, 0.14);
+}
+
+.reply-preview:hover {
+  box-shadow: inset 0 0 0 1px rgba(0, 70, 74, 0.24);
+}
+
+.reply-preview strong {
+  color: #00464a;
+  font-size: 0.75rem;
+}
+
+.reply-preview span {
+  color: #6f7979;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .message-attachments {
   display: grid;
   gap: 10px;
@@ -522,8 +552,51 @@ textarea {
 }
 
 .pending-attachments,
-.composer-actions {
+.composer-actions,
+.reply-banner {
   grid-column: 1 / -1;
+}
+
+.reply-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0.8rem 0.95rem;
+  border-radius: 18px;
+  background: rgba(0, 70, 74, 0.06);
+}
+
+.reply-banner-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.reply-banner-copy strong {
+  color: #00464a;
+  font-size: 0.82rem;
+}
+
+.reply-banner-copy span {
+  color: #6f7979;
+  font-size: 0.76rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reply-banner-clear,
+.chat-action-button {
+  padding: 0.46rem 0.72rem;
+  background: rgba(0, 70, 74, 0.1);
+  color: #00464a;
+  box-shadow: none;
+}
+
+.reply-banner-clear:hover,
+.chat-action-button:hover {
+  box-shadow: none;
 }
 
 .pending-attachments {
@@ -572,6 +645,11 @@ textarea {
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.chat-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .composer-file-input {

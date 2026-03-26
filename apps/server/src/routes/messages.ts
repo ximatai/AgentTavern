@@ -39,6 +39,10 @@ messageRoutes.post("/api/rooms/:roomId/messages", async (c) => {
     typeof body?.senderMemberId === "string" ? body.senderMemberId.trim() : "";
   const content = typeof body?.content === "string" ? body.content.trim() : "";
   const wsToken = typeof body?.wsToken === "string" ? body.wsToken.trim() : "";
+  const replyToMessageId =
+    typeof body?.replyToMessageId === "string" && body.replyToMessageId.trim()
+      ? body.replyToMessageId.trim()
+      : null;
   const attachmentIds = Array.isArray(body?.attachmentIds)
     ? body.attachmentIds.flatMap((value: unknown) =>
         typeof value === "string" && value.trim() ? [value.trim()] : [],
@@ -81,6 +85,18 @@ messageRoutes.post("/api/rooms/:roomId/messages", async (c) => {
     return c.json({ error: "one or more attachments are invalid or unavailable" }, 409);
   }
 
+  if (replyToMessageId) {
+    const replyTarget = db
+      .select({ id: messages.id })
+      .from(messages)
+      .where(and(eq(messages.id, replyToMessageId), eq(messages.roomId, roomId)))
+      .get();
+
+    if (!replyTarget) {
+      return c.json({ error: "reply target not found in room" }, 409);
+    }
+  }
+
   const typedSender: Member = {
     id: sender.id,
     roomId: sender.roomId,
@@ -99,6 +115,7 @@ messageRoutes.post("/api/rooms/:roomId/messages", async (c) => {
     sender: typedSender,
     content,
     attachments,
+    replyToMessageId,
   });
   attachDraftsToMessage({
     roomId,
