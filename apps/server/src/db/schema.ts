@@ -50,6 +50,7 @@ export const messages = sqliteTable("messages", {
     .references(() => members.id),
   messageType: text("message_type").notNull(),
   content: text("content").notNull(),
+  systemData: text("system_data"),
   replyToMessageId: text("reply_to_message_id"),
   createdAt: text("created_at").notNull(),
 }, (table) => ({

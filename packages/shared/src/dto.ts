@@ -6,6 +6,7 @@ import type {
   MemberType,
   MessageType,
   PresenceStatus,
+  SystemMessageData,
 } from "./domain";
 
 export type PublicMemberRuntimeStatus = "ready" | "pending_bridge" | "waiting_bridge" | null;
@@ -29,6 +30,7 @@ export type PublicMessage = {
   messageType: MessageType;
   content: string;
   attachments: MessageAttachment[];
+  systemData: SystemMessageData | null;
   replyToMessageId: string | null;
   createdAt: string;
 };

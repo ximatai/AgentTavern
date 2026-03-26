@@ -532,6 +532,17 @@ test("mentioning an assistant while the owner is offline expires approval flow",
   assert.equal(roomMessages.length, 2);
   assert.equal(roomMessages.at(-1)?.messageType, "approval_result");
   assert.match(roomMessages.at(-1)?.content ?? "", /owner is offline/i);
+
+  const listedMessagesResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`);
+  const listedMessages = (await listedMessagesResponse.json()) as Array<{
+    messageType: string;
+    systemData: { kind: string; title: string } | null;
+  }>;
+  const offlineSystemMessage = listedMessages.find(
+    (message) => message.systemData?.kind === "approval_owner_offline",
+  );
+  assert.equal(offlineSystemMessage?.systemData?.kind, "approval_owner_offline");
+  assert.equal(offlineSystemMessage?.systemData?.title, "Owner unavailable");
 });
 
 test("approving an assistant request updates approval, session and mention state", async () => {
@@ -2133,6 +2144,19 @@ test("attached codex binding emits a waiting notice when its bridge heartbeat is
       (message) =>
         message.messageType === "system_notice" &&
         /waiting for its local bridge to reconnect/i.test(message.content),
+    ),
+  );
+
+  const listedMessagesResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`);
+  const listedMessages = (await listedMessagesResponse.json()) as Array<{
+    messageType: string;
+    systemData: { kind: string } | null;
+  }>;
+  assert.ok(
+    listedMessages.some(
+      (message) =>
+        message.messageType === "system_notice" &&
+        message.systemData?.kind === "bridge_waiting",
     ),
   );
 });

@@ -17,6 +17,7 @@ playwright-report
 test-results
 .tmp-tests
 .tmp-e2e
+apps/server/data/
 pnpm-debug.log*
 npm-debug.log*
 yarn-debug.log*

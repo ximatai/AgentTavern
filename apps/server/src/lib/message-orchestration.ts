@@ -12,6 +12,12 @@ import { queueAgentSession } from "../agents/runtime";
 import { db } from "../db/client";
 import { agentSessions, approvals, members, mentions, messages } from "../db/schema";
 import { createId } from "./id";
+import { insertMessage } from "./message-records";
+import {
+  createApprovalRequiredSystemData,
+  createApprovalResultSystemData,
+  createStructuredSystemMessage,
+} from "./system-messages";
 import {
   broadcastToRoom,
   isMemberOnline,
@@ -83,20 +89,18 @@ function createWorkflowMessage(params: {
   roomId: string;
   senderMemberId: string;
   messageType: Message["messageType"];
-  content: string;
+  systemData: NonNullable<Message["systemData"]>;
   replyToMessageId: string;
   createdAt: string;
 }): Message {
-  return {
-    id: createId("msg"),
+  return createStructuredSystemMessage({
     roomId: params.roomId,
     senderMemberId: params.senderMemberId,
-    messageType: params.messageType,
-    content: params.content,
-    attachments: [],
+    messageType: params.messageType as "system_notice" | "approval_request" | "approval_result",
+    systemData: params.systemData,
     replyToMessageId: params.replyToMessageId,
     createdAt: params.createdAt,
-  };
+  });
 }
 
 function createMentionRecord(params: {
@@ -247,12 +251,19 @@ function handleAssistantMention(params: {
       roomId: params.roomId,
       senderMemberId: params.target.id,
       messageType: "approval_result",
-      content: `${params.target.displayName} cannot start because the owner is offline.`,
+      systemData: createApprovalResultSystemData({
+        kind: "approval_owner_offline",
+        detail: `${params.target.displayName} cannot start because the owner is offline.`,
+        approvalId: offlineApproval.id,
+        agentMemberId: params.target.id,
+        ownerMemberId,
+        requesterMemberId: params.senderMemberId,
+      }),
       replyToMessageId: params.message.id,
       createdAt: resolvedAt,
     });
 
-    db.insert(messages).values(offlineMessage).run();
+    insertMessage(offlineMessage);
     broadcastToRoom(params.roomId, createMessageCreatedEvent(params.roomId, offlineMessage));
     return;
   }
@@ -288,12 +299,18 @@ function handleAssistantMention(params: {
     roomId: params.roomId,
     senderMemberId: params.target.id,
     messageType: "approval_request",
-    content: `${params.target.displayName} is waiting for owner approval.`,
+    systemData: createApprovalRequiredSystemData({
+      approvalId: approval.id,
+      agentMemberId: params.target.id,
+      ownerMemberId,
+      requesterMemberId: params.senderMemberId,
+      agentDisplayName: params.target.displayName,
+    }),
     replyToMessageId: params.message.id,
     createdAt: now(),
   });
 
-  db.insert(messages).values(approvalMessage).run();
+  insertMessage(approvalMessage);
   broadcastToRoom(params.roomId, createMessageCreatedEvent(params.roomId, approvalMessage));
 }
 
@@ -315,7 +332,7 @@ export function submitMessage(params: {
     createdAt: now(),
   };
 
-  db.insert(messages).values(message).run();
+  insertMessage(message);
   broadcastToRoom(params.roomId, createMessageCreatedEvent(params.roomId, message));
 
   const mentionNames = extractMentionNames(params.content);

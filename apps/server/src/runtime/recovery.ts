@@ -3,9 +3,13 @@ import { and, eq } from "drizzle-orm";
 import type { Approval, Message } from "@agent-tavern/shared";
 
 import { db, sqlite } from "../db/client";
-import { agentSessions, approvals, mentions, messages } from "../db/schema";
-import { createId } from "../lib/id";
 import { cleanupExpiredDraftAttachments } from "../lib/message-attachments";
+import { insertMessage } from "../lib/message-records";
+import {
+  createApprovalResultSystemData,
+  createStructuredSystemMessage,
+} from "../lib/system-messages";
+import { agentSessions, approvals, mentions } from "../db/schema";
 
 function now(): string {
   return new Date().toISOString();
@@ -60,18 +64,23 @@ export function recoverRuntimeState(): {
         )
         .run();
 
-      const systemMessage: Message = {
-        id: createId("msg"),
+      const systemMessage: Message = createStructuredSystemMessage({
         roomId: approval.roomId,
         senderMemberId: approval.agentMemberId,
         messageType: "approval_result",
-        content: "Approval request expired because the server restarted.",
-        attachments: [],
+        systemData: createApprovalResultSystemData({
+          kind: "approval_expired",
+          detail: "Approval request expired because the server restarted.",
+          approvalId: approval.id,
+          agentMemberId: approval.agentMemberId,
+          ownerMemberId: approval.ownerMemberId,
+          requesterMemberId: approval.requesterMemberId,
+        }),
         replyToMessageId: approval.triggerMessageId,
         createdAt: resolvedAt,
-      };
+      });
 
-      db.insert(messages).values(systemMessage).run();
+      insertMessage(systemMessage);
       systemMessages += 1;
     })();
   }

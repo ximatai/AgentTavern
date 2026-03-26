@@ -4,7 +4,11 @@ import type { AgentSession, Message, RealtimeEvent } from "@agent-tavern/shared"
 
 import { db } from "../db/client";
 import { agentSessions, messages } from "../db/schema";
-import { createId } from "../lib/id";
+import { insertMessage } from "../lib/message-records";
+import {
+  createAgentFailedSystemData,
+  createStructuredSystemMessage,
+} from "../lib/system-messages";
 import { toPublicMessage } from "../lib/public";
 import { broadcastToRoom } from "../realtime";
 
@@ -92,16 +96,14 @@ function createFailureMessage(
   triggerMessageId: string,
   content: string,
 ): Message {
-  return {
-    id: createId("msg"),
+  return createStructuredSystemMessage({
     roomId,
     senderMemberId: agentMemberId,
     messageType: "system_notice",
-    content,
-    attachments: [],
+    systemData: createAgentFailedSystemData(content),
     replyToMessageId: triggerMessageId,
     createdAt: now(),
-  };
+  });
 }
 
 export function markSessionRunning(session: AgentSession): AgentSession {
@@ -147,7 +149,16 @@ export function commitSessionMessage(params: {
     createdAt: now(),
   };
 
-  db.insert(messages).values(committedMessage).run();
+  db.insert(messages).values({
+    id: committedMessage.id,
+    roomId: committedMessage.roomId,
+    senderMemberId: committedMessage.senderMemberId,
+    messageType: committedMessage.messageType,
+    content: committedMessage.content,
+    systemData: null,
+    replyToMessageId: committedMessage.replyToMessageId,
+    createdAt: committedMessage.createdAt,
+  }).run();
   broadcastToRoom(
     params.session.roomId,
     createMessageCommittedEvent(params.session.roomId, params.session.id, committedMessage),
@@ -209,7 +220,7 @@ export function failSession(session: AgentSession, error: string): AgentSession 
     error,
   );
 
-  db.insert(messages).values(failureMessage).run();
+  insertMessage(failureMessage);
   broadcastToRoom(session.roomId, createMessageCreatedEvent(session.roomId, failureMessage));
 
   return failedSession;

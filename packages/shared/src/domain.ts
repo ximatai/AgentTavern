@@ -13,6 +13,29 @@ export type MessageType =
   | "approval_request"
   | "approval_result";
 
+export type SystemMessageStatus = "info" | "success" | "warning" | "error";
+
+export type SystemMessageKind =
+  | "agent_failed"
+  | "bridge_waiting"
+  | "approval_required"
+  | "approval_granted"
+  | "approval_rejected"
+  | "approval_expired"
+  | "approval_owner_offline";
+
+export type SystemMessageData = {
+  kind: SystemMessageKind;
+  status: SystemMessageStatus;
+  title: string;
+  detail: string;
+  agentMemberId?: string | null;
+  ownerMemberId?: string | null;
+  requesterMemberId?: string | null;
+  approvalId?: string | null;
+  grantDuration?: ApprovalGrantDuration | null;
+};
+
 export type MessageAttachment = {
   id: string;
   name: string;
@@ -98,6 +121,7 @@ export type Message = {
   messageType: MessageType;
   content: string;
   attachments: MessageAttachment[];
+  systemData?: SystemMessageData | null;
   replyToMessageId: string | null;
   createdAt: string;
 };

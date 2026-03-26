@@ -13,7 +13,12 @@ import type {
 import { db } from "../db/client";
 import { agentAuthorizations, agentSessions, approvals, mentions, messages } from "../db/schema";
 import { createId } from "../lib/id";
+import { insertMessage } from "../lib/message-records";
 import { toPublicApproval, toPublicMessage } from "../lib/public";
+import {
+  createApprovalResultSystemData,
+  createStructuredSystemMessage,
+} from "../lib/system-messages";
 import { broadcastToRoom } from "../realtime";
 
 const approvalTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
@@ -277,18 +282,23 @@ export function scheduleApprovalTimeout(approval: Approval): void {
 
     broadcastToRoom(current.roomId, createApprovalResolvedEvent(current.roomId, expiredApproval));
 
-    const timeoutMessage: Message = {
-      id: createId("msg"),
+    const timeoutMessage: Message = createStructuredSystemMessage({
       roomId: current.roomId,
       senderMemberId: current.agentMemberId,
       messageType: "approval_result",
-      content: "Approval request timed out.",
-      attachments: [],
+      systemData: createApprovalResultSystemData({
+        kind: "approval_expired",
+        detail: "Approval request timed out.",
+        approvalId: current.id,
+        agentMemberId: current.agentMemberId,
+        ownerMemberId: current.ownerMemberId,
+        requesterMemberId: current.requesterMemberId,
+      }),
       replyToMessageId: current.triggerMessageId,
       createdAt: resolvedAt,
-    };
+    });
 
-    db.insert(messages).values(timeoutMessage).run();
+    insertMessage(timeoutMessage);
     broadcastToRoom(current.roomId, createMessageCreatedEvent(current.roomId, timeoutMessage));
     approvalTimeouts.delete(current.id);
   }, APPROVAL_TIMEOUT_MS);

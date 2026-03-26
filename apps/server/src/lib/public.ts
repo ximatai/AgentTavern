@@ -32,6 +32,7 @@ export function toPublicMessage(message: Message): PublicMessage {
     messageType: message.messageType,
     content: message.content,
     attachments: message.attachments,
+    systemData: message.systemData ?? null,
     replyToMessageId: message.replyToMessageId,
     createdAt: message.createdAt,
   };

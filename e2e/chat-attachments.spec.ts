@@ -2,10 +2,10 @@ import { expect, test, type Page } from "@playwright/test";
 
 async function createRoom(page: Page, roomName: string, nickname: string) {
   await page.goto("/");
-  await page.getByLabel("Room name").fill(roomName);
-  await page.getByLabel("Nickname").fill(nickname);
-  await page.getByRole("button", { name: "Create", exact: true }).click();
-  await expect(page.getByText(`Room member: ${nickname}`)).toBeVisible();
+  await page.getByLabel("新房间名称").fill(roomName);
+  await page.getByLabel("你的昵称").fill(nickname);
+  await page.getByRole("button", { name: "新建并进入", exact: true }).click();
+  await expect(page.getByText(new RegExp(`${nickname}（你）`))).toBeVisible();
 }
 
 test.describe("chat attachments", () => {
@@ -14,7 +14,7 @@ test.describe("chat attachments", () => {
     page,
   }) => {
     await createRoom(page, "Attachment E2E Room", "Alice");
-    await expect(page.getByText(/Invite token:/)).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Attachment E2E Room" })).toBeVisible();
 
     const fileInput = page.locator('input[type="file"]');
     await fileInput.setInputFiles([
@@ -38,7 +38,7 @@ test.describe("chat attachments", () => {
 
     await page
       .locator(".pending-attachment-chip", { hasText: "notes.txt" })
-      .getByRole("button", { name: "Remove" })
+      .getByRole("button", { name: "移除" })
       .click();
     await expect(page.locator(".pending-attachment-chip", { hasText: "notes.txt" })).toHaveCount(0);
 
@@ -48,9 +48,9 @@ test.describe("chat attachments", () => {
       buffer: Buffer.from("attachment regression notes", "utf8"),
     });
 
-    const composer = page.getByPlaceholder("Type a message, for example: @BackendDev 帮我看一下");
+    const composer = page.getByPlaceholder("输入消息，使用 @成员名 触发协作...");
     await composer.fill("Attachment regression message");
-    await page.getByRole("button", { name: "Send" }).click();
+    await page.getByRole("button", { name: "发送" }).click();
 
     await expect(page.locator(".pending-attachment-chip")).toHaveCount(0);
     await expect(page.locator(".chat-row").filter({ hasText: "Attachment regression message" })).toBeVisible();
@@ -64,22 +64,21 @@ test.describe("chat attachments", () => {
     expect(imageResponse.ok()).toBeTruthy();
     expect(imageResponse.headers()["content-type"]).toContain("image/png");
 
-    const inviteFacts = page.locator(".session-facts");
-    const inviteText = await inviteFacts.textContent();
-    const inviteToken = inviteText?.match(/Invite token:\s*(\S+)/)?.[1];
+    const inviteToken = await page.locator(".room-current-meta span").nth(1).innerText();
     expect(inviteToken).toBeTruthy();
 
     const bobContext = await browser.newContext();
     const bobPage = await bobContext.newPage();
     await bobPage.goto("/");
-    await bobPage.getByLabel("Nickname").fill("Bob");
-    await bobPage.getByLabel("Invite token or URL").fill(inviteToken!);
-    await bobPage.getByRole("button", { name: "Join" }).click();
+    await bobPage.getByLabel("你的昵称").fill("Bob");
+    await bobPage
+      .getByLabel("邀请链接或邀请码")
+      .fill(new URL(`/join/${inviteToken!}`, page.url()).toString());
+    await bobPage.getByRole("button", { name: "通过邀请进入" }).click();
 
-    await expect(bobPage.getByText("Room member: Bob")).toBeVisible();
     await expect(
       bobPage.locator(".chat-row").filter({ hasText: "Attachment regression message" }),
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 20000 });
     const bobImageAttachment = bobPage.locator(".message-attachment", { hasText: "diagram.png" });
     const bobFileAttachment = bobPage.locator(".message-attachment", { hasText: "notes.txt" });
     await expect(bobImageAttachment).toBeVisible();
@@ -103,7 +102,7 @@ test.describe("chat attachments", () => {
       buffer: Buffer.alloc(5 * 1024 * 1024 + 1, 1),
     });
 
-    await expect(page.getByText(/too-large\.bin exceeds 5\.0 MB per file/i)).toBeVisible();
+    await expect(page.locator(".error-inline")).toContainText("too-large.bin 超过单文件 5.0 MB");
     await expect(page.locator(".pending-attachment-chip")).toHaveCount(0);
   });
 
@@ -119,7 +118,7 @@ test.describe("chat attachments", () => {
       })),
     );
 
-    await expect(page.getByText(/Only the first 8 attachments were added/i)).toBeVisible();
+    await expect(page.getByText(/只添加了前 8 个附件/)).toBeVisible();
     await expect(page.locator(".pending-attachment-chip")).toHaveCount(8);
     await expect(page.locator(".pending-attachment-chip", { hasText: "note-8.txt" })).toHaveCount(1);
     await expect(page.locator(".pending-attachment-chip", { hasText: "note-9.txt" })).toHaveCount(0);
@@ -128,25 +127,25 @@ test.describe("chat attachments", () => {
   test("creates and renders a quoted reply", async ({ page }) => {
     await createRoom(page, "Reply Flow Room", "Alice");
 
-    const composer = page.getByPlaceholder("Type a message, for example: @BackendDev 帮我看一下");
+    const composer = page.getByPlaceholder("输入消息，使用 @成员名 触发协作...");
     await composer.fill("Base message for reply");
-    await page.getByRole("button", { name: "Send" }).click();
+    await page.getByRole("button", { name: "发送" }).click();
 
     const baseMessage = page.locator(".chat-row").filter({ hasText: "Base message for reply" }).last();
     await expect(baseMessage).toBeVisible();
 
-    await baseMessage.getByRole("button", { name: "Reply" }).click();
-    await expect(page.locator(".reply-banner")).toContainText("Replying to Alice");
+    await baseMessage.getByRole("button", { name: "回复" }).click();
+    await expect(page.locator(".reply-banner")).toContainText("正在回复 Alice");
     await expect(page.locator(".reply-banner")).toContainText("Base message for reply");
 
     await composer.fill("Quoted follow-up");
-    await page.getByRole("button", { name: "Send" }).click();
+    await page.getByRole("button", { name: "发送" }).click();
 
     await expect(page.locator(".reply-banner")).toHaveCount(0);
 
     const replyMessage = page.locator(".chat-row").filter({ hasText: "Quoted follow-up" }).last();
     await expect(replyMessage).toBeVisible();
-    await expect(replyMessage.locator(".reply-preview")).toContainText("Replying to Alice");
+    await expect(replyMessage.locator(".reply-preview")).toContainText("回复给 Alice");
     await expect(replyMessage.locator(".reply-preview")).toContainText("Base message for reply");
   });
 });

@@ -26,6 +26,12 @@ import {
   rooms,
 } from "../db/schema";
 import { createId } from "../lib/id";
+import { insertMessage } from "../lib/message-records";
+import {
+  createBridgeWaitingSystemData,
+  createStructuredSystemMessage,
+} from "../lib/system-messages";
+import { toDomainMessage } from "../lib/message-records";
 import { toPublicMessage } from "../lib/public";
 import { broadcastToRoom } from "../realtime";
 import {
@@ -128,21 +134,6 @@ function toMember(row: {
   createdAt: string;
 }): Member {
   return row as Member;
-}
-
-function toMessage(row: {
-  id: string;
-  roomId: string;
-  senderMemberId: string;
-  messageType: string;
-  content: string;
-  replyToMessageId: string | null;
-  createdAt: string;
-}): Message {
-  return {
-    ...row,
-    attachments: [],
-  } as Message;
 }
 
 function toAgentSession(row: {
@@ -248,16 +239,15 @@ function createBridgePendingMessage(params: {
   agentDisplayName: string;
   triggerMessageId: string;
 }): Message {
-  return {
-    id: createId("msg"),
+  const content = `${params.agentDisplayName} is waiting for its local bridge to reconnect.`;
+  return createStructuredSystemMessage({
     roomId: params.roomId,
     senderMemberId: params.agentMemberId,
     messageType: "system_notice",
-    content: `${params.agentDisplayName} is waiting for its local bridge to reconnect.`,
-    attachments: [],
+    systemData: createBridgeWaitingSystemData(params.agentDisplayName),
     replyToMessageId: params.triggerMessageId,
     createdAt: now(),
-  };
+  });
 }
 
 async function runAgentSession(sessionId: string): Promise<void> {
@@ -294,7 +284,7 @@ async function runAgentSession(sessionId: string): Promise<void> {
   const typedRoom = toRoom(room);
   const typedAgent = toMember(agent);
   const typedRequester = toMember(requester);
-  const typedTriggerMessage = toMessage(triggerMessage);
+  const typedTriggerMessage = toDomainMessage(triggerMessage);
   const bindingRow = db
     .select()
     .from(agentBindings)
@@ -367,7 +357,7 @@ async function runAgentSession(sessionId: string): Promise<void> {
         triggerMessageId: typedTriggerMessage.id,
       });
 
-      db.insert(messages).values(waitingMessage).run();
+      insertMessage(waitingMessage);
       broadcastToRoom(typedSession.roomId, {
         type: "message.created",
         roomId: typedSession.roomId,

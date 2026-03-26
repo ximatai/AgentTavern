@@ -6,8 +6,12 @@ import type { Approval, Message } from "@agent-tavern/shared";
 import { queueAgentSession } from "../agents/runtime";
 import { db } from "../db/client";
 import { agentSessions, approvals, messages } from "../db/schema";
-import { createId } from "../lib/id";
+import { insertMessage } from "../lib/message-records";
 import { toPublicApproval } from "../lib/public";
+import {
+  createApprovalResultSystemData,
+  createStructuredSystemMessage,
+} from "../lib/system-messages";
 import { broadcastToRoom, verifyWsToken } from "../realtime";
 import {
   clearApprovalTimeout,
@@ -110,18 +114,24 @@ approvalRoutes.post("/api/approvals/:approvalId/approve", async (c) => {
 
   broadcastToRoom(approval.roomId, createApprovalResolvedEvent(approval.roomId, resolvedApproval));
 
-  const approvalMessage: Message = {
-    id: createId("msg"),
+  const approvalMessage: Message = createStructuredSystemMessage({
     roomId: approval.roomId,
     senderMemberId: approval.agentMemberId,
     messageType: "approval_result",
-    content: `Approval granted for ${approval.agentMemberId} (${grantDuration}).`,
-    attachments: [],
+    systemData: createApprovalResultSystemData({
+      kind: "approval_granted",
+      detail: `Approval granted for ${approval.agentMemberId} (${grantDuration}).`,
+      approvalId: approval.id,
+      agentMemberId: approval.agentMemberId,
+      ownerMemberId: approval.ownerMemberId,
+      requesterMemberId: approval.requesterMemberId,
+      grantDuration,
+    }),
     replyToMessageId: approval.triggerMessageId,
     createdAt: now(),
-  };
+  });
 
-  db.insert(messages).values(approvalMessage).run();
+  insertMessage(approvalMessage);
   broadcastToRoom(approval.roomId, createMessageCreatedEvent(approval.roomId, approvalMessage));
 
   if (session) {
@@ -196,18 +206,23 @@ approvalRoutes.post("/api/approvals/:approvalId/reject", async (c) => {
 
   broadcastToRoom(approval.roomId, createApprovalResolvedEvent(approval.roomId, resolvedApproval));
 
-  const rejectionMessage: Message = {
-    id: createId("msg"),
+  const rejectionMessage: Message = createStructuredSystemMessage({
     roomId: approval.roomId,
     senderMemberId: approval.agentMemberId,
     messageType: "approval_result",
-    content: `Approval rejected for ${approval.agentMemberId}.`,
-    attachments: [],
+    systemData: createApprovalResultSystemData({
+      kind: "approval_rejected",
+      detail: `Approval rejected for ${approval.agentMemberId}.`,
+      approvalId: approval.id,
+      agentMemberId: approval.agentMemberId,
+      ownerMemberId: approval.ownerMemberId,
+      requesterMemberId: approval.requesterMemberId,
+    }),
     replyToMessageId: approval.triggerMessageId,
     createdAt: now(),
-  };
+  });
 
-  db.insert(messages).values(rejectionMessage).run();
+  insertMessage(rejectionMessage);
   broadcastToRoom(approval.roomId, createMessageCreatedEvent(approval.roomId, rejectionMessage));
 
   return c.json(toPublicApproval(resolvedApproval));

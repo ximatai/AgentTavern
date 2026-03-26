@@ -512,6 +512,24 @@ Bridge 提交失败结果。
 ]
 ```
 
+系统类消息额外带 `systemData`，普通消息则为 `null`：
+
+```json
+{
+  "systemData": {
+    "kind": "approval_required",
+    "status": "warning",
+    "title": "Owner approval required",
+    "detail": "AssistA is waiting for owner approval.",
+    "agentMemberId": "mem_agent_xxx",
+    "ownerMemberId": "mem_owner_xxx",
+    "requesterMemberId": "mem_requester_xxx",
+    "approvalId": "apr_xxx",
+    "grantDuration": null
+  }
+}
+```
+
 #### `POST /api/rooms/:roomId/messages`
 
 发送消息。

@@ -146,6 +146,12 @@ function isImageAttachment(attachment: MessageAttachment): boolean {
 }
 
 function summarizeMessage(message: PublicMessage): string {
+  if (message.systemData?.detail) {
+    return message.systemData.detail.length > 72
+      ? `${message.systemData.detail.slice(0, 69)}...`
+      : message.systemData.detail;
+  }
+
   const trimmed = message.content.trim();
   if (trimmed) {
     return trimmed.length > 72 ? `${trimmed.slice(0, 69)}...` : trimmed;
@@ -156,6 +162,11 @@ function summarizeMessage(message: PublicMessage): string {
   }
 
   return "空消息";
+}
+
+function approvalGrantLabel(value: ApprovalGrantDuration | null | undefined): string | null {
+  const option = approvalGrantOptions.find((item) => item.value === value);
+  return option?.label ?? null;
 }
 
 function runtimeLabel(member: PublicMember): string | null {
@@ -806,6 +817,7 @@ function App() {
       messageType: "agent_text" as const,
       content: `${stream.content}▌`,
       attachments: [],
+      systemData: null,
       replyToMessageId: null,
       createdAt: new Date().toISOString(),
     })),
@@ -1165,6 +1177,23 @@ function App() {
                 const isApprovalMessage =
                   message.messageType === "approval_request" ||
                   message.messageType === "approval_result";
+                const systemData = message.systemData;
+                const systemFacts = systemData
+                  ? [
+                      systemData.agentMemberId
+                        ? `Agent：${findMember(systemData.agentMemberId)?.displayName ?? systemData.agentMemberId}`
+                        : null,
+                      systemData.ownerMemberId
+                        ? `Owner：${findMember(systemData.ownerMemberId)?.displayName ?? systemData.ownerMemberId}`
+                        : null,
+                      systemData.requesterMemberId
+                        ? `Requester：${findMember(systemData.requesterMemberId)?.displayName ?? systemData.requesterMemberId}`
+                        : null,
+                      approvalGrantLabel(systemData.grantDuration)
+                        ? `授权：${approvalGrantLabel(systemData.grantDuration)}`
+                        : null,
+                    ].filter((value): value is string => Boolean(value))
+                  : [];
                 const tone = isApprovalMessage
                   ? "approval"
                   : isSystemNotice
@@ -1195,6 +1224,19 @@ function App() {
                     </header>
 
                     <div className={`chat-bubble chat-bubble-${tone}`}>
+                      {systemData ? (
+                        <div className="system-message-copy">
+                          <strong>{systemData.title}</strong>
+                          <p>{systemData.detail}</p>
+                          {systemFacts.length > 0 ? (
+                            <div className="system-message-facts">
+                              {systemFacts.map((fact) => (
+                                <span key={fact}>{fact}</span>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
                       {message.replyToMessageId ? (
                         <button
                           type="button"
@@ -1214,7 +1256,7 @@ function App() {
                         </button>
                       ) : null}
 
-                      {message.content ? <p>{message.content}</p> : null}
+                      {!systemData && message.content ? <p>{message.content}</p> : null}
 
                       {message.attachments.length > 0 ? (
                         <div className="message-attachments">

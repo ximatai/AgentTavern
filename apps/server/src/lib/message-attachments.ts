@@ -8,6 +8,7 @@ import type { Message, MessageAttachment } from "@agent-tavern/shared";
 import { dataDir, db } from "../db/client";
 import { messageAttachments, messages } from "../db/schema";
 import { createId } from "./id";
+import { toDomainMessage } from "./message-records";
 
 export const MAX_MESSAGE_ATTACHMENTS = 8;
 export const MAX_ATTACHMENT_SIZE_BYTES = 5 * 1024 * 1024;
@@ -137,10 +138,8 @@ export function hydrateMessagesWithAttachments(
   }
 
   return messageRows.map((message) => ({
-    ...message,
-    messageType: message.messageType as Message["messageType"],
+    ...toDomainMessage(message),
     attachments: attachmentsByMessageId.get(message.id) ?? [],
-    replyToMessageId: message.replyToMessageId ?? null,
   }));
 }
 
