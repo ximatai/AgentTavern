@@ -498,6 +498,20 @@ Bridge 提交失败结果。
 
 当前公开消息结构以 `packages/shared/src/dto.ts` 中的 `PublicMessage` 为准。
 
+返回中的 `attachments` 为附件元数据数组：
+
+```json
+[
+  {
+    "id": "att_xxx",
+    "name": "diagram.png",
+    "mimeType": "image/png",
+    "sizeBytes": 12345,
+    "url": "/api/attachments/att_xxx/content"
+  }
+]
+```
+
 #### `POST /api/rooms/:roomId/messages`
 
 发送消息。
@@ -509,13 +523,15 @@ Bridge 提交失败结果。
   "senderMemberId": "mem_xxx",
   "wsToken": "local_session_xxx",
   "content": "@BackendDev 帮我看一下这个接口设计",
-  "clientMessageId": "client_xxx"
+  "attachmentIds": ["att_xxx", "att_yyy"]
 }
 ```
 
 服务端动作：
 
 - 校验 `wsToken` 与 `senderMemberId` 绑定关系
+- 校验 `content` 和 `attachmentIds` 至少存在一项
+- 校验 `attachmentIds` 里的附件属于当前发送者在当前房间上传的草稿附件
 - 保存消息
 - 解析 mention
 - 广播消息事件
@@ -524,11 +540,86 @@ Bridge 提交失败结果。
 - 命中已批准助理 agent 时进入本地执行链路
 - owner 自己 `@` 自己的助理 agent 时直接进入本地执行链路
 
+当前约束：
+
+- 一条消息最多 `8` 个附件
+- 附件不能跨房间复用
+- 已挂到消息上的附件不可再次作为草稿发送
+
+#### `POST /api/rooms/:roomId/attachments`
+
+上传消息草稿附件。
+
+请求体：
+
+- `multipart/form-data`
+- 字段 `senderMemberId`
+- 字段 `wsToken`
+- 一个或多个 `files`
+
+响应体：
+
+```json
+[
+  {
+    "id": "att_xxx",
+    "name": "diagram.png",
+    "mimeType": "image/png",
+    "sizeBytes": 12345,
+    "url": "/api/attachments/att_xxx/content"
+  }
+]
+```
+
+约束：
+
+- `senderMemberId` 和 `wsToken` 必须匹配
+- 当前单次请求最多 `8` 个附件
+- 单文件最大 `5 MB`
+- 单次上传总量最大 `20 MB`
+
+#### `DELETE /api/rooms/:roomId/attachments/:attachmentId`
+
+删除尚未发送的草稿附件。
+
+请求体：
+
+```json
+{
+  "senderMemberId": "mem_xxx",
+  "wsToken": "local_session_xxx"
+}
+```
+
+约束：
+
+- 只能删除当前发送者本人上传、且尚未绑定到消息的草稿附件
+
+#### `GET /api/attachments/:attachmentId/content`
+
+读取附件正文。
+
+规则：
+
+- 图片类型以 `inline` 返回，适合前端直接预览
+- 其他文件以下载方式返回
+- 当前附件正文保存在服务端本地文件系统
+
 ### 审批
 
 #### `POST /api/approvals/:approvalId/approve`
 
 同意一次助理调用。
+
+请求体：
+
+```json
+{
+  "actorMemberId": "mem_owner_xxx",
+  "wsToken": "local_session_xxx",
+  "grantDuration": "once"
+}
+```
 
 #### `POST /api/approvals/:approvalId/reject`
 
@@ -548,11 +639,20 @@ Bridge 提交失败结果。
 - 仅直属 owner 可审批
 - `wsToken` 必须与 `actorMemberId` 匹配
 - 同一审批只能处理一次
+- `approve` 时可附带 `grantDuration`
 - 审批成功后，对应 session 进入待执行状态
 - owner 不在线时，不进入待审批状态，调用直接失败
 - owner 自己触发自己的助理时，不创建 approval，直接进入待执行状态
 - 待审批请求超时后，对应 approval 进入 `expired`
 - 待审批请求超时后，对应 session 进入 `rejected`
+
+`grantDuration` 当前支持：
+
+- `once`
+- `10_minutes`
+- `30_minutes`
+- `1_hour`
+- `forever`
 
 #### `POST /api/approvals/:approvalId/reject`
 

@@ -67,6 +67,11 @@ AgentTavern 是一个面向局域网的多人房间聊天系统。
 - `reply_to_message_id`
 - `created_at`
 
+公开返回附带：
+
+- `attachments[]`
+- 每个附件包含 `id` `name` `mimeType` `sizeBytes` `url`
+
 建议类型：
 
 - `user_text`
@@ -74,6 +79,35 @@ AgentTavern 是一个面向局域网的多人房间聊天系统。
 - `system_notice`
 - `approval_request`
 - `approval_result`
+
+规则：
+
+- 消息允许纯文本、纯附件、文本加附件三种形态
+- 消息本体不内联附件二进制内容
+- 附件通过独立存储记录与消息关联
+
+### MessageAttachment
+
+关键字段：
+
+- `id`
+- `room_id`
+- `uploader_member_id`
+- `message_id`
+- `storage_path`
+- `original_name`
+- `mime_type`
+- `size_bytes`
+- `created_at`
+
+规则：
+
+- 附件先以草稿状态上传，`message_id` 为空
+- 发送消息时通过附件 id 绑定到具体消息
+- 只有上传者本人才能把草稿附件挂到消息上或删除草稿
+- 已绑定消息的附件不可再作为草稿复用
+- 当前附件正文存储在服务端本地文件系统，消息只暴露内容访问 URL
+- 当前约束为最多 `8` 个附件、单文件最多 `5 MB`、单次上传总量最多 `20 MB`
 
 ### Mention
 
@@ -141,6 +175,7 @@ AgentTavern 是一个面向局域网的多人房间聊天系统。
 - `agent_member_id`
 - `trigger_message_id`
 - `status`
+- `grant_duration`
 - `created_at`
 - `resolved_at`
 
