@@ -85,6 +85,20 @@
       "when": 1774503600000,
       "tag": "0011_kindly_chimera",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1774512000000,
+      "tag": "0012_even_tigra",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1774515600000,
+      "tag": "0013_fair_fantastic",
+      "breakpoints": true
     }
   ]
 }

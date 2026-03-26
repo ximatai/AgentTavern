@@ -1,14 +1,26 @@
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 
-import type { AgentBinding, Member, PrivateAssistant, RealtimeEvent } from "@agent-tavern/shared";
+import type {
+  AgentBinding,
+  Member,
+  PrivateAssistant,
+  PrivateAssistantInvite,
+  RealtimeEvent,
+} from "@agent-tavern/shared";
 
 import { db } from "../db/client";
-import { agentBindings, members, privateAssistants, rooms } from "../db/schema";
-import { createId } from "../lib/id";
+import { agentBindings, members, privateAssistantInvites, privateAssistants, rooms } from "../db/schema";
+import { createId, createInviteToken } from "../lib/id";
 import { toPublicMember } from "../lib/public";
-import { broadcastToRoom, verifyPrincipalToken, verifyWsToken } from "../realtime";
-import { isUniqueConstraintError, isValidDisplayName, now } from "./support";
+import { broadcastToPrincipal, broadcastToRoom, verifyPrincipalToken, verifyWsToken } from "../realtime";
+import {
+  isSupportedAgentBackendType,
+  isUniqueConstraintError,
+  isValidDisplayName,
+  now,
+  resolveInviteExpiry,
+} from "./support";
 
 const privateAssistantRoutes = new Hono();
 
@@ -33,15 +45,34 @@ privateAssistantRoutes.get("/api/me/assistants", (c) => {
   return c.json(items);
 });
 
-privateAssistantRoutes.post("/api/me/assistants", async (c) => {
+privateAssistantRoutes.get("/api/me/assistants/invites", (c) => {
+  const principalId = c.req.query("principalId")?.trim() ?? "";
+  const principalToken = c.req.query("principalToken")?.trim() ?? "";
+
+  if (!principalId || !principalToken) {
+    return c.json({ error: "principalId and principalToken are required" }, 400);
+  }
+
+  if (!verifyPrincipalToken(principalToken, principalId)) {
+    return c.json({ error: "invalid principal token" }, 403);
+  }
+
+  const items = db
+    .select()
+    .from(privateAssistantInvites)
+    .where(eq(privateAssistantInvites.ownerPrincipalId, principalId))
+    .all();
+
+  return c.json(items);
+});
+
+privateAssistantRoutes.post("/api/me/assistants/invites", async (c) => {
   const body = await c.req.json().catch(() => null);
   const principalId = typeof body?.principalId === "string" ? body.principalId.trim() : "";
   const principalToken =
     typeof body?.principalToken === "string" ? body.principalToken.trim() : "";
   const name = typeof body?.name === "string" ? body.name.trim() : "";
-  const backendType = typeof body?.backendType === "string" ? body.backendType.trim() : "";
-  const backendThreadId =
-    typeof body?.backendThreadId === "string" ? body.backendThreadId.trim() : "";
+  const backendType = isSupportedAgentBackendType(body?.backendType) ? body.backendType : null;
 
   if (!principalId || !principalToken || !name || !backendType) {
     return c.json({ error: "principalId, principalToken, name and backendType are required" }, 400);
@@ -59,15 +90,153 @@ privateAssistantRoutes.post("/api/me/assistants", async (c) => {
     return c.json({ error: "only codex_cli private assistants are supported for now" }, 400);
   }
 
+  const existingAssistant = db
+    .select()
+    .from(privateAssistants)
+    .where(
+      and(
+        eq(privateAssistants.ownerPrincipalId, principalId),
+        eq(privateAssistants.name, name),
+      ),
+    )
+    .get();
+
+  if (existingAssistant) {
+    return c.json({ error: "private assistant name already exists for this principal" }, 409);
+  }
+
+  const existingPendingInvite = db
+    .select()
+    .from(privateAssistantInvites)
+    .where(
+      and(
+        eq(privateAssistantInvites.ownerPrincipalId, principalId),
+        eq(privateAssistantInvites.name, name),
+        eq(privateAssistantInvites.status, "pending"),
+      ),
+    )
+    .get();
+
+  if (existingPendingInvite) {
+    return c.json(
+      {
+        ...existingPendingInvite,
+        inviteUrl: `/private-assistant-invites/${existingPendingInvite.inviteToken}`,
+        reused: true,
+      },
+      200,
+    );
+  }
+
+  const invite: PrivateAssistantInvite = {
+    id: createId("pai"),
+    ownerPrincipalId: principalId,
+    name,
+    backendType: "codex_cli",
+    status: "pending",
+    inviteToken: createInviteToken(),
+    acceptedPrivateAssistantId: null,
+    createdAt: now(),
+    expiresAt: resolveInviteExpiry(),
+    acceptedAt: null,
+  };
+
+  try {
+    db.insert(privateAssistantInvites).values({
+      ...invite,
+      status: "pending",
+    }).run();
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      return c.json({ error: "private assistant invite token conflict" }, 409);
+    }
+
+    throw error;
+  }
+
+  broadcastToPrincipal(principalId, {
+    type: "private_assistants.changed",
+    principalId,
+    timestamp: now(),
+    payload: { reason: "invite_created" },
+  });
+
+  return c.json(
+    {
+      ...invite,
+      inviteUrl: `/private-assistant-invites/${invite.inviteToken}`,
+    },
+    201,
+  );
+});
+
+privateAssistantRoutes.post("/api/private-assistant-invites/:inviteToken/accept", async (c) => {
+  const inviteToken = c.req.param("inviteToken");
+  const invite = db
+    .select()
+    .from(privateAssistantInvites)
+    .where(eq(privateAssistantInvites.inviteToken, inviteToken))
+    .get() as PrivateAssistantInvite | undefined;
+
+  if (!invite) {
+    return c.json({ error: "private assistant invite not found" }, 404);
+  }
+
+  if (invite.status !== "pending") {
+    return c.json({ error: "private assistant invite already resolved" }, 409);
+  }
+
+  if (!isSupportedAgentBackendType(invite.backendType)) {
+    return c.json({ error: "private assistant invite backendType is invalid" }, 500);
+  }
+
+  if (invite.expiresAt && invite.expiresAt <= now()) {
+    db
+      .update(privateAssistantInvites)
+      .set({ status: "expired" })
+      .where(eq(privateAssistantInvites.id, invite.id))
+      .run();
+    return c.json({ error: "private assistant invite expired" }, 410);
+  }
+
+  const body = await c.req.json().catch(() => null);
+  const backendThreadId =
+    typeof body?.backendThreadId === "string" ? body.backendThreadId.trim() : "";
+
   if (!backendThreadId) {
-    return c.json({ error: "backendThreadId is required for codex private assistants" }, 400);
+    return c.json({ error: "backendThreadId is required" }, 400);
+  }
+
+  const bindingConflict = db
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.backendThreadId, backendThreadId))
+    .get();
+
+  if (bindingConflict) {
+    return c.json({ error: "backendThreadId already bound" }, 409);
+  }
+
+  const existingAssistant = db
+    .select()
+    .from(privateAssistants)
+    .where(
+      and(
+        eq(privateAssistants.ownerPrincipalId, invite.ownerPrincipalId),
+        eq(privateAssistants.name, invite.name),
+      ),
+    )
+    .get();
+
+  if (existingAssistant) {
+    return c.json({ error: "private assistant name already exists for this principal" }, 409);
   }
 
   const assistant: PrivateAssistant = {
     id: createId("pa"),
-    ownerPrincipalId: principalId,
-    name,
-    backendType: "codex_cli",
+    ownerPrincipalId: invite.ownerPrincipalId,
+    name: invite.name,
+    backendType: invite.backendType,
     backendThreadId,
     status: "pending_bridge",
     createdAt: now(),
@@ -83,7 +252,92 @@ privateAssistantRoutes.post("/api/me/assistants", async (c) => {
     throw error;
   }
 
+  db
+    .update(privateAssistantInvites)
+    .set({
+      status: "accepted",
+      acceptedPrivateAssistantId: assistant.id,
+      acceptedAt: now(),
+    })
+    .where(eq(privateAssistantInvites.id, invite.id))
+    .run();
+
+  broadcastToPrincipal(invite.ownerPrincipalId, {
+    type: "private_assistants.changed",
+    principalId: invite.ownerPrincipalId,
+    timestamp: now(),
+    payload: { reason: "invite_accepted" },
+  });
+
   return c.json(assistant, 201);
+});
+
+privateAssistantRoutes.delete("/api/me/assistants/:assistantId", (c) => {
+  const assistantId = c.req.param("assistantId");
+  const principalId = c.req.query("principalId")?.trim() ?? "";
+  const principalToken = c.req.query("principalToken")?.trim() ?? "";
+
+  if (!principalId || !principalToken) {
+    return c.json({ error: "principalId and principalToken are required" }, 400);
+  }
+
+  if (!verifyPrincipalToken(principalToken, principalId)) {
+    return c.json({ error: "invalid principal token" }, 403);
+  }
+
+  const assistant = db
+    .select()
+    .from(privateAssistants)
+    .where(eq(privateAssistants.id, assistantId))
+    .get() as PrivateAssistant | undefined;
+
+  if (!assistant) {
+    return c.json({ error: "private assistant not found" }, 404);
+  }
+
+  if (assistant.ownerPrincipalId !== principalId) {
+    return c.json({ error: "private assistant does not belong to actor principal" }, 403);
+  }
+
+  const projections = db
+    .select()
+    .from(members)
+    .where(eq(members.sourcePrivateAssistantId, assistantId))
+    .all() as Member[];
+
+  for (const projection of projections) {
+    db.delete(agentBindings).where(eq(agentBindings.memberId, projection.id)).run();
+    db.delete(members).where(eq(members.id, projection.id)).run();
+
+    broadcastToRoom(projection.roomId, {
+      type: "member.left",
+      roomId: projection.roomId,
+      timestamp: now(),
+      payload: { memberId: projection.id },
+    });
+  }
+
+  db
+    .update(privateAssistantInvites)
+    .set({ status: "revoked", acceptedPrivateAssistantId: null })
+    .where(
+      and(
+        eq(privateAssistantInvites.ownerPrincipalId, principalId),
+        eq(privateAssistantInvites.acceptedPrivateAssistantId, assistantId),
+      ),
+    )
+    .run();
+
+  db.delete(privateAssistants).where(eq(privateAssistants.id, assistantId)).run();
+
+  broadcastToPrincipal(principalId, {
+    type: "private_assistants.changed",
+    principalId,
+    timestamp: now(),
+    payload: { reason: "assistant_deleted" },
+  });
+
+  return c.json({ ok: true });
 });
 
 privateAssistantRoutes.post("/api/rooms/:roomId/assistants/adopt", async (c) => {

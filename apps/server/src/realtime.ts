@@ -4,11 +4,13 @@ import type { RealtimeEvent } from "@agent-tavern/shared";
 import { WebSocket } from "ws";
 
 type ConnectionContext = {
-  memberId: string;
-  roomId: string;
+  memberId?: string;
+  roomId?: string;
+  principalId?: string;
 };
 
 const roomSockets = new Map<string, Set<WebSocket>>();
+const principalSockets = new Map<string, Set<WebSocket>>();
 const socketContexts = new Map<WebSocket, ConnectionContext>();
 const wsTokens = new Map<string, { memberId: string; roomId: string; active: boolean }>();
 const principalTokens = new Map<string, { principalId: string; active: boolean }>();
@@ -70,6 +72,46 @@ export function registerSocket(socket: WebSocket, request: IncomingMessage): boo
   const roomId = url.searchParams.get("roomId");
   const memberId = url.searchParams.get("memberId");
   const wsToken = url.searchParams.get("wsToken");
+  const principalId = url.searchParams.get("principalId");
+  const principalToken = url.searchParams.get("principalToken");
+
+  if (principalId && principalToken) {
+    const tokenEntry = principalTokens.get(principalToken);
+
+    if (!tokenEntry || !tokenEntry.active || tokenEntry.principalId !== principalId) {
+      socket.close(1008, "invalid principal token");
+      return false;
+    }
+
+    let sockets = principalSockets.get(principalId);
+
+    if (!sockets) {
+      sockets = new Set();
+      principalSockets.set(principalId, sockets);
+    }
+
+    sockets.add(socket);
+    socketContexts.set(socket, { principalId });
+
+    socket.on("close", () => {
+      const context = socketContexts.get(socket);
+
+      if (!context?.principalId) {
+        return;
+      }
+
+      const principalSet = principalSockets.get(context.principalId);
+      principalSet?.delete(socket);
+
+      if (principalSet?.size === 0) {
+        principalSockets.delete(context.principalId);
+      }
+
+      socketContexts.delete(socket);
+    });
+
+    return true;
+  }
 
   if (!roomId || !memberId || !wsToken) {
     socket.close(1008, "missing connection params");
@@ -101,7 +143,7 @@ export function registerSocket(socket: WebSocket, request: IncomingMessage): boo
   socket.on("close", () => {
     const context = socketContexts.get(socket);
 
-    if (!context) {
+    if (!context?.roomId) {
       return;
     }
 
@@ -120,6 +162,22 @@ export function registerSocket(socket: WebSocket, request: IncomingMessage): boo
 
 export function broadcastToRoom(roomId: string, event: RealtimeEvent): void {
   const sockets = roomSockets.get(roomId);
+
+  if (!sockets) {
+    return;
+  }
+
+  const serialized = JSON.stringify(event);
+
+  for (const socket of sockets) {
+    if (socket.readyState === WebSocket.OPEN) {
+      socket.send(serialized);
+    }
+  }
+}
+
+export function broadcastToPrincipal(principalId: string, event: RealtimeEvent): void {
+  const sockets = principalSockets.get(principalId);
 
   if (!sockets) {
     return;

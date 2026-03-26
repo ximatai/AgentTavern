@@ -80,6 +80,12 @@ export type AssistantInviteStatus =
   | "expired"
   | "revoked";
 
+export type PrivateAssistantInviteStatus =
+  | "pending"
+  | "accepted"
+  | "expired"
+  | "revoked";
+
 export type AgentBindingStatus =
   | "pending_bridge"
   | "active"
@@ -100,6 +106,8 @@ export type Principal = {
   kind: PrincipalKind;
   loginKey: string;
   globalDisplayName: string;
+  backendType?: AgentBackendType | null;
+  backendThreadId?: string | null;
   status: PresenceStatus;
   createdAt: string;
 };
@@ -112,6 +120,19 @@ export type PrivateAssistant = {
   backendThreadId: string | null;
   status: AgentBindingStatus;
   createdAt: string;
+};
+
+export type PrivateAssistantInvite = {
+  id: string;
+  ownerPrincipalId: string;
+  name: string;
+  backendType: AgentBackendType;
+  inviteToken: string;
+  status: PrivateAssistantInviteStatus;
+  acceptedPrivateAssistantId: string | null;
+  createdAt: string;
+  expiresAt: string | null;
+  acceptedAt: string | null;
 };
 
 export type Room = {

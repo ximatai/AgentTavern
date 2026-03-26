@@ -91,8 +91,19 @@ export type AgentSessionEvent =
       };
     };
 
+export type PrincipalEvent =
+  | {
+      type: "private_assistants.changed";
+      principalId: string;
+      timestamp: string;
+      payload: {
+        reason: "invite_created" | "invite_accepted" | "assistant_deleted";
+      };
+    };
+
 export type RealtimeEvent =
   | RoomEvent
   | MessageEvent
   | ApprovalEvent
-  | AgentSessionEvent;
+  | AgentSessionEvent
+  | PrincipalEvent;

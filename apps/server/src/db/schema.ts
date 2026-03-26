@@ -11,6 +11,8 @@ export const principals = sqliteTable("principals", {
   kind: text("kind").notNull(),
   loginKey: text("login_key").notNull(),
   globalDisplayName: text("global_display_name").notNull(),
+  backendType: text("backend_type"),
+  backendThreadId: text("backend_thread_id"),
   status: text("status").notNull(),
   createdAt: text("created_at").notNull(),
 }, (table) => ({
@@ -75,6 +77,31 @@ export const privateAssistants = sqliteTable("private_assistants", {
   ownerNameUniqueIdx: uniqueIndex("private_assistants_owner_name_unique_idx").on(
     table.ownerPrincipalId,
     table.name,
+  ),
+}));
+
+export const privateAssistantInvites = sqliteTable("private_assistant_invites", {
+  id: text("id").primaryKey(),
+  ownerPrincipalId: text("owner_principal_id")
+    .notNull()
+    .references(() => principals.id),
+  name: text("name").notNull(),
+  backendType: text("backend_type").notNull(),
+  inviteToken: text("invite_token").notNull(),
+  status: text("status").notNull(),
+  acceptedPrivateAssistantId: text("accepted_private_assistant_id").references(
+    () => privateAssistants.id,
+  ),
+  createdAt: text("created_at").notNull(),
+  expiresAt: text("expires_at"),
+  acceptedAt: text("accepted_at"),
+}, (table) => ({
+  ownerPrincipalIdIdx: index("private_assistant_invites_owner_principal_id_idx").on(
+    table.ownerPrincipalId,
+  ),
+  statusIdx: index("private_assistant_invites_status_idx").on(table.status),
+  inviteTokenUniqueIdx: uniqueIndex("private_assistant_invites_invite_token_unique_idx").on(
+    table.inviteToken,
   ),
 }));
 

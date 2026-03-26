@@ -4,8 +4,10 @@ import { Hono } from "hono";
 import type { Principal, PrincipalKind } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
-import { principals } from "../db/schema";
+import { localBridges, members, principals } from "../db/schema";
+import { resolveBindingForMember } from "../lib/agent-binding-resolution";
 import { createId } from "../lib/id";
+import { resolveMemberRuntimeStatus } from "../lib/member-runtime";
 import { issuePrincipalToken } from "../realtime";
 import { now } from "./support";
 
@@ -21,9 +23,20 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
   const loginKey = typeof body?.loginKey === "string" ? body.loginKey.trim() : "";
   const globalDisplayName =
     typeof body?.globalDisplayName === "string" ? body.globalDisplayName.trim() : "";
+  const backendType = typeof body?.backendType === "string" ? body.backendType.trim() : "";
+  const backendThreadId =
+    typeof body?.backendThreadId === "string" ? body.backendThreadId.trim() : "";
 
   if (!loginKey || !globalDisplayName) {
     return c.json({ error: "kind, loginKey and globalDisplayName are required" }, 400);
+  }
+
+  if (kind === "agent" && backendType !== "codex_cli") {
+    return c.json({ error: "agent principal currently requires backendType=codex_cli" }, 400);
+  }
+
+  if (kind === "agent" && !backendThreadId) {
+    return c.json({ error: "agent principal requires backendThreadId" }, 400);
   }
 
   const existing = db
@@ -38,6 +51,8 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
         .update(principals)
         .set({
           globalDisplayName,
+          backendType: kind === "agent" ? backendType : null,
+          backendThreadId: kind === "agent" ? backendThreadId : null,
           status: "online",
         })
         .where(eq(principals.id, existing.id))
@@ -50,6 +65,8 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
       kind,
       loginKey,
       globalDisplayName,
+      backendType: kind === "agent" ? backendType : null,
+      backendThreadId: kind === "agent" ? backendThreadId : null,
       status: "online",
     });
   }
@@ -59,6 +76,8 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
     kind,
     loginKey,
     globalDisplayName,
+    backendType: kind === "agent" ? backendType : null,
+    backendThreadId: kind === "agent" ? backendThreadId : null,
     status: "online",
     createdAt: now(),
   };
@@ -71,6 +90,8 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
     kind: principal.kind,
     loginKey: principal.loginKey,
     globalDisplayName: principal.globalDisplayName,
+    backendType: principal.backendType ?? null,
+    backendThreadId: principal.backendThreadId ?? null,
     status: principal.status,
   });
 });
@@ -84,10 +105,45 @@ principalRoutes.get("/api/presence/lobby", (c) => {
 
   return c.json({
     principals: onlinePrincipals.map((principal) => ({
+      runtimeStatus:
+        principal.kind === "agent"
+          ? (() => {
+              if (principal.backendType === "local_process") {
+                return "ready";
+              }
+
+              const agentProjection = db
+                .select()
+                .from(members)
+                .where(eq(members.principalId, principal.id))
+                .all()
+                .find((member) => member.type === "agent");
+              const binding = agentProjection
+                ? resolveBindingForMember({
+                    id: agentProjection.id,
+                    principalId: agentProjection.principalId,
+                    sourcePrivateAssistantId: agentProjection.sourcePrivateAssistantId,
+                  })
+                : null;
+              const bridge = binding?.bridgeId
+                ? db.select().from(localBridges).where(eq(localBridges.id, binding.bridgeId)).get() ?? null
+                : null;
+
+              return resolveMemberRuntimeStatus(
+                {
+                  type: "agent",
+                  adapterType: principal.backendType ?? null,
+                },
+                binding,
+                bridge,
+              );
+            })()
+          : null,
       id: principal.id,
       kind: principal.kind,
       loginKey: principal.loginKey,
       globalDisplayName: principal.globalDisplayName,
+      backendType: principal.backendType ?? null,
       status: principal.status,
       createdAt: principal.createdAt,
     })),

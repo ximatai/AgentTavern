@@ -1,24 +1,47 @@
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 
-import type { Member, Principal, RealtimeEvent, Room } from "@agent-tavern/shared";
+import type { AgentBinding, Member, Principal, Room } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
-import { members, principals, rooms } from "../db/schema";
+import { agentBindings, members, principals, rooms } from "../db/schema";
 import { createId, createInviteToken } from "../lib/id";
+import { resolveMemberRuntimeStatus } from "../lib/member-runtime";
 import { toPublicMember } from "../lib/public";
 import { broadcastToRoom, issueWsToken, verifyPrincipalToken, verifyWsToken } from "../realtime";
 import { isUniqueConstraintError, isValidDisplayName, now } from "./support";
 
 const roomRoutes = new Hono();
 
-function createJoinEvent(roomId: string, member: Member): RealtimeEvent {
-  return {
-    type: "member.joined",
-    roomId,
-    timestamp: now(),
-    payload: { member: toPublicMember(member, null) },
+function ensurePrincipalAgentBinding(member: Member, principal: Principal | null): AgentBinding | null {
+  if (!principal || principal.kind !== "agent" || !principal.backendThreadId) {
+    return null;
+  }
+
+  const existingBinding = db
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.backendThreadId, principal.backendThreadId))
+    .get() as AgentBinding | undefined;
+
+  if (existingBinding) {
+    return existingBinding;
+  }
+
+  const binding: AgentBinding = {
+    id: createId("agb"),
+    memberId: member.id,
+    bridgeId: null,
+    backendType: principal.backendType ?? "codex_cli",
+    backendThreadId: principal.backendThreadId,
+    cwd: null,
+    status: "pending_bridge",
+    attachedAt: now(),
+    detachedAt: null,
   };
+
+  db.insert(agentBindings).values(binding).run();
+  return binding;
 }
 
 function buildDirectRoomName(actor: Principal, peer: Principal): string {
@@ -78,7 +101,7 @@ function joinRoom(params: {
     displayName: params.displayName,
     ownerMemberId: null,
     sourcePrivateAssistantId: null,
-    adapterType: null,
+    adapterType: params.principal?.kind === "agent" ? (params.principal.backendType ?? "codex_cli") : null,
     adapterConfig: null,
     presenceStatus: "online",
     createdAt: now(),
@@ -95,7 +118,14 @@ function joinRoom(params: {
   }
 
   const wsToken = issueWsToken(member.id, params.roomId);
-  broadcastToRoom(params.roomId, createJoinEvent(params.roomId, member));
+  const binding = ensurePrincipalAgentBinding(member, params.principal);
+  const runtimeStatus = resolveMemberRuntimeStatus(member, binding, null);
+  broadcastToRoom(params.roomId, {
+    type: "member.joined",
+    roomId: params.roomId,
+    timestamp: now(),
+    payload: { member: toPublicMember(member, runtimeStatus) },
+  });
 
   return {
     payload: {
@@ -248,7 +278,7 @@ roomRoutes.post("/api/direct-rooms", async (c) => {
     displayName: actor.globalDisplayName,
     ownerMemberId: null,
     sourcePrivateAssistantId: null,
-    adapterType: null,
+    adapterType: actor.kind === "agent" ? (actor.backendType ?? "codex_cli") : null,
     adapterConfig: null,
     presenceStatus: "online",
     createdAt,
@@ -263,13 +293,15 @@ roomRoutes.post("/api/direct-rooms", async (c) => {
     displayName: peer.globalDisplayName,
     ownerMemberId: null,
     sourcePrivateAssistantId: null,
-    adapterType: null,
+    adapterType: peer.kind === "agent" ? (peer.backendType ?? "codex_cli") : null,
     adapterConfig: null,
     presenceStatus: peer.status,
     createdAt,
   };
 
   db.insert(members).values([actorMember, peerMember]).run();
+  ensurePrincipalAgentBinding(actorMember, actor);
+  ensurePrincipalAgentBinding(peerMember, peer);
 
   const wsToken = issueWsToken(actorMember.id, room.id);
 

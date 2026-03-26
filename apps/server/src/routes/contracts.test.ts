@@ -320,7 +320,70 @@ test("direct room reuses the same two-principal room and room pull adds a lobby 
   assert.ok(roomMembers.find((member) => member.principalId === carol.principalId));
 });
 
-test("principal can create a private codex assistant and adopt it into a room", async () => {
+test("agent principal bootstrap exposes runtime-capable lobby presence and creates an independent agent projection", async () => {
+  const agentResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "agent",
+      loginKey: "agent:finance-bot",
+      globalDisplayName: "FinanceBot",
+      backendType: "codex_cli",
+      backendThreadId: "thread_agent_principal_finance",
+    }),
+  });
+  const humanResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "human-agent-peer@example.com",
+      globalDisplayName: "阿南",
+    }),
+  });
+
+  assert.equal(agentResponse.status, 200);
+  const agent = await agentResponse.json();
+  const human = await humanResponse.json();
+
+  const lobbyResponse = await app.request("http://localhost/api/presence/lobby");
+  assert.equal(lobbyResponse.status, 200);
+  const lobby = await lobbyResponse.json();
+  const lobbyAgent = lobby.principals.find((item: { id: string }) => item.id === agent.principalId);
+  assert.equal(lobbyAgent.backendType, "codex_cli");
+  assert.equal(lobbyAgent.runtimeStatus, "pending_bridge");
+
+  const directRoomResponse = await app.request("http://localhost/api/direct-rooms", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      actorPrincipalId: agent.principalId,
+      actorPrincipalToken: agent.principalToken,
+      peerPrincipalId: human.principalId,
+    }),
+  });
+
+  assert.equal(directRoomResponse.status, 200);
+  const directRoom = await directRoomResponse.json();
+  const agentMember = db
+    .select()
+    .from(members)
+    .where(eq(members.id, directRoom.join.memberId))
+    .get();
+  assert.equal(agentMember?.type, "agent");
+  assert.equal(agentMember?.roleKind, "independent");
+  assert.equal(agentMember?.principalId, agent.principalId);
+  assert.equal(agentMember?.adapterType, "codex_cli");
+
+  const binding = db
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.backendThreadId, "thread_agent_principal_finance"))
+    .get();
+  assert.equal(binding?.memberId, agentMember?.id);
+});
+
+test("principal can invite a private codex assistant, accept it, and adopt it into a room", async () => {
   const bootstrapResponse = await app.request("http://localhost/api/principals/bootstrap", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -332,7 +395,7 @@ test("principal can create a private codex assistant and adopt it into a room", 
   });
   const principal = await bootstrapResponse.json();
 
-  const assistantResponse = await app.request("http://localhost/api/me/assistants", {
+  const inviteResponse = await app.request("http://localhost/api/me/assistants/invites", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -340,12 +403,33 @@ test("principal can create a private codex assistant and adopt it into a room", 
       principalToken: principal.principalToken,
       name: "账本助理",
       backendType: "codex_cli",
-      backendThreadId: "thread_private_codex_1",
     }),
   });
 
-  assert.equal(assistantResponse.status, 201);
-  const privateAssistant = await assistantResponse.json();
+  assert.equal(inviteResponse.status, 201);
+  const privateAssistantInvite = await inviteResponse.json();
+
+  const listedInvitesResponse = await app.request(
+    `http://localhost/api/me/assistants/invites?principalId=${principal.principalId}&principalToken=${principal.principalToken}`,
+  );
+  assert.equal(listedInvitesResponse.status, 200);
+  const listedInvites = await listedInvitesResponse.json();
+  assert.equal(listedInvites.length, 1);
+  assert.equal(listedInvites[0].id, privateAssistantInvite.id);
+
+  const acceptInviteResponse = await app.request(
+    `http://localhost/api/private-assistant-invites/${privateAssistantInvite.inviteToken}/accept`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        backendThreadId: "thread_private_codex_1",
+      }),
+    },
+  );
+
+  assert.equal(acceptInviteResponse.status, 201);
+  const privateAssistant = await acceptInviteResponse.json();
 
   const listedResponse = await app.request(
     `http://localhost/api/me/assistants?principalId=${principal.principalId}&principalToken=${principal.principalToken}`,
@@ -485,6 +569,28 @@ test("principal can create a private codex assistant and adopt it into a room", 
     .where(eq(members.id, secondAdoptedMember.id))
     .get();
   assert.equal(secondProjection?.sourcePrivateAssistantId, privateAssistant.id);
+
+  const deleteResponse = await app.request(
+    `http://localhost/api/me/assistants/${privateAssistant.id}?principalId=${principal.principalId}&principalToken=${principal.principalToken}`,
+    {
+      method: "DELETE",
+    },
+  );
+  assert.equal(deleteResponse.status, 200);
+
+  const deletedAssistant = db
+    .select()
+    .from(privateAssistants)
+    .where(eq(privateAssistants.id, privateAssistant.id))
+    .get();
+  assert.equal(deletedAssistant, undefined);
+
+  const deletedProjection = db
+    .select()
+    .from(members)
+    .where(eq(members.id, adoptedMember.id))
+    .get();
+  assert.equal(deletedProjection, undefined);
 });
 
 test("uploads draft attachments and sends an attachment-only message", async () => {
