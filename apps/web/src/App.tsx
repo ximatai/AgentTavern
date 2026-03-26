@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type UIEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type UIEvent } from "react";
 
 import type {
   ApprovalGrantDuration,
@@ -50,22 +50,18 @@ type MentionSuggestion = {
 const MAX_ATTACHMENT_SIZE_BYTES = 5 * 1024 * 1024;
 const MAX_ATTACHMENT_COUNT = 8;
 
-function mentionSignature(mention: { start: number; query: string } | null): string {
-  return mention ? `${mention.start}:${mention.query}` : "";
-}
-
 const demoAgentArgs = [
   "--input-type=module",
   "-e",
-  "let input='';process.stdin.on('data',c=>input+=c);process.stdin.on('end',async()=>{const lines=input.trim().split('\\n').filter(Boolean);const tail=lines.at(-1) ?? 'ready';const reply=`Tavern demo agent: ${tail}`;for (const chunk of [reply.slice(0, 18), reply.slice(18)]) { if (!chunk) continue; process.stdout.write(chunk); await new Promise(r=>setTimeout(r,120)); }});",
+  "let input='';process.stdin.on('data',c=>input+=c);process.stdin.on('end',async()=>{const lines=input.trim().split('\\n').filter(Boolean);const tail=lines.at(-1) ?? 'ready';const reply=`酒馆演示 Agent：${tail}`;for (const chunk of [reply.slice(0, 16), reply.slice(16)]) { if (!chunk) continue; process.stdout.write(chunk); await new Promise(r=>setTimeout(r,120)); }});",
 ].join("\n");
 
 const approvalGrantOptions: Array<{ value: ApprovalGrantDuration; label: string }> = [
-  { value: "once", label: "仅一次" },
-  { value: "10_minutes", label: "10分钟内有效" },
-  { value: "30_minutes", label: "30分钟内有效" },
-  { value: "1_hour", label: "1小时内有效" },
-  { value: "forever", label: "永久有效" },
+  { value: "once", label: "仅本次" },
+  { value: "10_minutes", label: "10 分钟" },
+  { value: "30_minutes", label: "30 分钟" },
+  { value: "1_hour", label: "1 小时" },
+  { value: "forever", label: "始终允许" },
 ];
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -83,7 +79,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const message =
       payload && typeof payload === "object" && "error" in payload && payload.error
         ? payload.error
-        : `request failed with status ${response.status}`;
+        : `请求失败：${response.status}`;
     throw new Error(message);
   }
 
@@ -119,10 +115,18 @@ function isRealtimeEvent(payload: unknown): payload is RealtimeEvent {
 
 function roleLabel(member: Pick<PublicMember, "type" | "roleKind">): string {
   if (member.type !== "agent") {
+    return "人类";
+  }
+
+  return member.roleKind === "assistant" ? "助理" : "独立 Agent";
+}
+
+function roleTone(member: Pick<PublicMember, "type" | "roleKind">): string {
+  if (member.type !== "agent") {
     return "human";
   }
 
-  return member.roleKind === "assistant" ? "assistant" : "agent";
+  return member.roleKind === "assistant" ? "assistant" : "independent";
 }
 
 function formatFileSize(sizeBytes: number): string {
@@ -144,27 +148,31 @@ function isImageAttachment(attachment: MessageAttachment): boolean {
 function summarizeMessage(message: PublicMessage): string {
   const trimmed = message.content.trim();
   if (trimmed) {
-    return trimmed.length > 120 ? `${trimmed.slice(0, 117)}...` : trimmed;
+    return trimmed.length > 72 ? `${trimmed.slice(0, 69)}...` : trimmed;
   }
 
   if (message.attachments.length > 0) {
-    return `${message.attachments.length} attachment${message.attachments.length > 1 ? "s" : ""}`;
+    return `${message.attachments.length} 个附件`;
   }
 
-  return "Empty message";
+  return "空消息";
 }
 
 function runtimeLabel(member: PublicMember): string | null {
   switch (member.runtimeStatus) {
     case "ready":
-      return "connected";
+      return "已连接";
     case "pending_bridge":
-      return "pending bridge";
+      return "待绑定";
     case "waiting_bridge":
-      return "waiting bridge";
+      return "等待 Bridge";
     default:
       return null;
   }
+}
+
+function mentionSignature(mention: { start: number; query: string } | null): string {
+  return mention ? `${mention.start}:${mention.query}` : "";
 }
 
 function getMentionQuery(
@@ -197,14 +205,45 @@ function getMentionQuery(
   return { start: atIndex, end, query };
 }
 
+function formatTime(value: string): string {
+  return new Date(value).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function buildOwnerTree(members: PublicMember[]): Array<{
+  owner: PublicMember;
+  assistants: PublicMember[];
+}> {
+  const assistantsByOwner = new Map<string, PublicMember[]>();
+
+  for (const member of members) {
+    if (member.roleKind !== "assistant" || !member.ownerMemberId) {
+      continue;
+    }
+
+    const next = assistantsByOwner.get(member.ownerMemberId) ?? [];
+    next.push(member);
+    assistantsByOwner.set(member.ownerMemberId, next);
+  }
+
+  return members
+    .filter((member) => assistantsByOwner.has(member.id))
+    .map((owner) => ({
+      owner,
+      assistants: sortByCreatedAt(assistantsByOwner.get(owner.id) ?? []),
+    }));
+}
+
 function App() {
-  const [roomName, setRoomName] = useState("Tavern Room");
-  const [nickname, setNickname] = useState("Alice");
+  const [roomName, setRoomName] = useState("策略室");
+  const [nickname, setNickname] = useState("阿南");
   const [inviteInput, setInviteInput] = useState("");
   const [messageInput, setMessageInput] = useState("");
   const [replyTargetId, setReplyTargetId] = useState<string | null>(null);
   const [pendingAttachments, setPendingAttachments] = useState<MessageAttachment[]>([]);
-  const [agentName, setAgentName] = useState("BackendDev");
+  const [agentName, setAgentName] = useState("财务助手");
   const [agentRoleKind, setAgentRoleKind] = useState<"independent" | "assistant">(
     "independent",
   );
@@ -212,7 +251,7 @@ function App() {
   const [agentArgsText, setAgentArgsText] = useState(demoAgentArgs);
   const [agentInputFormat, setAgentInputFormat] = useState<"text" | "json">("text");
   const [assistantOwnerId, setAssistantOwnerId] = useState("");
-  const [assistantInviteName, setAssistantInviteName] = useState("CodexThreadA");
+  const [assistantInviteName, setAssistantInviteName] = useState("架构助理");
   const [assistantInviteUrl, setAssistantInviteUrl] = useState("");
   const [room, setRoom] = useState<Room | null>(null);
   const [self, setSelf] = useState<JoinResult | null>(null);
@@ -221,7 +260,7 @@ function App() {
   const [pendingApprovals, setPendingApprovals] = useState<PublicApproval[]>([]);
   const [streams, setStreams] = useState<Record<string, SessionStream>>({});
   const [sessionActors, setSessionActors] = useState<Record<string, SessionActor>>({});
-  const [statusText, setStatusText] = useState("Ready");
+  const [statusText, setStatusText] = useState("未连接");
   const [flashText, setFlashText] = useState("");
   const [errorText, setErrorText] = useState("");
   const [isSendingMessage, setIsSendingMessage] = useState(false);
@@ -234,16 +273,11 @@ function App() {
   const [composerCaret, setComposerCaret] = useState(0);
   const [dismissedMentionSignature, setDismissedMentionSignature] = useState("");
   const socketRef = useRef<WebSocket | null>(null);
-  const selfRef = useRef<JoinResult | null>(null);
   const sessionActorsRef = useRef<Record<string, SessionActor>>({});
   const messageStreamRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const autoScrollRef = useRef(true);
-
-  useEffect(() => {
-    selfRef.current = self;
-  }, [self]);
 
   useEffect(() => {
     sessionActorsRef.current = sessionActors;
@@ -256,7 +290,7 @@ function App() {
 
     const timeoutId = window.setTimeout(() => {
       setFlashText("");
-    }, 2200);
+    }, 2400);
 
     return () => {
       window.clearTimeout(timeoutId);
@@ -305,7 +339,7 @@ function App() {
           setMembers(nextMembers);
         })
         .catch(() => {
-          // Keep the current snapshot until the next successful refresh.
+          // Ignore transient failures.
         });
     }, 10_000);
 
@@ -339,11 +373,11 @@ function App() {
     );
 
     socket.addEventListener("open", () => {
-      setStatusText("Realtime connected");
+      setStatusText("实时已连接");
     });
 
     socket.addEventListener("close", () => {
-      setStatusText("Realtime disconnected");
+      setStatusText("实时已断开");
     });
 
     socket.addEventListener("message", (event) => {
@@ -355,7 +389,7 @@ function App() {
 
       const payload = rawPayload;
 
-      if (payload.type === "member.joined") {
+      if (payload.type === "member.joined" || payload.type === "member.updated") {
         setMembers((current) => {
           const next = current.filter((member) => member.id !== payload.payload.member.id);
           next.push(payload.payload.member);
@@ -364,7 +398,12 @@ function App() {
         return;
       }
 
-      if (payload.type === "message.created") {
+      if (payload.type === "member.left") {
+        setMembers((current) => current.filter((member) => member.id !== payload.payload.memberId));
+        return;
+      }
+
+      if (payload.type === "message.created" || payload.type === "message.updated") {
         setMessages((current) => {
           const next = current.filter((message) => message.id !== payload.payload.message.id);
           next.push(payload.payload.message);
@@ -428,7 +467,6 @@ function App() {
           delete next[payload.payload.message.id];
           return next;
         });
-        return;
       }
     });
 
@@ -444,7 +482,7 @@ function App() {
 
   async function handleCreateRoom(): Promise<void> {
     setErrorText("");
-    setStatusText("Creating room");
+    setStatusText("正在创建房间");
 
     try {
       const createdRoom = await request<{
@@ -460,16 +498,17 @@ function App() {
       });
       await finishJoin(joinResult);
       setInviteInput(createdRoom.inviteToken);
-      setStatusText("Room ready");
+      setStatusText("房间已就绪");
+      setFlashText("已创建并进入房间");
     } catch (error) {
-      setErrorText(error instanceof Error ? error.message : "failed to create room");
-      setStatusText("Create room failed");
+      setErrorText(error instanceof Error ? error.message : "创建房间失败");
+      setStatusText("创建失败");
     }
   }
 
   async function handleJoinRoom(): Promise<void> {
     setErrorText("");
-    setStatusText("Joining room");
+    setStatusText("正在进入房间");
 
     try {
       const token = extractInviteToken(inviteInput);
@@ -478,10 +517,11 @@ function App() {
         body: JSON.stringify({ nickname }),
       });
       await finishJoin(joinResult);
-      setStatusText("Joined room");
+      setStatusText("已进入房间");
+      setFlashText("已通过邀请进入");
     } catch (error) {
-      setErrorText(error instanceof Error ? error.message : "failed to join room");
-      setStatusText("Join room failed");
+      setErrorText(error instanceof Error ? error.message : "进入房间失败");
+      setStatusText("进入失败");
     }
   }
 
@@ -518,7 +558,7 @@ function App() {
         fileInputRef.current.value = "";
       }
     } catch (error) {
-      setErrorText(error instanceof Error ? error.message : "failed to send message");
+      setErrorText(error instanceof Error ? error.message : "发送消息失败");
     } finally {
       setIsSendingMessage(false);
     }
@@ -533,7 +573,7 @@ function App() {
     const remainingSlots = MAX_ATTACHMENT_COUNT - pendingAttachments.length;
 
     if (remainingSlots <= 0) {
-      setErrorText(`up to ${MAX_ATTACHMENT_COUNT} attachments are allowed per message`);
+      setErrorText(`每条消息最多上传 ${MAX_ATTACHMENT_COUNT} 个附件`);
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
@@ -544,9 +584,7 @@ function App() {
     const oversizedFile = acceptedFiles.find((file) => file.size > MAX_ATTACHMENT_SIZE_BYTES);
 
     if (oversizedFile) {
-      setErrorText(
-        `${oversizedFile.name} exceeds ${formatFileSize(MAX_ATTACHMENT_SIZE_BYTES)} per file`,
-      );
+      setErrorText(`${oversizedFile.name} 超过单文件 ${formatFileSize(MAX_ATTACHMENT_SIZE_BYTES)}`);
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
@@ -578,19 +616,18 @@ function App() {
         throw new Error(
           payload && typeof payload === "object" && "error" in payload && payload.error
             ? payload.error
-            : "failed to upload attachments",
+            : "上传附件失败",
         );
       }
 
       const nextAttachments = payload as MessageAttachment[];
-
       setPendingAttachments((current) => [...current, ...nextAttachments]);
 
       if (selectedFiles.length > remainingSlots) {
-        setFlashText(`Only the first ${remainingSlots} attachments were added`);
+        setFlashText(`只添加了前 ${remainingSlots} 个附件`);
       }
     } catch (error) {
-      setErrorText(error instanceof Error ? error.message : "failed to read attachments");
+      setErrorText(error instanceof Error ? error.message : "读取附件失败");
     } finally {
       setIsPreparingAttachments(false);
       if (fileInputRef.current) {
@@ -618,7 +655,7 @@ function App() {
         current.filter((attachment) => attachment.id !== attachmentId),
       );
     } catch (error) {
-      setErrorText(error instanceof Error ? error.message : "failed to remove attachment");
+      setErrorText(error instanceof Error ? error.message : "移除附件失败");
     }
   }
 
@@ -677,9 +714,9 @@ function App() {
       });
       const nextMembers = await request<PublicMember[]>(`/api/rooms/${self.roomId}/members`);
       setMembers(nextMembers);
-      setStatusText("Agent added");
+      setFlashText("已添加本地 Agent");
     } catch (error) {
-      setErrorText(error instanceof Error ? error.message : "failed to add agent");
+      setErrorText(error instanceof Error ? error.message : "添加本地 Agent 失败");
     }
   }
 
@@ -706,9 +743,9 @@ function App() {
 
       const fullInviteUrl = new URL(invite.inviteUrl, window.location.origin).toString();
       setAssistantInviteUrl(fullInviteUrl);
-      setFlashText("Assistant invite ready");
+      setFlashText("助理邀请已生成");
     } catch (error) {
-      setErrorText(error instanceof Error ? error.message : "failed to create assistant invite");
+      setErrorText(error instanceof Error ? error.message : "创建助理邀请失败");
     }
   }
 
@@ -722,9 +759,9 @@ function App() {
 
     try {
       await navigator.clipboard.writeText(assistantInviteUrl);
-      setFlashText("Assistant invite copied");
+      setFlashText("助理邀请已复制");
     } catch (error) {
-      setErrorText(error instanceof Error ? error.message : "failed to copy invite");
+      setErrorText(error instanceof Error ? error.message : "复制邀请失败");
     } finally {
       setIsCopyingAssistantInvite(false);
     }
@@ -748,12 +785,16 @@ function App() {
             action === "approve" ? (approvalGrantById[approvalId] ?? "once") : undefined,
         }),
       });
-      setFlashText(action === "approve" ? "Approval granted" : "Approval rejected");
+      setFlashText(action === "approve" ? "已批准执行" : "已拒绝请求");
     } catch (error) {
-      setErrorText(error instanceof Error ? error.message : `failed to ${action} approval`);
+      setErrorText(error instanceof Error ? error.message : "处理审批失败");
     } finally {
       setApprovalActionId("");
     }
+  }
+
+  function findMember(memberId: string): PublicMember | undefined {
+    return members.find((member) => member.id === memberId);
   }
 
   const visibleMessages = sortByCreatedAt([
@@ -770,41 +811,12 @@ function App() {
     })),
   ]);
 
-  const roomInviteUrl = room ? new URL(`/join/${room.inviteToken}`, window.location.origin).toString() : "";
-  const mentionQuery = getMentionQuery(messageInput, composerCaret);
-  const mentionMenuVisible =
-    !!mentionQuery && mentionSignature(mentionQuery) !== dismissedMentionSignature;
-  const mentionSuggestions =
-    mentionMenuVisible && mentionQuery && self
-      ? members
-          .filter((member) => member.id !== self.memberId)
-          .filter((member) =>
-            member.displayName.toLowerCase().startsWith(mentionQuery.query.toLowerCase()),
-          )
-          .map((member) => ({
-            memberId: member.id,
-            displayName: member.displayName,
-            roleLabel: roleLabel(member),
-          }))
-      : [];
-
-  function findMember(memberId: string): PublicMember | undefined {
-    return members.find((member) => member.id === memberId);
-  }
-
   function findMessage(messageId: string | null): PublicMessage | undefined {
     if (!messageId) {
       return undefined;
     }
 
     return visibleMessages.find((message) => message.id === messageId);
-  }
-
-  function formatTime(value: string): string {
-    return new Date(value).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
   }
 
   function handleMessageStreamScroll(event: UIEvent<HTMLDivElement>): void {
@@ -855,6 +867,7 @@ function App() {
       }
 
       if (event.key === "Escape") {
+        const mentionQuery = getMentionQuery(messageInput, composerCaret);
         if (mentionQuery) {
           setDismissedMentionSignature(mentionSignature(mentionQuery));
         }
@@ -870,206 +883,270 @@ function App() {
     }
   }
 
+  const roomInviteUrl = room
+    ? new URL(`/join/${room.inviteToken}`, window.location.origin).toString()
+    : "";
+  const mentionQuery = getMentionQuery(messageInput, composerCaret);
+  const mentionMenuVisible =
+    !!mentionQuery && mentionSignature(mentionQuery) !== dismissedMentionSignature;
+  const mentionSuggestions =
+    mentionMenuVisible && mentionQuery && self
+      ? members
+          .filter((member) => member.id !== self.memberId)
+          .filter((member) =>
+            member.displayName.toLowerCase().startsWith(mentionQuery.query.toLowerCase()),
+          )
+          .map((member) => ({
+            memberId: member.id,
+            displayName: member.displayName,
+            roleLabel: roleLabel(member),
+          }))
+      : [];
+
   const selectedReplyTarget = findMessage(replyTargetId);
   const selectedReplyTargetSender = selectedReplyTarget
     ? findMember(selectedReplyTarget.senderMemberId)
     : undefined;
 
+  const humans = useMemo(
+    () => sortByCreatedAt(members.filter((member) => member.type === "human")),
+    [members],
+  );
+  const independentAgents = useMemo(
+    () =>
+      sortByCreatedAt(
+        members.filter(
+          (member) => member.type === "agent" && member.roleKind === "independent",
+        ),
+      ),
+    [members],
+  );
+  const assistantTree = useMemo(() => buildOwnerTree(members), [members]);
+  const myPendingApprovals = pendingApprovals.filter(
+    (approval) => approval.ownerMemberId === self?.memberId,
+  );
+
   return (
     <main className="lan-shell">
-      <aside className="app-rail">
-        <div className="brand-mark">AT</div>
-        <div className="rail-stack">
-          <button className="rail-item rail-item-active" type="button">
-            <span>Rooms</span>
-          </button>
-          <button className="rail-item" type="button">
-            <span>Agents</span>
-          </button>
-          <button className="rail-item" type="button">
-            <span>Links</span>
-          </button>
+      <aside className="room-sidebar">
+        <div className="brand-card">
+          <div className="brand-icon">AT</div>
+          <div>
+            <strong>AgentTavern</strong>
+            <span>局域网协作聊天室</span>
+          </div>
         </div>
-        <div className="rail-user">{self?.displayName?.slice(0, 1) ?? "?"}</div>
+
+        <section className="sidebar-card">
+          <div className="section-heading">
+            <h2>聊天室</h2>
+            <span>{room ? "当前在线" : "未进入"}</span>
+          </div>
+          {room ? (
+            <div className="room-current">
+              <strong>{room.name}</strong>
+              <p>邀请制加入，可在同一房间内实时协作。</p>
+              <div className="room-current-meta">
+                <span>{members.length} 位成员</span>
+                <span>{room.inviteToken}</span>
+              </div>
+            </div>
+          ) : (
+            <p className="muted-text">先创建一个聊天室，或通过邀请链接进入已有房间。</p>
+          )}
+        </section>
+
+        <section className="sidebar-card">
+          <div className="section-heading">
+            <h2>切换 / 进入</h2>
+            <span>核心导航</span>
+          </div>
+          <label>
+            <span>你的昵称</span>
+            <input value={nickname} onChange={(event) => setNickname(event.target.value)} />
+          </label>
+          <label>
+            <span>新房间名称</span>
+            <input value={roomName} onChange={(event) => setRoomName(event.target.value)} />
+          </label>
+          <div className="inline-actions">
+            <button onClick={handleCreateRoom}>新建并进入</button>
+            <button className="ghost-button" onClick={handleJoinRoom}>
+              通过邀请进入
+            </button>
+          </div>
+          <label>
+            <span>邀请链接或邀请码</span>
+            <input
+              value={inviteInput}
+              onChange={(event) => setInviteInput(event.target.value)}
+              placeholder="粘贴 /join/... 或邀请码"
+            />
+          </label>
+        </section>
+
+        <section className="sidebar-card">
+          <div className="section-heading">
+            <h2>本地接入</h2>
+            <span>可选</span>
+          </div>
+
+          <details className="subpanel" open>
+            <summary>邀请 Codex 助理</summary>
+            <label>
+              <span>预设显示名</span>
+              <input
+                value={assistantInviteName}
+                onChange={(event) => setAssistantInviteName(event.target.value)}
+              />
+            </label>
+            <button onClick={handleCreateAssistantInvite} disabled={!self}>
+              生成一次性邀请
+            </button>
+            {assistantInviteUrl ? (
+              <div className="invite-box">
+                <textarea readOnly rows={4} value={assistantInviteUrl} />
+                <button
+                  className="ghost-button"
+                  disabled={isCopyingAssistantInvite}
+                  onClick={handleCopyAssistantInvite}
+                >
+                  {isCopyingAssistantInvite ? "复制中..." : "复制邀请链接"}
+                </button>
+              </div>
+            ) : null}
+          </details>
+
+          <details className="subpanel">
+            <summary>添加本地 Agent</summary>
+            <label>
+              <span>显示名</span>
+              <input value={agentName} onChange={(event) => setAgentName(event.target.value)} />
+            </label>
+            <label>
+              <span>类型</span>
+              <select
+                value={agentRoleKind}
+                onChange={(event) =>
+                  setAgentRoleKind(event.target.value as "independent" | "assistant")
+                }
+              >
+                <option value="independent">独立 Agent</option>
+                <option value="assistant">助理</option>
+              </select>
+            </label>
+            {agentRoleKind === "assistant" ? (
+              <label>
+                <span>直属 owner</span>
+                <select
+                  value={assistantOwnerId}
+                  onChange={(event) => setAssistantOwnerId(event.target.value)}
+                >
+                  {members.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.displayName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            <label>
+              <span>命令</span>
+              <input
+                value={agentCommand}
+                onChange={(event) => setAgentCommand(event.target.value)}
+              />
+            </label>
+            <label>
+              <span>参数（每行一个）</span>
+              <textarea
+                rows={5}
+                value={agentArgsText}
+                onChange={(event) => setAgentArgsText(event.target.value)}
+              />
+            </label>
+            <label>
+              <span>输入格式</span>
+              <select
+                value={agentInputFormat}
+                onChange={(event) =>
+                  setAgentInputFormat(event.target.value as "text" | "json")
+                }
+              >
+                <option value="text">文本</option>
+                <option value="json">JSON</option>
+              </select>
+            </label>
+            <button onClick={handleCreateAgent} disabled={!self}>
+              添加本地 Agent
+            </button>
+          </details>
+        </section>
       </aside>
 
-      <section className="workspace">
-        <header className="topbar">
-          <div className="topbar-title">
-            <h1>{room?.name ?? "Agent Tavern"}</h1>
-            <div className="live-badge">
-              <span className="live-dot" />
+      <section className="chat-shell">
+        <header className="chat-header">
+          <div className="chat-header-bar">
+            <div className="chat-header-brand">
+              <strong>AgentTavern</strong>
+              <nav className="chat-header-nav" aria-label="房间导航">
+                <button type="button" className="header-nav-item header-nav-item-active">
+                  当前房间
+                </button>
+                <button type="button" className="header-nav-item">
+                  邀请
+                </button>
+                <button type="button" className="header-nav-item">
+                  成员
+                </button>
+                <button type="button" className="header-nav-item">
+                  设置
+                </button>
+              </nav>
+            </div>
+            <div className="chat-header-actions">
+              {roomInviteUrl ? (
+                <button
+                  className="header-invite-button"
+                  disabled={isCopyingRoomInvite}
+                  onClick={async () => {
+                    setErrorText("");
+                    setIsCopyingRoomInvite(true);
+
+                    try {
+                      await navigator.clipboard.writeText(roomInviteUrl);
+                      setFlashText("房间邀请已复制");
+                    } catch (error) {
+                      setErrorText(error instanceof Error ? error.message : "复制房间邀请失败");
+                    } finally {
+                      setIsCopyingRoomInvite(false);
+                    }
+                  }}
+                >
+                  {isCopyingRoomInvite ? "复制中..." : "邀请成员"}
+                </button>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="chat-header-main">
+            <div>
+              <p className="eyebrow">当前聊天室</p>
+              <h1>{room?.name ?? "AgentTavern"}</h1>
+            </div>
+            <div className="status-badge">
+              <span className="status-dot" />
               <span>{statusText}</span>
             </div>
             {flashText ? <div className="flash-badge">{flashText}</div> : null}
-          </div>
-          <div className="topbar-meta">
-            {roomInviteUrl ? (
-              <button
-                className="ghost-button"
-                disabled={isCopyingRoomInvite}
-                onClick={async () => {
-                  setErrorText("");
-                  setIsCopyingRoomInvite(true);
-
-                  try {
-                    await navigator.clipboard.writeText(roomInviteUrl);
-                    setFlashText("Room invite copied");
-                  } catch (error) {
-                    setErrorText(error instanceof Error ? error.message : "failed to copy room invite");
-                  } finally {
-                    setIsCopyingRoomInvite(false);
-                  }
-                }}
-              >
-                {isCopyingRoomInvite ? "Copying..." : "Copy room invite"}
-              </button>
-            ) : null}
             {errorText ? <p className="error-inline">{errorText}</p> : null}
           </div>
         </header>
 
-        <div className="workspace-grid">
-          <aside className="left-tools">
-            <section className="tool-card">
-              <div className="card-heading">
-                <h2>Session</h2>
-                <span>{self ? "joined" : "idle"}</span>
-              </div>
-              <label>
-                <span>Room name</span>
-                <input value={roomName} onChange={(event) => setRoomName(event.target.value)} />
-              </label>
-              <label>
-                <span>Nickname</span>
-                <input value={nickname} onChange={(event) => setNickname(event.target.value)} />
-              </label>
-              <div className="inline-actions">
-                <button onClick={handleCreateRoom}>Create</button>
-                <button className="ghost-button" onClick={handleJoinRoom}>
-                  Join
-                </button>
-              </div>
-              <label>
-                <span>Invite token or URL</span>
-                <input
-                  value={inviteInput}
-                  onChange={(event) => setInviteInput(event.target.value)}
-                />
-              </label>
-              {self ? (
-                <div className="session-facts">
-                  <p>Room member: {self.displayName}</p>
-                  <p>Invite token: {room?.inviteToken ?? "pending"}</p>
-                </div>
-              ) : null}
-            </section>
+        <div className="chat-layout">
+          <section className="message-panel">
+            <div className="day-marker">今天</div>
 
-            <section className="tool-card">
-              <div className="card-heading">
-                <h2>Invite Codex Thread</h2>
-                <span>one-time</span>
-              </div>
-              <label>
-                <span>Preset display name</span>
-                <input
-                  value={assistantInviteName}
-                  onChange={(event) => setAssistantInviteName(event.target.value)}
-                  placeholder="CodexThreadA"
-                />
-              </label>
-              <button onClick={handleCreateAssistantInvite} disabled={!self}>
-                Create assistant invite
-              </button>
-              {assistantInviteUrl ? (
-                <div className="invite-result">
-                  <p className="muted-text">One-time invite URL</p>
-                  <textarea readOnly rows={4} value={assistantInviteUrl} />
-                  <button
-                    className="ghost-button"
-                    disabled={isCopyingAssistantInvite}
-                    onClick={handleCopyAssistantInvite}
-                  >
-                    {isCopyingAssistantInvite ? "Copying..." : "Copy invite URL"}
-                  </button>
-                </div>
-              ) : null}
-            </section>
-
-            <section className="tool-card">
-              <div className="card-heading">
-                <h2>Add Local Agent</h2>
-                <span>demo</span>
-              </div>
-              <label>
-                <span>Display name</span>
-                <input value={agentName} onChange={(event) => setAgentName(event.target.value)} />
-              </label>
-              <label>
-                <span>Role</span>
-                <select
-                  value={agentRoleKind}
-                  onChange={(event) =>
-                    setAgentRoleKind(event.target.value as "independent" | "assistant")
-                  }
-                >
-                  <option value="independent">Independent</option>
-                  <option value="assistant">Assistant</option>
-                </select>
-              </label>
-              {agentRoleKind === "assistant" ? (
-                <label>
-                  <span>Owner</span>
-                  <select
-                    value={assistantOwnerId}
-                    onChange={(event) => setAssistantOwnerId(event.target.value)}
-                  >
-                    {members.map((member) => (
-                      <option key={member.id} value={member.id}>
-                        {member.displayName}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-              <label>
-                <span>Command</span>
-                <input
-                  value={agentCommand}
-                  onChange={(event) => setAgentCommand(event.target.value)}
-                />
-              </label>
-              <details className="advanced-config">
-                <summary>Advanced config</summary>
-                <label>
-                  <span>Args</span>
-                  <textarea
-                    rows={5}
-                    value={agentArgsText}
-                    onChange={(event) => setAgentArgsText(event.target.value)}
-                  />
-                </label>
-                <label>
-                  <span>Input format</span>
-                  <select
-                    value={agentInputFormat}
-                    onChange={(event) =>
-                      setAgentInputFormat(event.target.value as "text" | "json")
-                    }
-                  >
-                    <option value="text">text</option>
-                    <option value="json">json</option>
-                  </select>
-                </label>
-              </details>
-              <button onClick={handleCreateAgent} disabled={!self}>
-                Add local agent
-              </button>
-            </section>
-          </aside>
-
-          <section className="chat-stage">
-            <div className="day-marker">Today</div>
             <div
               ref={messageStreamRef}
               className="message-stream"
@@ -1088,58 +1165,36 @@ function App() {
                 const isApprovalMessage =
                   message.messageType === "approval_request" ||
                   message.messageType === "approval_result";
-                const isWorkflowMessage = isSystemNotice || isApprovalMessage;
-                const bubbleClassName = [
-                  "chat-bubble",
-                  isAgent && !isWorkflowMessage ? "chat-bubble-agent" : "",
-                  isSystemNotice ? "chat-bubble-notice" : "",
-                  isApprovalMessage ? "chat-bubble-approval" : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ");
-                const authorLabel =
-                  isApprovalMessage && sender
-                    ? `${sender.displayName} workflow`
-                    : isSystemNotice && sender
-                      ? `${sender.displayName} status`
-                    : sender?.displayName ?? message.senderMemberId;
-                const metaPillLabel = isApprovalMessage
-                  ? "workflow"
+                const tone = isApprovalMessage
+                  ? "approval"
                   : isSystemNotice
-                    ? "status"
-                    : sender
-                      ? roleLabel(sender)
-                      : null;
-                const metaPillClassName = isApprovalMessage
-                  ? "agent-pill-workflow"
-                  : isSystemNotice
-                    ? "agent-pill-system"
-                    : "";
+                    ? "notice"
+                    : isAgent
+                      ? "agent"
+                      : "human";
+                const authorLabel = sender?.displayName ?? message.senderMemberId;
 
                 return (
                   <article
                     key={message.id}
-                    className={`chat-row ${isAgent && !isWorkflowMessage ? "chat-row-agent" : ""} ${
-                      isSelf ? "chat-row-self" : ""
-                    } ${
-                      isApprovalMessage ? "chat-row-approval" : ""
-                    } ${
-                      isSystemNotice ? "chat-row-notice" : ""
-                    }`}
+                    className={`chat-row chat-row-${tone} ${isSelf ? "chat-row-self" : ""}`}
                   >
                     <header className="chat-meta">
                       <div className="chat-author">
                         <strong>{authorLabel}</strong>
-                        {metaPillLabel ? (
-                          <span className={`agent-pill ${metaPillClassName}`.trim()}>
-                            {metaPillLabel}
+                        {sender ? (
+                          <span className={`role-pill role-pill-${roleTone(sender)}`}>
+                            {roleLabel(sender)}
                           </span>
                         ) : null}
-                        {isStreaming ? <span className="stream-pill">streaming</span> : null}
+                        {isSystemNotice ? <span className="role-pill role-pill-notice">系统提示</span> : null}
+                        {isApprovalMessage ? <span className="role-pill role-pill-approval">审批事件</span> : null}
+                        {isStreaming ? <span className="stream-pill">流式输出中</span> : null}
                       </div>
                       <span>{formatTime(message.createdAt)}</span>
                     </header>
-                    <div className={bubbleClassName}>
+
+                    <div className={`chat-bubble chat-bubble-${tone}`}>
                       {message.replyToMessageId ? (
                         <button
                           type="button"
@@ -1150,17 +1205,17 @@ function App() {
                             }
 
                             setReplyTargetId(replyTarget.id);
-                            setFlashText("Reply target loaded");
+                            setFlashText("已载入回复目标");
                             composerRef.current?.focus();
                           }}
                         >
-                          <strong>
-                            Replying to {replyTargetSender?.displayName ?? "message"}
-                          </strong>
+                          <strong>回复给 {replyTargetSender?.displayName ?? "某条消息"}</strong>
                           <span>{summarizeMessage(replyTarget ?? message)}</span>
                         </button>
                       ) : null}
+
                       {message.content ? <p>{message.content}</p> : null}
+
                       {message.attachments.length > 0 ? (
                         <div className="message-attachments">
                           {message.attachments.map((attachment) => (
@@ -1179,7 +1234,7 @@ function App() {
                                   className="message-attachment-preview"
                                 />
                               ) : (
-                                <span className="message-attachment-icon">FILE</span>
+                                <span className="message-attachment-icon">文件</span>
                               )}
                               <span className="message-attachment-copy">
                                 <strong>{attachment.name}</strong>
@@ -1190,7 +1245,8 @@ function App() {
                         </div>
                       ) : null}
                     </div>
-                    {!isWorkflowMessage ? (
+
+                    {!isApprovalMessage && !isSystemNotice ? (
                       <div className="chat-actions">
                         <button
                           type="button"
@@ -1200,7 +1256,7 @@ function App() {
                             composerRef.current?.focus();
                           }}
                         >
-                          Reply
+                          回复
                         </button>
                       </div>
                     ) : null}
@@ -1213,13 +1269,11 @@ function App() {
               {replyTargetId ? (
                 <div className="reply-banner">
                   <div className="reply-banner-copy">
-                    <strong>
-                      Replying to {selectedReplyTargetSender?.displayName ?? "message"}
-                    </strong>
+                    <strong>正在回复 {selectedReplyTargetSender?.displayName ?? "某条消息"}</strong>
                     <span>
                       {selectedReplyTarget
                         ? summarizeMessage(selectedReplyTarget)
-                        : "Original message unavailable"}
+                        : "原始消息已不可用"}
                     </span>
                   </div>
                   <button
@@ -1227,10 +1281,11 @@ function App() {
                     className="reply-banner-clear"
                     onClick={() => setReplyTargetId(null)}
                   >
-                    Cancel
+                    取消
                   </button>
                 </div>
               ) : null}
+
               {mentionSuggestions.length > 0 ? (
                 <div className="mention-menu">
                   {mentionSuggestions.map((suggestion, index) => (
@@ -1250,6 +1305,7 @@ function App() {
                   ))}
                 </div>
               ) : null}
+
               {pendingAttachments.length > 0 ? (
                 <div className="pending-attachments">
                   {pendingAttachments.map((attachment) => (
@@ -1265,13 +1321,14 @@ function App() {
                           void removePendingAttachment(attachment.id);
                         }}
                       >
-                        Remove
+                        移除
                       </button>
                     </div>
                   ))}
                 </div>
               ) : null}
-              <div className="composer-actions">
+
+              <div className="composer-toolbar">
                 <input
                   ref={fileInputRef}
                   className="composer-file-input"
@@ -1287,137 +1344,233 @@ function App() {
                   disabled={!self || isPreparingAttachments}
                   onClick={() => fileInputRef.current?.click()}
                 >
-                  {isPreparingAttachments ? "Reading files..." : "Add attachments"}
+                  {isPreparingAttachments ? "上传中..." : "添加附件"}
                 </button>
                 <span className="composer-hint">
-                  Up to {MAX_ATTACHMENT_COUNT} files, {formatFileSize(MAX_ATTACHMENT_SIZE_BYTES)} each
+                  最多 {MAX_ATTACHMENT_COUNT} 个附件，单个 {formatFileSize(MAX_ATTACHMENT_SIZE_BYTES)}
                 </span>
               </div>
-              <textarea
-                ref={composerRef}
-                rows={3}
-                value={messageInput}
-                onChange={(event) => {
-                  setMessageInput(event.target.value);
-                  setComposerCaret(event.target.selectionStart ?? event.target.value.length);
-                }}
-                onKeyDown={(event) => void handleComposerKeyDown(event)}
-                onBlur={() => {
-                  if (mentionQuery) {
-                    setDismissedMentionSignature(mentionSignature(mentionQuery));
+
+              <div className="composer-main">
+                <textarea
+                  ref={composerRef}
+                  rows={3}
+                  value={messageInput}
+                  onChange={(event) => {
+                    setMessageInput(event.target.value);
+                    setComposerCaret(event.target.selectionStart ?? event.target.value.length);
+                  }}
+                  onKeyDown={(event) => void handleComposerKeyDown(event)}
+                  onBlur={() => {
+                    if (mentionQuery) {
+                      setDismissedMentionSignature(mentionSignature(mentionQuery));
+                    }
+                  }}
+                  onClick={syncComposerCaret}
+                  onKeyUp={syncComposerCaret}
+                  onSelect={syncComposerCaret}
+                  placeholder="输入消息，使用 @成员名 触发协作..."
+                />
+                <button
+                  onClick={handleSendMessage}
+                  disabled={
+                    !self ||
+                    isSendingMessage ||
+                    isPreparingAttachments ||
+                    (!messageInput.trim() && pendingAttachments.length === 0)
                   }
-                }}
-                onClick={syncComposerCaret}
-                onKeyUp={syncComposerCaret}
-                onSelect={syncComposerCaret}
-                placeholder="Type a message, for example: @BackendDev 帮我看一下"
-              />
-              <button
-                onClick={handleSendMessage}
-                disabled={
-                  !self ||
-                  isSendingMessage ||
-                  isPreparingAttachments ||
-                  (!messageInput.trim() && pendingAttachments.length === 0)
-                }
-              >
-                {isSendingMessage ? "Sending..." : "Send"}
-              </button>
+                >
+                  {isSendingMessage ? "发送中..." : "发送"}
+                </button>
+              </div>
+              <p className="composer-footnote">回车发送，Shift + Enter 换行</p>
             </div>
           </section>
 
-          <aside className="right-sidebar">
+          <aside className="member-sidebar">
             <section className="side-card">
-              <div className="card-heading">
-                <h2>Active in Room</h2>
-                <span>{members.length}</span>
+              <div className="section-heading">
+                <h2>房间成员</h2>
+                <span>{members.length} 位在线/可见成员</span>
               </div>
-              <div className="presence-list">
-                {members.map((member) => {
-                  const owner = member.ownerMemberId ? findMember(member.ownerMemberId) : null;
 
-                  return (
-                    <article key={member.id} className="presence-item">
-                      <div className={`presence-avatar ${member.type === "agent" ? "presence-avatar-agent" : ""}`}>
-                        {member.displayName.slice(0, 1)}
-                      </div>
-                      <div className="presence-copy">
-                        <div className="presence-title">
-                          <strong>{member.displayName}</strong>
-                          <span className="agent-pill">{roleLabel(member)}</span>
-                          {runtimeLabel(member) ? (
-                            <span
-                              className={`presence-runtime-pill presence-runtime-pill-${member.runtimeStatus}`}
-                            >
-                              {runtimeLabel(member)}
-                            </span>
-                          ) : null}
+              <div className="member-section">
+                <h3>人类成员</h3>
+                <div className="member-list">
+                  {humans.map((member) => (
+                    <article key={member.id} className="member-row">
+                      <div className="member-avatar">{member.displayName.slice(0, 1)}</div>
+                      <div className="member-copy">
+                        <div className="member-title">
+                          <strong>
+                            {member.displayName}
+                            {member.id === self?.memberId ? "（你）" : ""}
+                          </strong>
+                          <span className="role-pill role-pill-human">人类</span>
                         </div>
-                        <p>
-                          {owner ? `Owner ${owner.displayName}` : "Independent member"}
-                        </p>
+                        <p>在当前聊天室中协作</p>
                       </div>
                     </article>
-                  );
-                })}
+                  ))}
+                </div>
+              </div>
+
+              <div className="member-section">
+                <h3>独立 Agent</h3>
+                <div className="member-list">
+                  {independentAgents.length === 0 ? (
+                    <p className="muted-text">暂无独立 Agent。</p>
+                  ) : (
+                    independentAgents.map((member) => (
+                      <article key={member.id} className="member-row">
+                        <div className="member-avatar member-avatar-agent">
+                          {member.displayName.slice(0, 1)}
+                        </div>
+                        <div className="member-copy">
+                          <div className="member-title">
+                            <strong>{member.displayName}</strong>
+                            <span className="role-pill role-pill-independent">独立 Agent</span>
+                            {runtimeLabel(member) ? (
+                              <span className={`runtime-pill runtime-pill-${member.runtimeStatus}`}>
+                                {runtimeLabel(member)}
+                              </span>
+                            ) : null}
+                          </div>
+                          <p>可被直接 @ 并执行</p>
+                        </div>
+                      </article>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="member-section">
+                <h3>助理树</h3>
+                <div className="assistant-tree">
+                  {assistantTree.length === 0 ? (
+                    <p className="muted-text">暂无助理成员。</p>
+                  ) : (
+                    assistantTree.map(({ owner, assistants }) => (
+                      <div key={owner.id} className="assistant-branch">
+                        <div className="assistant-owner">
+                          <div className={`member-avatar ${owner.type === "agent" ? "member-avatar-agent" : ""}`}>
+                            {owner.displayName.slice(0, 1)}
+                          </div>
+                          <div className="member-copy">
+                            <div className="member-title">
+                              <strong>{owner.displayName}</strong>
+                              <span className={`role-pill role-pill-${roleTone(owner)}`}>
+                                {roleLabel(owner)}
+                              </span>
+                            </div>
+                            <p>名下助理 {assistants.length} 位</p>
+                          </div>
+                        </div>
+
+                        <div className="assistant-children">
+                          {assistants.map((assistant) => (
+                            <article key={assistant.id} className="member-row member-row-child">
+                              <div className="member-avatar member-avatar-agent">
+                                {assistant.displayName.slice(0, 1)}
+                              </div>
+                              <div className="member-copy">
+                                <div className="member-title">
+                                  <strong>{assistant.displayName}</strong>
+                                  <span className="role-pill role-pill-assistant">助理</span>
+                                  {runtimeLabel(assistant) ? (
+                                    <span
+                                      className={`runtime-pill runtime-pill-${assistant.runtimeStatus}`}
+                                    >
+                                      {runtimeLabel(assistant)}
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <p>直属于 {owner.displayName}</p>
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </section>
 
             <section className="side-card">
-              <div className="card-heading">
-                <h2>Pending approvals</h2>
-                <span>{pendingApprovals.length}</span>
+              <div className="section-heading">
+                <h2>待处理审批</h2>
+                <span>{pendingApprovals.length} 条</span>
               </div>
               <div className="approval-list">
-                {pendingApprovals.length === 0 ? <p className="muted-text">No pending approvals.</p> : null}
-                {pendingApprovals.map((approval) => {
-                  const agent = findMember(approval.agentMemberId);
-                  const requester = findMember(approval.requesterMemberId);
-                  const owner = findMember(approval.ownerMemberId);
+                {pendingApprovals.length === 0 ? (
+                  <p className="muted-text">当前没有待处理审批。</p>
+                ) : (
+                  pendingApprovals.map((approval) => {
+                    const agent = findMember(approval.agentMemberId);
+                    const requester = findMember(approval.requesterMemberId);
+                    const owner = findMember(approval.ownerMemberId);
+                    const mine = approval.ownerMemberId === self?.memberId;
 
-                  return (
-                    <article key={approval.id} className="approval-card">
-                      <div>
-                        <strong>{agent?.displayName ?? approval.agentMemberId}</strong>
-                        <p>Role: {agent ? roleLabel(agent) : "agent"}</p>
-                        <p>Requester: {requester?.displayName ?? approval.requesterMemberId}</p>
-                        <p>Owner: {owner?.displayName ?? approval.ownerMemberId}</p>
-                      </div>
-                      <div className="approval-actions">
-                        <select
-                          value={approvalGrantById[approval.id] ?? "once"}
-                          onChange={(event) =>
-                            setApprovalGrantById((current) => ({
-                              ...current,
-                              [approval.id]: event.target.value as ApprovalGrantDuration,
-                            }))
-                          }
-                          disabled={approval.ownerMemberId !== self?.memberId || approvalActionId === approval.id}
-                        >
-                          {approvalGrantOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          onClick={() => handleApproval(approval.id, "approve")}
-                          disabled={approval.ownerMemberId !== self?.memberId || approvalActionId === approval.id}
-                        >
-                          {approvalActionId === approval.id ? "Working..." : "Approve"}
-                        </button>
-                        <button
-                          className="ghost-button"
-                          onClick={() => handleApproval(approval.id, "reject")}
-                          disabled={approval.ownerMemberId !== self?.memberId || approvalActionId === approval.id}
-                        >
-                          Reject
-                        </button>
-                      </div>
-                    </article>
-                  );
-                })}
+                    return (
+                      <article key={approval.id} className="approval-card">
+                        <div className="approval-copy">
+                          <strong>{requester?.displayName ?? approval.requesterMemberId} 正在请求调用</strong>
+                          <p>
+                            目标助理：{agent?.displayName ?? approval.agentMemberId}
+                            {owner ? `，直属于 ${owner.displayName}` : ""}
+                          </p>
+                          <p>{mine ? "正在等待你决定是否放行。" : "等待直属 owner 处理后继续执行。"}</p>
+                        </div>
+                        <div className="approval-actions">
+                          <select
+                            value={approvalGrantById[approval.id] ?? "once"}
+                            onChange={(event) =>
+                              setApprovalGrantById((current) => ({
+                                ...current,
+                                [approval.id]: event.target.value as ApprovalGrantDuration,
+                              }))
+                            }
+                            disabled={!mine || approvalActionId === approval.id}
+                          >
+                            {approvalGrantOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={() => handleApproval(approval.id, "approve")}
+                            disabled={!mine || approvalActionId === approval.id}
+                          >
+                            {approvalActionId === approval.id ? "处理中..." : "批准"}
+                          </button>
+                          <button
+                            className="ghost-button"
+                            onClick={() => handleApproval(approval.id, "reject")}
+                            disabled={!mine || approvalActionId === approval.id}
+                          >
+                            拒绝
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })
+                )}
               </div>
+              {myPendingApprovals.length > 0 ? (
+                <p className="approval-summary">你当前有 {myPendingApprovals.length} 条审批待处理。</p>
+              ) : null}
+            </section>
+
+            <section className="protocol-card">
+              <div className="protocol-title">
+                <span className="protocol-dot" />
+                <strong>房间协作协议已启用</strong>
+              </div>
+              <p>
+                当前聊天室中的互动会在本地实时同步；若助理依赖本地 Bridge，则其可用性会随连接状态变化。
+              </p>
             </section>
           </aside>
         </div>
