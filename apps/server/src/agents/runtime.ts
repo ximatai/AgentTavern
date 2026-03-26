@@ -25,6 +25,7 @@ import {
   messages,
   rooms,
 } from "../db/schema";
+import { resolveBindingForMember } from "../lib/agent-binding-resolution";
 import { createId } from "../lib/id";
 import { insertMessage } from "../lib/message-records";
 import {
@@ -285,11 +286,7 @@ async function runAgentSession(sessionId: string): Promise<void> {
   const typedAgent = toMember(agent);
   const typedRequester = toMember(requester);
   const typedTriggerMessage = toDomainMessage(triggerMessage);
-  const bindingRow = db
-    .select()
-    .from(agentBindings)
-    .where(eq(agentBindings.memberId, typedAgent.id))
-    .get();
+  const bindingRow = resolveBindingForMember(typedAgent);
   const typedBinding = bindingRow ? toAgentBinding(bindingRow) : null;
 
   const recentMessages = db

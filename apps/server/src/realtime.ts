@@ -11,6 +11,7 @@ type ConnectionContext = {
 const roomSockets = new Map<string, Set<WebSocket>>();
 const socketContexts = new Map<WebSocket, ConnectionContext>();
 const wsTokens = new Map<string, { memberId: string; roomId: string; active: boolean }>();
+const principalTokens = new Map<string, { principalId: string; active: boolean }>();
 
 export function issueWsToken(memberId: string, roomId: string): string {
   const token = crypto.randomUUID();
@@ -22,6 +23,23 @@ export function issueWsToken(memberId: string, roomId: string): string {
   });
 
   return token;
+}
+
+export function issuePrincipalToken(principalId: string): string {
+  const token = crypto.randomUUID();
+
+  principalTokens.set(token, {
+    principalId,
+    active: true,
+  });
+
+  return token;
+}
+
+export function verifyPrincipalToken(principalToken: string, principalId: string): boolean {
+  const tokenEntry = principalTokens.get(principalToken);
+
+  return Boolean(tokenEntry && tokenEntry.active && tokenEntry.principalId === principalId);
 }
 
 export function verifyWsToken(

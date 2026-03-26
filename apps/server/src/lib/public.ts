@@ -14,10 +14,12 @@ export function toPublicMember(
   return {
     id: member.id,
     roomId: member.roomId,
+    principalId: member.principalId,
     type: member.type,
     roleKind: member.roleKind,
     displayName: member.displayName,
     ownerMemberId: member.ownerMemberId,
+    sourcePrivateAssistantId: member.sourcePrivateAssistantId,
     presenceStatus: member.presenceStatus,
     runtimeStatus,
     createdAt: member.createdAt,

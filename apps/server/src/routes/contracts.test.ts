@@ -31,6 +31,7 @@ runMigrations();
 const { app } = appModule;
 const { db } = dbClient;
 const {
+  principals,
   rooms,
   members,
   messages,
@@ -43,6 +44,7 @@ const {
   bridgeTasks,
   localBridges,
   messageAttachments,
+  privateAssistants,
 } = schema;
 const { createInviteToken } = ids;
 const { issueWsToken, registerSocket } = realtime;
@@ -124,6 +126,365 @@ test("joining the same room twice with the same nickname returns 409", async () 
   assert.deepEqual(await secondResponse.json(), {
     error: "displayName already exists in room",
   });
+});
+
+test("principal bootstrap creates or restores a human principal and room join can inherit global display name", async () => {
+  const bootstrapResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "alice@example.com",
+      globalDisplayName: "阿南",
+    }),
+  });
+
+  assert.equal(bootstrapResponse.status, 200);
+  const bootstrapResult = await bootstrapResponse.json();
+  assert.equal(bootstrapResult.kind, "human");
+  assert.equal(bootstrapResult.loginKey, "alice@example.com");
+  assert.equal(bootstrapResult.globalDisplayName, "阿南");
+
+  const restoredResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "alice@example.com",
+      globalDisplayName: "阿南二号",
+    }),
+  });
+
+  assert.equal(restoredResponse.status, 200);
+  const restoredResult = await restoredResponse.json();
+  assert.equal(restoredResult.principalId, bootstrapResult.principalId);
+  assert.equal(restoredResult.globalDisplayName, "阿南二号");
+
+  const persistedPrincipal = db
+    .select()
+    .from(principals)
+    .where(eq(principals.id, bootstrapResult.principalId))
+    .get();
+  assert.equal(persistedPrincipal?.globalDisplayName, "阿南二号");
+
+  const roomId = "room_principal_join";
+  seedRoom({
+    roomId,
+    name: "Principal Join Room",
+    inviteToken: createInviteToken(),
+  });
+
+  const joinResponse = await app.request(`http://localhost/api/rooms/${roomId}/join`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      principalId: bootstrapResult.principalId,
+      principalToken: bootstrapResult.principalToken,
+    }),
+  });
+
+  assert.equal(joinResponse.status, 403);
+  assert.deepEqual(await joinResponse.json(), {
+    error: "room join requires invite or existing membership",
+  });
+
+  const invitedJoinResponse = await app.request(
+    `http://localhost/api/invites/${db.select().from(rooms).where(eq(rooms.id, roomId)).get()!.inviteToken}/join`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        principalId: bootstrapResult.principalId,
+        principalToken: bootstrapResult.principalToken,
+      }),
+    },
+  );
+
+  assert.equal(invitedJoinResponse.status, 200);
+  const joinResult = await invitedJoinResponse.json();
+  assert.equal(joinResult.displayName, "阿南二号");
+
+  const insertedMember = db.select().from(members).where(eq(members.id, joinResult.memberId)).get();
+  assert.equal(insertedMember?.principalId, bootstrapResult.principalId);
+  assert.equal(insertedMember?.displayName, "阿南二号");
+});
+
+test("direct room reuses the same two-principal room and room pull adds a lobby principal into an existing room", async () => {
+  const aliceResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "alice-direct@example.com",
+      globalDisplayName: "阿南",
+    }),
+  });
+  const bobResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "bob-direct@example.com",
+      globalDisplayName: "小白",
+    }),
+  });
+  const carolResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "carol-direct@example.com",
+      globalDisplayName: "小红",
+    }),
+  });
+
+  const alice = await aliceResponse.json();
+  const bob = await bobResponse.json();
+  const carol = await carolResponse.json();
+
+  const firstDirectRoomResponse = await app.request("http://localhost/api/direct-rooms", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      actorPrincipalId: alice.principalId,
+      actorPrincipalToken: alice.principalToken,
+      peerPrincipalId: bob.principalId,
+    }),
+  });
+
+  assert.equal(firstDirectRoomResponse.status, 200);
+  const firstDirectRoom = await firstDirectRoomResponse.json();
+  assert.equal(firstDirectRoom.reused, false);
+
+  const secondDirectRoomResponse = await app.request("http://localhost/api/direct-rooms", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      actorPrincipalId: alice.principalId,
+      actorPrincipalToken: alice.principalToken,
+      peerPrincipalId: bob.principalId,
+    }),
+  });
+
+  assert.equal(secondDirectRoomResponse.status, 200);
+  const secondDirectRoom = await secondDirectRoomResponse.json();
+  assert.equal(secondDirectRoom.reused, true);
+  assert.equal(secondDirectRoom.room.id, firstDirectRoom.room.id);
+
+  const actorJoinResponse = await app.request(
+    `http://localhost/api/rooms/${firstDirectRoom.room.id}/join`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        principalId: alice.principalId,
+        principalToken: alice.principalToken,
+        roomDisplayName: "阿南主持人",
+      }),
+    },
+  );
+
+  assert.equal(actorJoinResponse.status, 200);
+  const actorJoin = await actorJoinResponse.json();
+  assert.equal(actorJoin.memberId, firstDirectRoom.join.memberId);
+
+  const actorMember = db
+    .select()
+    .from(members)
+    .where(eq(members.id, firstDirectRoom.join.memberId))
+    .get();
+  assert.ok(actorMember);
+
+  const actorToken = issueWsToken(actorMember.id, firstDirectRoom.room.id);
+
+  const pullResponse = await app.request(`http://localhost/api/rooms/${firstDirectRoom.room.id}/pull`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      actorMemberId: actorMember.id,
+      wsToken: actorToken,
+      targetPrincipalId: carol.principalId,
+    }),
+  });
+
+  assert.equal(pullResponse.status, 201);
+  const pulledJoin = await pullResponse.json();
+  assert.equal(pulledJoin.displayName, "小红");
+
+  const roomMembers = db
+    .select()
+    .from(members)
+    .where(eq(members.roomId, firstDirectRoom.room.id))
+    .all();
+  assert.equal(roomMembers.length, 3);
+  assert.ok(roomMembers.find((member) => member.principalId === carol.principalId));
+});
+
+test("principal can create a private codex assistant and adopt it into a room", async () => {
+  const bootstrapResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "owner-private@example.com",
+      globalDisplayName: "房主",
+    }),
+  });
+  const principal = await bootstrapResponse.json();
+
+  const assistantResponse = await app.request("http://localhost/api/me/assistants", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      principalId: principal.principalId,
+      principalToken: principal.principalToken,
+      name: "账本助理",
+      backendType: "codex_cli",
+      backendThreadId: "thread_private_codex_1",
+    }),
+  });
+
+  assert.equal(assistantResponse.status, 201);
+  const privateAssistant = await assistantResponse.json();
+
+  const listedResponse = await app.request(
+    `http://localhost/api/me/assistants?principalId=${principal.principalId}&principalToken=${principal.principalToken}`,
+  );
+  assert.equal(listedResponse.status, 200);
+  const listedAssistants = await listedResponse.json();
+  assert.equal(listedAssistants.length, 1);
+  assert.equal(listedAssistants[0].id, privateAssistant.id);
+
+  const roomId = "room_private_assistant";
+  seedRoom({
+    roomId,
+    name: "Private Assistant Room",
+    inviteToken: createInviteToken(),
+  });
+
+  const joinResponse = await app.request(`http://localhost/api/rooms/${roomId}/join`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      principalId: principal.principalId,
+      principalToken: principal.principalToken,
+    }),
+  });
+  assert.equal(joinResponse.status, 403);
+  const invitedJoinResponse = await app.request(
+    `http://localhost/api/invites/${db.select().from(rooms).where(eq(rooms.id, roomId)).get()!.inviteToken}/join`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        principalId: principal.principalId,
+        principalToken: principal.principalToken,
+      }),
+    },
+  );
+  assert.equal(invitedJoinResponse.status, 200);
+  const join = await invitedJoinResponse.json();
+  const actorToken = join.wsToken;
+
+  const adoptResponse = await app.request(
+    `http://localhost/api/rooms/${roomId}/assistants/adopt`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        actorMemberId: join.memberId,
+        wsToken: actorToken,
+        privateAssistantId: privateAssistant.id,
+      }),
+    },
+  );
+
+  assert.equal(adoptResponse.status, 201);
+  const adoptedMember = await adoptResponse.json();
+  assert.equal(adoptedMember.displayName, "账本助理");
+
+  const insertedProjection = db
+    .select()
+    .from(members)
+    .where(eq(members.id, adoptedMember.id))
+    .get();
+  assert.equal(insertedProjection?.sourcePrivateAssistantId, privateAssistant.id);
+
+  const binding = db
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.memberId, adoptedMember.id))
+    .get();
+  assert.equal(binding?.backendThreadId, "thread_private_codex_1");
+
+  const storedAssistant = db
+    .select()
+    .from(privateAssistants)
+    .where(eq(privateAssistants.id, privateAssistant.id))
+    .get();
+  assert.equal(storedAssistant?.name, "账本助理");
+
+  const secondRoomId = "room_private_assistant_second";
+  seedRoom({
+    roomId: secondRoomId,
+    name: "Private Assistant Room 2",
+    inviteToken: createInviteToken(),
+  });
+
+  const secondJoinResponse = await app.request(`http://localhost/api/rooms/${secondRoomId}/join`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      principalId: principal.principalId,
+      principalToken: principal.principalToken,
+      roomDisplayName: "房主二号",
+    }),
+  });
+  assert.equal(secondJoinResponse.status, 403);
+  const secondInvitedJoinResponse = await app.request(
+    `http://localhost/api/invites/${db.select().from(rooms).where(eq(rooms.id, secondRoomId)).get()!.inviteToken}/join`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        principalId: principal.principalId,
+        principalToken: principal.principalToken,
+        roomDisplayName: "房主二号",
+      }),
+    },
+  );
+  assert.equal(secondInvitedJoinResponse.status, 200);
+  const secondJoin = await secondInvitedJoinResponse.json();
+
+  const secondAdoptResponse = await app.request(
+    `http://localhost/api/rooms/${secondRoomId}/assistants/adopt`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        actorMemberId: secondJoin.memberId,
+        wsToken: secondJoin.wsToken,
+        privateAssistantId: privateAssistant.id,
+      }),
+    },
+  );
+
+  assert.equal(secondAdoptResponse.status, 201);
+  const secondAdoptedMember = await secondAdoptResponse.json();
+
+  const allBindingsForThread = db
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.backendThreadId, "thread_private_codex_1"))
+    .all();
+  assert.equal(allBindingsForThread.length, 1);
+
+  const secondProjection = db
+    .select()
+    .from(members)
+    .where(eq(members.id, secondAdoptedMember.id))
+    .get();
+  assert.equal(secondProjection?.sourcePrivateAssistantId, privateAssistant.id);
 });
 
 test("uploads draft attachments and sends an attachment-only message", async () => {

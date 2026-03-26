@@ -4,6 +4,7 @@
 
 接口层服务以下目标：
 
+- HTTP 负责轻身份登记、一等公民大厅与房间动作
 - HTTP 负责创建、查询、提交动作
 - WebSocket 负责房间实时事件广播
 - Agent 调用通过统一执行协议接入
@@ -11,6 +12,92 @@
 - 服务端长期不直接执行客户端本地 Agent
 
 ## 2. HTTP 接口
+
+### 轻身份与大厅
+
+以下接口为新的产品方向约束，当前部分尚未落地实现。
+
+#### `POST /api/principals/bootstrap`
+
+首次访问登记或恢复轻身份。
+
+请求体：
+
+```json
+{
+  "kind": "human",
+  "loginKey": "alice@example.com",
+  "globalDisplayName": "阿南"
+}
+```
+
+响应体：
+
+```json
+{
+  "principalId": "prn_xxx",
+  "kind": "human",
+  "loginKey": "alice@example.com",
+  "globalDisplayName": "阿南",
+  "status": "online"
+}
+```
+
+约束：
+
+- `loginKey` 在各自 `kind` 范围内必须稳定且唯一
+- human 当前不做邮箱验证
+- 已存在相同 `kind + loginKey` 时，视为恢复既有身份
+- `globalDisplayName` 可后续更新
+
+#### `GET /api/presence/lobby`
+
+获取当前在线的一等公民列表。
+
+说明：
+
+- 一等公民统一分为 `human | agent`
+- `assistant` 不出现在大厅中
+- 返回结果按 principal 去重，不按连接数展开
+
+#### `POST /api/rooms/:roomId/pull`
+
+从大厅直接把一个在线 principal 拉入房间。
+
+请求体：
+
+```json
+{
+  "actorMemberId": "mem_xxx",
+  "targetPrincipalId": "prn_xxx"
+}
+```
+
+约束：
+
+- 房间内任何现有成员都可执行
+- 被拉入者进入房间后仍需生成唯一 `memberId`
+- 若房间显示名冲突，需要为该 principal 分配或提示设置房间显示名
+- 行为需要写入房间系统消息，保证透明
+
+#### `POST /api/direct-rooms`
+
+为两个 principal 创建或复用一个两人聊天房。
+
+请求体：
+
+```json
+{
+  "actorPrincipalId": "prn_alice",
+  "peerPrincipalId": "prn_bob"
+}
+```
+
+约束：
+
+- 两人私聊本质上仍然是房间
+- 若双方已存在仅包含这两人的房间，应优先复用
+- 后续该房间可继续拉入更多成员
 
 ### 房间
 
@@ -43,13 +130,14 @@
 
 #### `POST /api/rooms/:roomId/join`
 
-通过昵称加入房间。
+通过轻身份加入房间，并可选设置房间显示名。
 
 请求体：
 
 ```json
 {
-  "nickname": "Alice"
+  "principalId": "prn_xxx",
+  "roomDisplayName": "阿南"
 }
 ```
 
@@ -59,14 +147,15 @@
 {
   "memberId": "mem_xxx",
   "roomId": "room_xxx",
-  "displayName": "Alice",
+  "displayName": "阿南",
   "wsToken": "local_session_xxx"
 }
 ```
 
 约束：
 
-- 同一房间内 `displayName` 必须唯一
+- `roomDisplayName` 可为空；为空时继承 principal 的 `globalDisplayName`
+- 同一房间内最终 `displayName` 必须唯一
 - `displayName` 不允许包含空格和 `@`
 - 重名时直接返回冲突错误
 - `wsToken` 在本次加入房间时生成
@@ -104,6 +193,44 @@
 - 第一版 `backendType` 主要用于 `codex_cli`
 - 服务端落库到 `assistant_invites`
 
+#### `GET /api/me/assistants`
+
+获取当前 principal 名下的私有助理列表。
+
+说明：
+
+- 私有助理只对 owner 自己可见
+- 不在大厅公开
+- 可用于后续加入房间
+
+#### `POST /api/me/assistants`
+
+创建一个新的私有助理。
+
+可用于：
+
+- 先沉淀为私有助理，再加入房间
+- 创建完成后立即加入指定房间
+
+#### `POST /api/rooms/:roomId/assistants/adopt`
+
+将当前 owner 名下已有的私有助理加入当前房间。
+
+请求体：
+
+```json
+{
+  "actorMemberId": "mem_owner_xxx",
+  "privateAssistantId": "pa_xxx"
+}
+```
+
+约束：
+
+- 只能加入 owner 自己名下的私有助理
+- 同一个私有助理在同一房间内不可重复加入
+- 加入后仍保留 owner 归属
+
 ### 邀请链接
 
 #### `GET /api/invites/:inviteToken`
@@ -112,13 +239,14 @@
 
 #### `POST /api/invites/:inviteToken/join`
 
-通过邀请 token 和昵称加入房间。
+通过邀请 token 与轻身份加入房间。
 
 请求体：
 
 ```json
 {
-  "nickname": "Alice"
+  "principalId": "prn_xxx",
+  "roomDisplayName": "阿南"
 }
 ```
 
@@ -156,8 +284,8 @@
 - `presetDisplayName` 存在时优先使用
 - 房间侧自动分配唯一 `memberId`
 - 接受时必须绑定 `backendThreadId`
-- 第一版同一个 `backendThreadId` 只允许加入一个房间
 - 第一版一个房间内不允许重复绑定同一 `backendThreadId`
+- 可接受为房间助理，也可先沉淀为私有助理
 - 接受动作适合封装为 Codex skill
 - 接受成功后创建 `members` 与 `agent_bindings`
 

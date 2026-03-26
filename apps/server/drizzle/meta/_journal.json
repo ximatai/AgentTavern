@@ -78,6 +78,13 @@
       "when": 1774500000000,
       "tag": "0010_solid_terrax",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1774503600000,
+      "tag": "0011_kindly_chimera",
+      "breakpoints": true
     }
   ]
 }

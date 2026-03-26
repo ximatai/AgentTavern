@@ -7,6 +7,8 @@ import { bridgeRoutes } from "./routes/bridges";
 import { bridgeTaskRoutes } from "./routes/bridge-tasks";
 import { memberRoutes } from "./routes/members";
 import { messageRoutes } from "./routes/messages";
+import { privateAssistantRoutes } from "./routes/private-assistants";
+import { principalRoutes } from "./routes/principals";
 import { roomRoutes } from "./routes/rooms";
 
 const app = new Hono();
@@ -26,6 +28,8 @@ app.get("/", (c) => {
 });
 
 app.route("/", roomRoutes);
+app.route("/", principalRoutes);
+app.route("/", privateAssistantRoutes);
 app.route("/", assistantInviteRoutes);
 app.route("/", attachmentRoutes);
 app.route("/", bridgeRoutes);

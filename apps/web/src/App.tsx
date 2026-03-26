@@ -42,6 +42,36 @@ type JoinResult = {
   wsToken: string;
 };
 
+type PrincipalSession = {
+  principalId: string;
+  principalToken: string;
+  kind: "human" | "agent";
+  loginKey: string;
+  globalDisplayName: string;
+  status: "online" | "offline";
+};
+
+type LobbyPrincipal = PrincipalSession & {
+  id: string;
+  createdAt: string;
+};
+
+type DirectRoomResult = {
+  room: Room;
+  reused: boolean;
+  join: JoinResult;
+};
+
+type PrivateAssistantRecord = {
+  id: string;
+  ownerPrincipalId: string;
+  name: string;
+  backendType: "codex_cli" | "local_process";
+  backendThreadId: string | null;
+  status: "pending_bridge" | "active" | "detached" | "failed";
+  createdAt: string;
+};
+
 type AssistantInviteResult = {
   id: string;
   roomId: string;
@@ -55,6 +85,13 @@ type AssistantInviteResult = {
   createdAt: string;
 };
 
+type RecentRoomRecord = {
+  roomId: string;
+  name: string;
+  inviteToken: string;
+  visitedAt: string;
+};
+
 type MentionSuggestion = {
   memberId: string;
   displayName: string;
@@ -63,6 +100,7 @@ type MentionSuggestion = {
 
 const MAX_ATTACHMENT_SIZE_BYTES = 5 * 1024 * 1024;
 const MAX_ATTACHMENT_COUNT = 8;
+const MAX_RECENT_ROOMS = 6;
 
 const demoAgentArgs = [
   "--input-type=module",
@@ -117,6 +155,26 @@ function extractInviteToken(input: string): string {
 
 function sortByCreatedAt<T extends { createdAt: string }>(items: T[]): T[] {
   return [...items].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+}
+
+function sortRecentRooms(items: RecentRoomRecord[]): RecentRoomRecord[] {
+  return [...items].sort((left, right) => right.visitedAt.localeCompare(left.visitedAt));
+}
+
+function mergeRecentRoom(
+  items: RecentRoomRecord[],
+  nextRoom: Pick<RecentRoomRecord, "roomId" | "name" | "inviteToken">,
+): RecentRoomRecord[] {
+  const nextItems = items.filter((item) => item.roomId !== nextRoom.roomId);
+  nextItems.unshift({
+    ...nextRoom,
+    visitedAt: new Date().toISOString(),
+  });
+  return sortRecentRooms(nextItems).slice(0, MAX_RECENT_ROOMS);
+}
+
+function recentRoomsStorageKey(principal: Pick<PrincipalSession, "kind" | "loginKey">): string {
+  return `agent-tavern-recent-rooms:${principal.kind}:${principal.loginKey}`;
 }
 
 function isRealtimeEvent(payload: unknown): payload is RealtimeEvent {
@@ -424,7 +482,9 @@ function buildOwnerTree(members: PublicMember[]): Array<{
 
 function App() {
   const [roomName, setRoomName] = useState("策略室");
-  const [nickname, setNickname] = useState("阿南");
+  const [principalKind, setPrincipalKind] = useState<"human" | "agent">("human");
+  const [loginKey, setLoginKey] = useState("aruis@example.com");
+  const [globalDisplayName, setGlobalDisplayName] = useState("阿南");
   const [inviteInput, setInviteInput] = useState("");
   const [messageInput, setMessageInput] = useState("");
   const [replyTargetId, setReplyTargetId] = useState<string | null>(null);
@@ -439,6 +499,12 @@ function App() {
   const [assistantOwnerId, setAssistantOwnerId] = useState("");
   const [assistantInviteName, setAssistantInviteName] = useState("架构助理");
   const [assistantInviteUrl, setAssistantInviteUrl] = useState("");
+  const [principal, setPrincipal] = useState<PrincipalSession | null>(null);
+  const [lobbyPrincipals, setLobbyPrincipals] = useState<LobbyPrincipal[]>([]);
+  const [privateAssistants, setPrivateAssistants] = useState<PrivateAssistantRecord[]>([]);
+  const [recentRooms, setRecentRooms] = useState<RecentRoomRecord[]>([]);
+  const [privateAssistantName, setPrivateAssistantName] = useState("账本助理");
+  const [privateAssistantThreadId, setPrivateAssistantThreadId] = useState("");
   const [room, setRoom] = useState<Room | null>(null);
   const [self, setSelf] = useState<JoinResult | null>(null);
   const [members, setMembers] = useState<PublicMember[]>([]);
@@ -466,6 +532,87 @@ function App() {
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const autoScrollRef = useRef(true);
+  const recentRoomsKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const cached = window.localStorage.getItem("agent-tavern-principal");
+
+    if (!cached) {
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(cached) as PrincipalSession;
+      setPrincipal(parsed);
+      setPrincipalKind(parsed.kind);
+      setLoginKey(parsed.loginKey);
+      setGlobalDisplayName(parsed.globalDisplayName);
+    } catch {
+      window.localStorage.removeItem("agent-tavern-principal");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!principal) {
+      window.localStorage.removeItem("agent-tavern-principal");
+      return;
+    }
+
+    window.localStorage.setItem("agent-tavern-principal", JSON.stringify(principal));
+  }, [principal]);
+
+  useEffect(() => {
+    if (!principal) {
+      setRecentRooms([]);
+      recentRoomsKeyRef.current = null;
+      return;
+    }
+
+    const storageKey = recentRoomsStorageKey(principal);
+    recentRoomsKeyRef.current = storageKey;
+    const cached = window.localStorage.getItem(storageKey);
+
+    if (!cached) {
+      setRecentRooms([]);
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(cached) as RecentRoomRecord[];
+      setRecentRooms(sortRecentRooms(parsed));
+    } catch {
+      window.localStorage.removeItem(storageKey);
+      setRecentRooms([]);
+    }
+  }, [principal]);
+
+  useEffect(() => {
+    if (!principal) {
+      return;
+    }
+
+    const storageKey = recentRoomsStorageKey(principal);
+
+    if (recentRoomsKeyRef.current !== storageKey) {
+      return;
+    }
+
+    window.localStorage.setItem(storageKey, JSON.stringify(recentRooms));
+  }, [principal, recentRooms]);
+
+  useEffect(() => {
+    if (!room) {
+      return;
+    }
+
+    setRecentRooms((current) =>
+      mergeRecentRoom(current, {
+        roomId: room.id,
+        name: room.name,
+        inviteToken: room.inviteToken,
+      }),
+    );
+  }, [room]);
 
   useEffect(() => {
     sessionActorsRef.current = sessionActors;
@@ -549,6 +696,68 @@ function App() {
       window.clearInterval(intervalId);
     };
   }, [room?.id]);
+
+  useEffect(() => {
+    if (!principal) {
+      setLobbyPrincipals([]);
+      setPrivateAssistants([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadLobby = async () => {
+      try {
+        const payload = await request<{ principals: LobbyPrincipal[] }>("/api/presence/lobby");
+        if (!cancelled) {
+          setLobbyPrincipals(sortByCreatedAt(payload.principals));
+        }
+      } catch {
+        if (!cancelled) {
+          setLobbyPrincipals([]);
+        }
+      }
+    };
+
+    void loadLobby();
+    const intervalId = window.setInterval(() => {
+      void loadLobby();
+    }, 10_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [principal]);
+
+  useEffect(() => {
+    if (!principal) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadPrivateAssistants = async () => {
+      try {
+        const items = await request<PrivateAssistantRecord[]>(
+          `/api/me/assistants?principalId=${principal.principalId}&principalToken=${principal.principalToken}`,
+        );
+        if (!cancelled) {
+          setPrivateAssistants(sortByCreatedAt(items));
+        }
+      } catch {
+        if (!cancelled) {
+          setPrivateAssistants([]);
+        }
+      }
+    };
+
+    void loadPrivateAssistants();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [principal]);
 
   async function hydrateRoomState(nextRoomId: string): Promise<void> {
     const [nextRoom, nextMembers, nextMessages] = await Promise.all([
@@ -737,21 +946,56 @@ function App() {
     connectSocket(joinResult);
   }
 
+  async function ensurePrincipal(): Promise<PrincipalSession> {
+    const trimmedLoginKey = loginKey.trim();
+    const trimmedGlobalDisplayName = globalDisplayName.trim();
+
+    if (!trimmedLoginKey || !trimmedGlobalDisplayName) {
+      throw new Error(principalKind === "human" ? "请先填写邮箱和全局昵称" : "请先填写智能体键和全局昵称");
+    }
+
+    if (
+      principal &&
+      principal.kind === principalKind &&
+      principal.loginKey === trimmedLoginKey &&
+      principal.globalDisplayName === trimmedGlobalDisplayName
+    ) {
+      return principal;
+    }
+
+    const nextPrincipal = await request<PrincipalSession>("/api/principals/bootstrap", {
+      method: "POST",
+      body: JSON.stringify({
+        kind: principalKind,
+        loginKey: trimmedLoginKey,
+        globalDisplayName: trimmedGlobalDisplayName,
+      }),
+    });
+
+    setPrincipal(nextPrincipal);
+    return nextPrincipal;
+  }
+
   async function handleCreateRoom(): Promise<void> {
     setErrorText("");
     setStatusText("正在创建房间");
 
     try {
+      const activePrincipal = await ensurePrincipal();
       const createdRoom = await request<{
         id: string;
+        name: string;
         inviteToken: string;
       }>("/api/rooms", {
         method: "POST",
         body: JSON.stringify({ name: roomName }),
       });
-      const joinResult = await request<JoinResult>(`/api/rooms/${createdRoom.id}/join`, {
+      const joinResult = await request<JoinResult>(`/api/invites/${createdRoom.inviteToken}/join`, {
         method: "POST",
-        body: JSON.stringify({ nickname }),
+        body: JSON.stringify({
+          principalId: activePrincipal.principalId,
+          principalToken: activePrincipal.principalToken,
+        }),
       });
       await finishJoin(joinResult);
       setInviteInput(createdRoom.inviteToken);
@@ -768,10 +1012,14 @@ function App() {
     setStatusText("正在进入房间");
 
     try {
+      const activePrincipal = await ensurePrincipal();
       const token = extractInviteToken(inviteInput);
       const joinResult = await request<JoinResult>(`/api/invites/${token}/join`, {
         method: "POST",
-        body: JSON.stringify({ nickname }),
+        body: JSON.stringify({
+          principalId: activePrincipal.principalId,
+          principalToken: activePrincipal.principalToken,
+        }),
       });
       await finishJoin(joinResult);
       setStatusText("已进入房间");
@@ -779,6 +1027,129 @@ function App() {
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : "进入房间失败");
       setStatusText("进入失败");
+    }
+  }
+
+  async function handleStartDirectRoom(targetPrincipalId: string): Promise<void> {
+    setErrorText("");
+    setStatusText("正在开始聊天");
+
+    try {
+      const activePrincipal = await ensurePrincipal();
+      const result = await request<DirectRoomResult>("/api/direct-rooms", {
+        method: "POST",
+        body: JSON.stringify({
+          actorPrincipalId: activePrincipal.principalId,
+          actorPrincipalToken: activePrincipal.principalToken,
+          peerPrincipalId: targetPrincipalId,
+        }),
+      });
+      await finishJoin(result.join);
+      setStatusText(result.reused ? "已回到原聊天" : "已开始聊天");
+      setFlashText(result.reused ? "已打开已有双人聊天室" : "已创建双人聊天室");
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : "开始聊天失败");
+      setStatusText("开始聊天失败");
+    }
+  }
+
+  async function handleOpenRecentRoom(targetRoomId: string): Promise<void> {
+    setErrorText("");
+    setStatusText("正在进入最近聊天室");
+
+    try {
+      const activePrincipal = await ensurePrincipal();
+      const joinResult = await request<JoinResult>(`/api/rooms/${targetRoomId}/join`, {
+        method: "POST",
+        body: JSON.stringify({
+          principalId: activePrincipal.principalId,
+          principalToken: activePrincipal.principalToken,
+        }),
+      });
+      await finishJoin(joinResult);
+      setStatusText("已进入聊天室");
+      setFlashText("已打开最近聊天室");
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : "进入最近聊天室失败");
+      setStatusText("进入失败");
+    }
+  }
+
+  async function handlePullPrincipal(targetPrincipalId: string): Promise<void> {
+    if (!self) {
+      return;
+    }
+
+    setErrorText("");
+    setStatusText("正在拉人进房间");
+
+    try {
+      await request<JoinResult>(`/api/rooms/${self.roomId}/pull`, {
+        method: "POST",
+        body: JSON.stringify({
+          actorMemberId: self.memberId,
+          wsToken: self.wsToken,
+          targetPrincipalId,
+        }),
+      });
+      setStatusText("已拉入房间");
+      setFlashText("已将成员拉入当前聊天室");
+      await hydrateRoomState(self.roomId);
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : "拉人失败");
+      setStatusText("拉人失败");
+    }
+  }
+
+  async function handleCreatePrivateAssistant(): Promise<void> {
+    setErrorText("");
+    setStatusText("正在创建私有助理");
+
+    try {
+      const activePrincipal = await ensurePrincipal();
+      const created = await request<PrivateAssistantRecord>("/api/me/assistants", {
+        method: "POST",
+        body: JSON.stringify({
+          principalId: activePrincipal.principalId,
+          principalToken: activePrincipal.principalToken,
+          name: privateAssistantName,
+          backendType: "codex_cli",
+          backendThreadId: privateAssistantThreadId,
+        }),
+      });
+      setPrivateAssistants((current) => sortByCreatedAt([...current, created]));
+      setPrivateAssistantThreadId("");
+      setStatusText("已创建私有助理");
+      setFlashText("私有助理已保存");
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : "创建私有助理失败");
+      setStatusText("创建私有助理失败");
+    }
+  }
+
+  async function handleAdoptPrivateAssistant(privateAssistantId: string): Promise<void> {
+    if (!self) {
+      return;
+    }
+
+    setErrorText("");
+    setStatusText("正在加入私有助理");
+
+    try {
+      await request<PublicMember>(`/api/rooms/${self.roomId}/assistants/adopt`, {
+        method: "POST",
+        body: JSON.stringify({
+          actorMemberId: self.memberId,
+          wsToken: self.wsToken,
+          privateAssistantId,
+        }),
+      });
+      setStatusText("私有助理已加入");
+      setFlashText("已将私有助理加入当前聊天室");
+      await hydrateRoomState(self.roomId);
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : "加入私有助理失败");
+      setStatusText("加入私有助理失败");
     }
   }
 
@@ -1245,6 +1616,24 @@ function App() {
     );
   }
 
+  const visibleLobbyPrincipals = useMemo(
+    () => lobbyPrincipals.filter((item) => item.id !== principal?.principalId),
+    [lobbyPrincipals, principal?.principalId],
+  );
+  const roomPrincipalIds = useMemo(
+    () => new Set(members.map((member) => member.principalId).filter(Boolean)),
+    [members],
+  );
+  const joinedPrivateAssistantIds = useMemo(
+    () => new Set(members.map((member) => member.sourcePrivateAssistantId).filter(Boolean)),
+    [members],
+  );
+  const loginKeyLabel = principalKind === "human" ? "邮箱" : "智能体键";
+  const loginKeyPlaceholder = principalKind === "human" ? "用于恢复身份" : "例如 codex://thread_xxx";
+  const principalStatusLine = principal
+    ? `当前已登记为${principal.kind === "agent" ? "智能体" : "人类"}一等公民：${principal.globalDisplayName}`
+    : "首次进入需要先登记一等公民身份";
+
   return (
     <main className="lan-shell">
       <aside className="room-sidebar">
@@ -1258,13 +1647,60 @@ function App() {
 
         <section className="sidebar-card">
           <div className="section-heading">
+            <h2>当前身份</h2>
+            <span>{principal ? (principal.kind === "agent" ? "智能体" : "人类") : "未登记"}</span>
+          </div>
+          <div className="principal-summary">
+            <div className={`principal-kind-chip principal-kind-${principal?.kind ?? principalKind}`}>
+              {principal?.kind === "agent" || principalKind === "agent" ? "智能体" : "人类"}
+            </div>
+            <strong>{principal?.globalDisplayName ?? globalDisplayName}</strong>
+            <p>{principal?.loginKey ?? "完成登记后会出现在在线大厅。"}</p>
+          </div>
+        </section>
+
+        <section className="sidebar-card">
+          <div className="section-heading">
+            <h2>身份登记</h2>
+            <span>进入前必填</span>
+          </div>
+          <label>
+            <span>一等公民类型</span>
+            <select
+              value={principalKind}
+              onChange={(event) => setPrincipalKind(event.target.value as "human" | "agent")}
+            >
+              <option value="human">人类</option>
+              <option value="agent">智能体</option>
+            </select>
+          </label>
+          <label>
+            <span>{loginKeyLabel}</span>
+            <input
+              value={loginKey}
+              onChange={(event) => setLoginKey(event.target.value)}
+              placeholder={loginKeyPlaceholder}
+            />
+          </label>
+          <label>
+            <span>全局昵称</span>
+            <input
+              value={globalDisplayName}
+              onChange={(event) => setGlobalDisplayName(event.target.value)}
+            />
+          </label>
+          <div className="sidebar-tip">{principalStatusLine}</div>
+        </section>
+
+        <section className="sidebar-card">
+          <div className="section-heading">
             <h2>聊天室</h2>
             <span>{room ? "当前在线" : "未进入"}</span>
           </div>
           {room ? (
             <div className="room-current">
               <strong>{room.name}</strong>
-              <p>邀请制加入，可在同一房间内实时协作。</p>
+              <p>可通过邀请进入，也可从在线大厅直接把一等公民拉入当前聊天室。</p>
               <div className="room-current-meta">
                 <span>{members.length} 位成员</span>
                 <span>{room.inviteToken}</span>
@@ -1277,13 +1713,128 @@ function App() {
 
         <section className="sidebar-card">
           <div className="section-heading">
+            <h2>最近聊天室</h2>
+            <span>{recentRooms.length} 个</span>
+          </div>
+          {recentRooms.length > 0 ? (
+            <div className="lobby-list">
+              {recentRooms.map((recentRoom) => (
+                <div key={recentRoom.roomId} className="lobby-row">
+                  <div className="lobby-copy">
+                    <strong>{recentRoom.name}</strong>
+                    <span>{recentRoom.inviteToken}</span>
+                  </div>
+                  {room?.id === recentRoom.roomId ? <span className="lobby-state">当前房间</span> : null}
+                  <button
+                    className="ghost-button"
+                    type="button"
+                    disabled={room?.id === recentRoom.roomId}
+                    onClick={() => handleOpenRecentRoom(recentRoom.roomId)}
+                  >
+                    {room?.id === recentRoom.roomId ? "当前房间" : "进入"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="muted-text">进入过的聊天室会记录在这里，方便你快速回到最近会话。</p>
+          )}
+        </section>
+
+        <section className="sidebar-card">
+          <div className="section-heading">
+            <h2>在线大厅</h2>
+            <span>{visibleLobbyPrincipals.length} 在线</span>
+          </div>
+          {visibleLobbyPrincipals.length > 0 ? (
+            <div className="lobby-list">
+              {visibleLobbyPrincipals.map((item) => (
+                <div key={item.id} className="lobby-row">
+                  <div className="lobby-copy">
+                    <strong>{item.globalDisplayName}</strong>
+                    <span>{item.kind === "agent" ? `智能体 · ${item.loginKey}` : `人类 · ${item.loginKey}`}</span>
+                  </div>
+                  {room && roomPrincipalIds.has(item.id) ? (
+                    <span className="lobby-state">已在房间</span>
+                  ) : null}
+                  <button
+                    className="ghost-button"
+                    type="button"
+                    disabled={room ? roomPrincipalIds.has(item.id) : false}
+                    onClick={() =>
+                      room ? handlePullPrincipal(item.id) : handleStartDirectRoom(item.id)
+                    }
+                  >
+                    {room ? (roomPrincipalIds.has(item.id) ? "已在房间" : "拉入房间") : "开始聊天"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="muted-text">登记身份后，这里会显示当前在线的一等公民。</p>
+          )}
+        </section>
+
+        <section className="sidebar-card">
+          <div className="section-heading">
+            <h2>我的私有助理</h2>
+            <span>{privateAssistants.length} 个</span>
+          </div>
+          <label>
+            <span>助理名称</span>
+            <input
+              value={privateAssistantName}
+              onChange={(event) => setPrivateAssistantName(event.target.value)}
+            />
+          </label>
+          <label>
+            <span>Codex Thread ID</span>
+            <input
+              value={privateAssistantThreadId}
+              onChange={(event) => setPrivateAssistantThreadId(event.target.value)}
+              placeholder="例如 thread_xxx"
+            />
+          </label>
+          <button type="button" onClick={handleCreatePrivateAssistant}>
+            保存为私有助理
+          </button>
+          {privateAssistants.length > 0 ? (
+            <div className="lobby-list">
+              {privateAssistants.map((assistant) => (
+                <div key={assistant.id} className="lobby-row">
+                  <div className="lobby-copy">
+                    <strong>{assistant.name}</strong>
+                    <span>
+                      {assistant.backendType === "codex_cli" ? "Codex 助理" : assistant.backendType}
+                      {assistant.backendThreadId ? ` · ${assistant.backendThreadId}` : ""}
+                    </span>
+                  </div>
+                  {room && joinedPrivateAssistantIds.has(assistant.id) ? (
+                    <span className="lobby-state">已加入</span>
+                  ) : null}
+                  {room ? (
+                    <button
+                      className="ghost-button"
+                      type="button"
+                      disabled={joinedPrivateAssistantIds.has(assistant.id)}
+                      onClick={() => handleAdoptPrivateAssistant(assistant.id)}
+                    >
+                      {joinedPrivateAssistantIds.has(assistant.id) ? "已加入" : "加入房间"}
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="muted-text">你可以先把常用助理保存在这里，再带进任意聊天室。</p>
+          )}
+        </section>
+
+        <section className="sidebar-card">
+          <div className="section-heading">
             <h2>切换 / 进入</h2>
             <span>核心导航</span>
           </div>
-          <label>
-            <span>你的昵称</span>
-            <input value={nickname} onChange={(event) => setNickname(event.target.value)} />
-          </label>
           <label>
             <span>新房间名称</span>
             <input value={roomName} onChange={(event) => setRoomName(event.target.value)} />
@@ -1456,8 +2007,8 @@ function App() {
 
           <div className="chat-header-main">
             <div>
-              <p className="eyebrow">当前聊天室</p>
-              <h1>{room?.name ?? "AgentTavern"}</h1>
+              <p className="eyebrow">{room ? "当前聊天室" : "首页"}</p>
+              <h1>{room?.name ?? "在线大厅与聊天室入口"}</h1>
             </div>
             <div className="status-badge">
               <span className="status-dot" />
@@ -1470,18 +2021,20 @@ function App() {
 
         <div className="chat-layout">
           <section className="message-panel">
-            <div className="message-divider">
-              <div className="message-divider-line" />
-              <div className="day-marker">今天</div>
-              <div className="message-divider-line" />
-            </div>
+            {room ? (
+              <>
+                <div className="message-divider">
+                  <div className="message-divider-line" />
+                  <div className="day-marker">今天</div>
+                  <div className="message-divider-line" />
+                </div>
 
-            <div
-              ref={messageStreamRef}
-              className="message-stream"
-              onScroll={handleMessageStreamScroll}
-            >
-              {visibleMessages.map((message) => {
+                <div
+                  ref={messageStreamRef}
+                  className="message-stream"
+                  onScroll={handleMessageStreamScroll}
+                >
+                  {visibleMessages.map((message) => {
                 const sender = findMember(message.senderMemberId);
                 const replyTarget = findMessage(message.replyToMessageId);
                 const replyTargetSender = replyTarget
@@ -1702,147 +2255,216 @@ function App() {
                     ) : null}
                   </article>
                 );
-              })}
-            </div>
-
-            <div className="composer-dock">
-              {replyTargetId ? (
-                <div className="reply-banner">
-                  <div className="reply-banner-copy">
-                    <strong>正在回复 {selectedReplyTargetSender?.displayName ?? "某条消息"}</strong>
-                    <span>
-                      {selectedReplyTarget
-                        ? summarizeMessage(selectedReplyTarget)
-                        : "原始消息已不可用"}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    className="reply-banner-clear"
-                    onClick={() => setReplyTargetId(null)}
-                  >
-                    取消
-                  </button>
+                  })}
                 </div>
-              ) : null}
 
-              {mentionSuggestions.length > 0 ? (
-                <div className="mention-menu">
-                  {mentionSuggestions.map((suggestion, index) => (
-                    <button
-                      key={suggestion.memberId}
-                      className={`mention-option ${index === selectedMentionIndex ? "mention-option-active" : ""}`}
-                      type="button"
-                      onMouseDown={(event) => {
-                        event.preventDefault();
-                        applyMentionSuggestion(suggestion);
-                      }}
-                      onClick={() => applyMentionSuggestion(suggestion)}
-                    >
-                      <strong>{suggestion.displayName}</strong>
-                      <span>{suggestion.roleLabel}</span>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-
-              {pendingAttachments.length > 0 ? (
-                <div className="pending-attachments">
-                  {pendingAttachments.map((attachment) => (
-                    <div key={attachment.id} className="pending-attachment-chip">
-                      <div className="pending-attachment-copy">
-                        <strong>{attachment.name}</strong>
-                        <span>{formatFileSize(attachment.sizeBytes)}</span>
+                <div className="composer-dock">
+                  {replyTargetId ? (
+                    <div className="reply-banner">
+                      <div className="reply-banner-copy">
+                        <strong>正在回复 {selectedReplyTargetSender?.displayName ?? "某条消息"}</strong>
+                        <span>
+                          {selectedReplyTarget
+                            ? summarizeMessage(selectedReplyTarget)
+                            : "原始消息已不可用"}
+                        </span>
                       </div>
                       <button
                         type="button"
-                        className="pending-attachment-remove"
-                        onClick={() => {
-                          void removePendingAttachment(attachment.id);
-                        }}
+                        className="reply-banner-clear"
+                        onClick={() => setReplyTargetId(null)}
                       >
-                        移除
+                        取消
                       </button>
                     </div>
-                  ))}
-                </div>
-              ) : null}
+                  ) : null}
 
-              <div className="composer-toolbar">
-                <input
-                  ref={fileInputRef}
-                  className="composer-file-input"
-                  type="file"
-                  multiple
-                  onChange={(event) => {
-                    void handleComposerFileChange(event.target.files);
-                  }}
-                />
-                <button
-                  type="button"
-                  className="composer-icon-button"
-                  disabled={!self || isPreparingAttachments}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  {isPreparingAttachments ? "…" : "＋"}
-                </button>
-                <span className="composer-hint">
-                  最多 {MAX_ATTACHMENT_COUNT} 个附件，单个 {formatFileSize(MAX_ATTACHMENT_SIZE_BYTES)}
-                </span>
-              </div>
+                  {mentionSuggestions.length > 0 ? (
+                    <div className="mention-menu">
+                      {mentionSuggestions.map((suggestion, index) => (
+                        <button
+                          key={suggestion.memberId}
+                          className={`mention-option ${index === selectedMentionIndex ? "mention-option-active" : ""}`}
+                          type="button"
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            applyMentionSuggestion(suggestion);
+                          }}
+                          onClick={() => applyMentionSuggestion(suggestion)}
+                        >
+                          <strong>{suggestion.displayName}</strong>
+                          <span>{suggestion.roleLabel}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
 
-              <div className="composer-main">
-                <textarea
-                  ref={composerRef}
-                  rows={3}
-                  value={messageInput}
-                  onChange={(event) => {
-                    setMessageInput(event.target.value);
-                    setComposerCaret(event.target.selectionStart ?? event.target.value.length);
-                  }}
-                  onKeyDown={(event) => void handleComposerKeyDown(event)}
-                  onBlur={() => {
-                    if (mentionQuery) {
-                      setDismissedMentionSignature(mentionSignature(mentionQuery));
-                    }
-                  }}
-                  onClick={syncComposerCaret}
-                  onKeyUp={syncComposerCaret}
-                  onSelect={syncComposerCaret}
-                  placeholder="输入消息，使用 @成员名 触发协作..."
-                />
-                <div className="composer-side-actions">
-                  <button type="button" className="composer-mini-button">
-                    @
-                  </button>
-                  <button
-                    type="button"
-                    className="composer-mini-button"
-                    disabled={!self || isPreparingAttachments}
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    附
-                  </button>
+                  {pendingAttachments.length > 0 ? (
+                    <div className="pending-attachments">
+                      {pendingAttachments.map((attachment) => (
+                        <div key={attachment.id} className="pending-attachment-chip">
+                          <div className="pending-attachment-copy">
+                            <strong>{attachment.name}</strong>
+                            <span>{formatFileSize(attachment.sizeBytes)}</span>
+                          </div>
+                          <button
+                            type="button"
+                            className="pending-attachment-remove"
+                            onClick={() => {
+                              void removePendingAttachment(attachment.id);
+                            }}
+                          >
+                            移除
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <div className="composer-toolbar">
+                    <input
+                      ref={fileInputRef}
+                      className="composer-file-input"
+                      type="file"
+                      multiple
+                      onChange={(event) => {
+                        void handleComposerFileChange(event.target.files);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="composer-icon-button"
+                      disabled={!self || isPreparingAttachments}
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      {isPreparingAttachments ? "…" : "＋"}
+                    </button>
+                    <span className="composer-hint">
+                      最多 {MAX_ATTACHMENT_COUNT} 个附件，单个 {formatFileSize(MAX_ATTACHMENT_SIZE_BYTES)}
+                    </span>
+                  </div>
+
+                  <div className="composer-main">
+                    <textarea
+                      ref={composerRef}
+                      rows={3}
+                      value={messageInput}
+                      onChange={(event) => {
+                        setMessageInput(event.target.value);
+                        setComposerCaret(event.target.selectionStart ?? event.target.value.length);
+                      }}
+                      onKeyDown={(event) => void handleComposerKeyDown(event)}
+                      onBlur={() => {
+                        if (mentionQuery) {
+                          setDismissedMentionSignature(mentionSignature(mentionQuery));
+                        }
+                      }}
+                      onClick={syncComposerCaret}
+                      onKeyUp={syncComposerCaret}
+                      onSelect={syncComposerCaret}
+                      placeholder="输入消息，使用 @成员名 触发协作..."
+                    />
+                    <div className="composer-side-actions">
+                      <button type="button" className="composer-mini-button">
+                        @
+                      </button>
+                      <button
+                        type="button"
+                        className="composer-mini-button"
+                        disabled={!self || isPreparingAttachments}
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        附
+                      </button>
+                    </div>
+                    <button
+                      className="composer-send-button"
+                      onClick={handleSendMessage}
+                      disabled={
+                        !self ||
+                        isSendingMessage ||
+                        isPreparingAttachments ||
+                        (!messageInput.trim() && pendingAttachments.length === 0)
+                      }
+                    >
+                      {isSendingMessage ? "…" : "➜"}
+                    </button>
+                  </div>
+                  <p className="composer-footnote">回车发送，Shift + Enter 换行</p>
                 </div>
-                <button
-                  className="composer-send-button"
-                  onClick={handleSendMessage}
-                  disabled={
-                    !self ||
-                    isSendingMessage ||
-                    isPreparingAttachments ||
-                    (!messageInput.trim() && pendingAttachments.length === 0)
-                  }
-                >
-                  {isSendingMessage ? "…" : "➜"}
-                </button>
+              </>
+            ) : (
+              <div className="home-stage">
+                <section className="home-hero-card">
+                  <p className="eyebrow">进入方式</p>
+                  <h2>先登记一等公民，再开始聊天或进入已有聊天室</h2>
+                  <p>
+                    这是一个局域网协作聊天室。你可以先登记为人类或智能体一等公民，然后：
+                  </p>
+                  <div className="home-bullet-list">
+                    <span>新建一个聊天室并立即进入</span>
+                    <span>通过邀请链接加入已有聊天室</span>
+                    <span>从在线大厅直接开始双人聊天</span>
+                    <span>提前保存自己的私有助理，再带入房间</span>
+                  </div>
+                </section>
+
+                <section className="home-grid">
+                  <article className="home-card">
+                    <div className="section-heading">
+                      <h2>在线大厅</h2>
+                      <span>{visibleLobbyPrincipals.length} 在线</span>
+                    </div>
+                    <p className="muted-text">
+                      大厅里的一等公民可以直接开始双人聊天；进入聊天室后，也可以继续把他们拉进当前房间。
+                    </p>
+                  </article>
+
+                  <article className="home-card">
+                    <div className="section-heading">
+                      <h2>私有助理</h2>
+                      <span>{privateAssistants.length} 个</span>
+                    </div>
+                    <p className="muted-text">
+                      私有助理默认只对你可见。你可以先保存、先唤醒，之后在任意聊天室中把它们加入为助理成员。
+                    </p>
+                  </article>
+
+                  <article className="home-card">
+                    <div className="section-heading">
+                      <h2>最近聊天室</h2>
+                      <span>{recentRooms.length} 个</span>
+                    </div>
+                    {recentRooms.length > 0 ? (
+                      <div className="lobby-list">
+                        {recentRooms.slice(0, 3).map((recentRoom) => (
+                          <div key={recentRoom.roomId} className="lobby-row">
+                            <div className="lobby-copy">
+                              <strong>{recentRoom.name}</strong>
+                              <span>{recentRoom.inviteToken}</span>
+                            </div>
+                            <button
+                              className="ghost-button"
+                              type="button"
+                              onClick={() => handleOpenRecentRoom(recentRoom.roomId)}
+                            >
+                              进入
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="muted-text">进入过的聊天室会显示在这里，方便快速回到最近协作空间。</p>
+                    )}
+                  </article>
+                </section>
               </div>
-              <p className="composer-footnote">回车发送，Shift + Enter 换行</p>
-            </div>
+            )}
           </section>
 
           <aside className="member-sidebar">
-            <section className="side-card">
+            {room ? (
+              <section className="side-card">
               <div className="section-heading">
                 <h2>协作状态</h2>
                 <span>
@@ -1956,207 +2578,262 @@ function App() {
                 ))}
               </div>
             </section>
-
-            <section className="side-card">
-              <div className="section-heading">
-                <h2>房间成员</h2>
-                <span>{members.length} 位在线/可见成员</span>
-              </div>
-
-              <div className="member-section">
-                <h3>人类成员</h3>
-                <div className="member-list">
-                  {humans.map((member) => (
-                    <article key={member.id} className="member-row">
-                      <div className="member-avatar">{member.displayName.slice(0, 1)}</div>
-                      <div className="member-copy">
-                        <div className="member-title">
-                          <strong>
-                            {member.displayName}
-                            {member.id === self?.memberId ? "（你）" : ""}
-                          </strong>
-                          <span className="role-pill role-pill-human">人类</span>
-                        </div>
-                        <p>在当前聊天室中协作</p>
+            ) : (
+              <>
+                <section className="side-card">
+                  <div className="section-heading">
+                    <h2>首页提示</h2>
+                    <span>开始前</span>
+                  </div>
+                  <div className="collab-state-list">
+                    <article className="collab-state-card">
+                      <div className="collab-state-head">
+                        <span className="collab-state-pill collab-state-pill-warning">第一步</span>
                       </div>
+                      <strong>先登记你的身份</strong>
+                      <p>支持人类和智能体两种一等公民。完成登记后，身份会出现在在线大厅。</p>
                     </article>
-                  ))}
-                </div>
-              </div>
-
-              <div className="member-section">
-                <h3>独立 Agent</h3>
-                <div className="member-list">
-                  {independentAgents.length === 0 ? (
-                    <p className="muted-text">暂无独立 Agent。</p>
-                  ) : (
-                    independentAgents.map((member) => (
-                      <article key={member.id} className="member-row">
-                        <div className="member-avatar member-avatar-agent">
-                          {member.displayName.slice(0, 1)}
-                        </div>
-                        <div className="member-copy">
-                          <div className="member-title">
-                            <strong>{member.displayName}</strong>
-                            <span className="role-pill role-pill-independent">独立 Agent</span>
-                            {runtimeLabel(member) ? (
-                              <span className={`runtime-pill runtime-pill-${member.runtimeStatus}`}>
-                                {runtimeLabel(member)}
-                              </span>
-                            ) : null}
-                          </div>
-                          <p>可被直接 @ 并执行</p>
-                        </div>
-                      </article>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              <div className="member-section">
-                <h3>助理树</h3>
-                <div className="assistant-tree">
-                  {assistantTree.length === 0 ? (
-                    <p className="muted-text">暂无助理成员。</p>
-                  ) : (
-                    assistantTree.map(({ owner, assistants }) => (
-                      <div key={owner.id} className="assistant-branch">
-                        <div className="assistant-owner-label">
-                          <span>归属于 {owner.displayName}</span>
-                          <div className="assistant-owner-line" />
-                        </div>
-
-                        <div className="assistant-children">
-                          {assistants.map((assistant) => (
-                            <article key={assistant.id} className="member-row member-row-child">
-                              <div className="member-avatar member-avatar-agent">
-                                {assistant.displayName.slice(0, 1)}
-                              </div>
-                              <div className="member-copy">
-                                <div className="member-title">
-                                  <strong>{assistant.displayName}</strong>
-                                  <span className="role-pill role-pill-assistant">助理</span>
-                                  {runtimeLabel(assistant) ? (
-                                    <span
-                                      className={`runtime-pill runtime-pill-${assistant.runtimeStatus}`}
-                                    >
-                                      {runtimeLabel(assistant)}
-                                    </span>
-                                  ) : null}
-                                </div>
-                                <p>直属于 {owner.displayName}</p>
-                              </div>
-                            </article>
-                          ))}
-                        </div>
+                    <article className="collab-state-card">
+                      <div className="collab-state-head">
+                        <span className="collab-state-pill collab-state-pill-success">第二步</span>
                       </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </section>
+                      <strong>开始聊天或创建房间</strong>
+                      <p>你可以先从大厅发起双人聊天，也可以直接新建一个多人聊天室。</p>
+                    </article>
+                  </div>
+                </section>
 
-            <section className="side-card">
-              <div className="section-heading">
-                <h2>待处理审批</h2>
-                <span>{pendingApprovals.length} 条</span>
-              </div>
-              <div className="approval-list">
-                {pendingApprovals.length === 0 ? (
-                  <p className="muted-text">当前没有待处理审批。</p>
-                ) : (
-                  pendingApprovals.map((approval) => {
-                    const agent = findMember(approval.agentMemberId);
-                    const requester = findMember(approval.requesterMemberId);
-                    const owner = findMember(approval.ownerMemberId);
-                    const mine = approval.ownerMemberId === self?.memberId;
-                    const approvalMessage = findApprovalMessage(approval.id, "approval_request");
-                    const selectedGrant = approvalGrantById[approval.id] ?? "once";
-                    const sidebarItems = [
-                      {
-                        label: "Requester",
-                        value: requester?.displayName ?? approval.requesterMemberId,
-                      },
-                      {
-                        label: "Agent",
-                        value: agent?.displayName ?? approval.agentMemberId,
-                      },
-                      {
-                        label: "Owner",
-                        value: owner?.displayName ?? approval.ownerMemberId,
-                      },
-                      {
-                        label: "状态",
-                        value: mine ? "等待你处理" : "等待直属 owner",
-                      },
-                    ];
-                    const sidebarDetail = mine
-                      ? "正在等待你决定是否放行。"
-                      : "等待直属 owner 处理后继续执行。";
-
-                    return (
-                      <article key={approval.id} className="approval-card">
-                        <ApprovalSummaryCard
-                          variant="sidebar"
-                          status="warning"
-                          badge="待审批"
-                          grantLabel={approvalGrantLabel(selectedGrant)}
-                          title={`${requester?.displayName ?? approval.requesterMemberId} 正在请求调用`}
-                          detail={sidebarDetail}
-                          items={sidebarItems}
-                        >
-                          <div className="approval-surface-links">
-                            <button
-                              type="button"
-                              className="chat-action-button"
-                              onClick={() => focusMessage(approval.triggerMessageId, "已定位到触发消息")}
-                            >
-                              查看原消息
-                            </button>
-                            {approvalMessage ? (
-                              <button
-                                type="button"
-                                className="chat-action-button"
-                                onClick={() => focusMessage(approvalMessage.id, "已定位到审批消息")}
-                              >
-                                查看审批消息
-                              </button>
-                            ) : null}
-                          </div>
-                          <ApprovalDecisionControls
-                            approvalId={approval.id}
-                            mine={mine}
-                            selectedGrant={selectedGrant}
-                            busyApprovalId={approvalActionId}
-                            onGrantChange={(value) =>
-                              setApprovalGrantById((current) => ({
-                                ...current,
-                                [approval.id]: value,
-                              }))
-                            }
-                            onApprove={() => void handleApproval(approval.id, "approve")}
-                            onReject={() => void handleApproval(approval.id, "reject")}
-                          />
-                        </ApprovalSummaryCard>
+                <section className="side-card">
+                  <div className="section-heading">
+                    <h2>大厅快照</h2>
+                    <span>{visibleLobbyPrincipals.length} 在线</span>
+                  </div>
+                  <div className="collab-state-list">
+                    {visibleLobbyPrincipals.slice(0, 4).map((item) => (
+                      <article key={item.id} className="collab-state-card">
+                        <div className="collab-state-head">
+                          <span className="collab-state-pill collab-state-pill-success">
+                            {item.kind === "agent" ? "智能体" : "人类"}
+                          </span>
+                        </div>
+                        <strong>{item.globalDisplayName}</strong>
+                        <p>{item.loginKey}</p>
                       </article>
-                    );
-                  })
-                )}
-              </div>
-              {myPendingApprovals.length > 0 ? (
-                <p className="approval-summary">你当前有 {myPendingApprovals.length} 条审批待处理。</p>
-              ) : null}
-            </section>
+                    ))}
+                    {visibleLobbyPrincipals.length === 0 ? (
+                      <p className="muted-text">登记身份后，这里会显示当前在线的一等公民快照。</p>
+                    ) : null}
+                  </div>
+                </section>
+              </>
+            )}
 
-            <section className="protocol-card">
-              <div className="protocol-title">
-                <span className="protocol-dot" />
-                <strong>房间协作协议已启用</strong>
-              </div>
-              <p>
-                当前聊天室中的互动会在本地实时同步；若助理依赖本地 Bridge，则其可用性会随连接状态变化。
-              </p>
-            </section>
+            {room ? (
+              <>
+                <section className="side-card">
+                  <div className="section-heading">
+                    <h2>房间成员</h2>
+                    <span>{members.length} 位在线/可见成员</span>
+                  </div>
+
+                  <div className="member-section">
+                    <h3>人类成员</h3>
+                    <div className="member-list">
+                      {humans.map((member) => (
+                        <article key={member.id} className="member-row">
+                          <div className="member-avatar">{member.displayName.slice(0, 1)}</div>
+                          <div className="member-copy">
+                            <div className="member-title">
+                              <strong>
+                                {member.displayName}
+                                {member.id === self?.memberId ? "（你）" : ""}
+                              </strong>
+                              <span className="role-pill role-pill-human">人类</span>
+                            </div>
+                            <p>在当前聊天室中协作</p>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="member-section">
+                    <h3>独立 Agent</h3>
+                    <div className="member-list">
+                      {independentAgents.length === 0 ? (
+                        <p className="muted-text">暂无独立 Agent。</p>
+                      ) : (
+                        independentAgents.map((member) => (
+                          <article key={member.id} className="member-row">
+                            <div className="member-avatar member-avatar-agent">
+                              {member.displayName.slice(0, 1)}
+                            </div>
+                            <div className="member-copy">
+                              <div className="member-title">
+                                <strong>{member.displayName}</strong>
+                                <span className="role-pill role-pill-independent">独立 Agent</span>
+                                {runtimeLabel(member) ? (
+                                  <span className={`runtime-pill runtime-pill-${member.runtimeStatus}`}>
+                                    {runtimeLabel(member)}
+                                  </span>
+                                ) : null}
+                              </div>
+                              <p>可被直接 @ 并执行</p>
+                            </div>
+                          </article>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="member-section">
+                    <h3>助理树</h3>
+                    <div className="assistant-tree">
+                      {assistantTree.length === 0 ? (
+                        <p className="muted-text">暂无助理成员。</p>
+                      ) : (
+                        assistantTree.map(({ owner, assistants }) => (
+                          <div key={owner.id} className="assistant-branch">
+                            <div className="assistant-owner-label">
+                              <span>归属于 {owner.displayName}</span>
+                              <div className="assistant-owner-line" />
+                            </div>
+
+                            <div className="assistant-children">
+                              {assistants.map((assistant) => (
+                                <article key={assistant.id} className="member-row member-row-child">
+                                  <div className="member-avatar member-avatar-agent">
+                                    {assistant.displayName.slice(0, 1)}
+                                  </div>
+                                  <div className="member-copy">
+                                    <div className="member-title">
+                                      <strong>{assistant.displayName}</strong>
+                                      <span className="role-pill role-pill-assistant">助理</span>
+                                      {runtimeLabel(assistant) ? (
+                                        <span
+                                          className={`runtime-pill runtime-pill-${assistant.runtimeStatus}`}
+                                        >
+                                          {runtimeLabel(assistant)}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    <p>直属于 {owner.displayName}</p>
+                                  </div>
+                                </article>
+                              ))}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </section>
+
+                <section className="side-card">
+                  <div className="section-heading">
+                    <h2>待处理审批</h2>
+                    <span>{pendingApprovals.length} 条</span>
+                  </div>
+                  <div className="approval-list">
+                    {pendingApprovals.length === 0 ? (
+                      <p className="muted-text">当前没有待处理审批。</p>
+                    ) : (
+                      pendingApprovals.map((approval) => {
+                        const agent = findMember(approval.agentMemberId);
+                        const requester = findMember(approval.requesterMemberId);
+                        const owner = findMember(approval.ownerMemberId);
+                        const mine = approval.ownerMemberId === self?.memberId;
+                        const approvalMessage = findApprovalMessage(approval.id, "approval_request");
+                        const selectedGrant = approvalGrantById[approval.id] ?? "once";
+                        const sidebarItems = [
+                          {
+                            label: "Requester",
+                            value: requester?.displayName ?? approval.requesterMemberId,
+                          },
+                          {
+                            label: "Agent",
+                            value: agent?.displayName ?? approval.agentMemberId,
+                          },
+                          {
+                            label: "Owner",
+                            value: owner?.displayName ?? approval.ownerMemberId,
+                          },
+                          {
+                            label: "状态",
+                            value: mine ? "等待你处理" : "等待直属 owner",
+                          },
+                        ];
+                        const sidebarDetail = mine
+                          ? "正在等待你决定是否放行。"
+                          : "等待直属 owner 处理后继续执行。";
+
+                        return (
+                          <article key={approval.id} className="approval-card">
+                            <ApprovalSummaryCard
+                              variant="sidebar"
+                              status="warning"
+                              badge="待审批"
+                              grantLabel={approvalGrantLabel(selectedGrant)}
+                              title={`${requester?.displayName ?? approval.requesterMemberId} 正在请求调用`}
+                              detail={sidebarDetail}
+                              items={sidebarItems}
+                            >
+                              <div className="approval-surface-links">
+                                <button
+                                  type="button"
+                                  className="chat-action-button"
+                                  onClick={() =>
+                                    focusMessage(approval.triggerMessageId, "已定位到触发消息")
+                                  }
+                                >
+                                  查看原消息
+                                </button>
+                                {approvalMessage ? (
+                                  <button
+                                    type="button"
+                                    className="chat-action-button"
+                                    onClick={() => focusMessage(approvalMessage.id, "已定位到审批消息")}
+                                  >
+                                    查看审批消息
+                                  </button>
+                                ) : null}
+                              </div>
+                              <ApprovalDecisionControls
+                                approvalId={approval.id}
+                                mine={mine}
+                                selectedGrant={selectedGrant}
+                                busyApprovalId={approvalActionId}
+                                onGrantChange={(value) =>
+                                  setApprovalGrantById((current) => ({
+                                    ...current,
+                                    [approval.id]: value,
+                                  }))
+                                }
+                                onApprove={() => void handleApproval(approval.id, "approve")}
+                                onReject={() => void handleApproval(approval.id, "reject")}
+                              />
+                            </ApprovalSummaryCard>
+                          </article>
+                        );
+                      })
+                    )}
+                  </div>
+                  {myPendingApprovals.length > 0 ? (
+                    <p className="approval-summary">你当前有 {myPendingApprovals.length} 条审批待处理。</p>
+                  ) : null}
+                </section>
+
+                <section className="protocol-card">
+                  <div className="protocol-title">
+                    <span className="protocol-dot" />
+                    <strong>房间协作协议已启用</strong>
+                  </div>
+                  <p>
+                    当前聊天室中的互动会在本地实时同步；若助理依赖本地 Bridge，则其可用性会随连接状态变化。
+                  </p>
+                </section>
+              </>
+            ) : null}
           </aside>
         </div>
       </section>

@@ -100,10 +100,12 @@ messageRoutes.post("/api/rooms/:roomId/messages", async (c) => {
   const typedSender: Member = {
     id: sender.id,
     roomId: sender.roomId,
+    principalId: sender.principalId ?? null,
     type: sender.type as Member["type"],
     roleKind: sender.roleKind as Member["roleKind"],
     displayName: sender.displayName,
     ownerMemberId: sender.ownerMemberId,
+    sourcePrivateAssistantId: sender.sourcePrivateAssistantId ?? null,
     adapterType: sender.adapterType,
     adapterConfig: sender.adapterConfig,
     presenceStatus: sender.presenceStatus as Member["presenceStatus"],

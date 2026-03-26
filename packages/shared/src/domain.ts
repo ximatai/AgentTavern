@@ -1,5 +1,7 @@
 export type RoomStatus = "active" | "archived";
 
+export type PrincipalKind = "human" | "agent";
+
 export type MemberType = "human" | "agent";
 
 export type AgentRoleKind = "none" | "independent" | "assistant";
@@ -93,6 +95,25 @@ export type BridgeTaskStatus =
   | "completed"
   | "failed";
 
+export type Principal = {
+  id: string;
+  kind: PrincipalKind;
+  loginKey: string;
+  globalDisplayName: string;
+  status: PresenceStatus;
+  createdAt: string;
+};
+
+export type PrivateAssistant = {
+  id: string;
+  ownerPrincipalId: string;
+  name: string;
+  backendType: AgentBackendType;
+  backendThreadId: string | null;
+  status: AgentBindingStatus;
+  createdAt: string;
+};
+
 export type Room = {
   id: string;
   name: string;
@@ -104,10 +125,12 @@ export type Room = {
 export type Member = {
   id: string;
   roomId: string;
+  principalId: string | null;
   type: MemberType;
   roleKind: AgentRoleKind;
   displayName: string;
   ownerMemberId: string | null;
+  sourcePrivateAssistantId: string | null;
   adapterType: string | null;
   adapterConfig: string | null;
   presenceStatus: PresenceStatus;

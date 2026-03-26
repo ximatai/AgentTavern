@@ -6,6 +6,21 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
+export const principals = sqliteTable("principals", {
+  id: text("id").primaryKey(),
+  kind: text("kind").notNull(),
+  loginKey: text("login_key").notNull(),
+  globalDisplayName: text("global_display_name").notNull(),
+  status: text("status").notNull(),
+  createdAt: text("created_at").notNull(),
+}, (table) => ({
+  kindLoginKeyUniqueIdx: uniqueIndex("principals_kind_login_key_unique_idx").on(
+    table.kind,
+    table.loginKey,
+  ),
+  statusIdx: index("principals_status_idx").on(table.status),
+}));
+
 export const rooms = sqliteTable("rooms", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -23,20 +38,43 @@ export const members = sqliteTable("members", {
   roomId: text("room_id")
     .notNull()
     .references(() => rooms.id),
+  principalId: text("principal_id").references(() => principals.id),
   type: text("type").notNull(),
   roleKind: text("role_kind").notNull(),
   displayName: text("display_name").notNull(),
   ownerMemberId: text("owner_member_id"),
+  sourcePrivateAssistantId: text("source_private_assistant_id"),
   adapterType: text("adapter_type"),
   adapterConfig: text("adapter_config"),
   presenceStatus: text("presence_status").notNull(),
   createdAt: text("created_at").notNull(),
 }, (table) => ({
   roomIdIdx: index("members_room_id_idx").on(table.roomId),
+  principalIdIdx: index("members_principal_id_idx").on(table.principalId),
   ownerMemberIdIdx: index("members_owner_member_id_idx").on(table.ownerMemberId),
   roomDisplayNameUniqueIdx: uniqueIndex("members_room_display_name_unique_idx").on(
     table.roomId,
     table.displayName,
+  ),
+}));
+
+export const privateAssistants = sqliteTable("private_assistants", {
+  id: text("id").primaryKey(),
+  ownerPrincipalId: text("owner_principal_id")
+    .notNull()
+    .references(() => principals.id),
+  name: text("name").notNull(),
+  backendType: text("backend_type").notNull(),
+  backendThreadId: text("backend_thread_id"),
+  status: text("status").notNull(),
+  createdAt: text("created_at").notNull(),
+}, (table) => ({
+  ownerPrincipalIdIdx: index("private_assistants_owner_principal_id_idx").on(
+    table.ownerPrincipalId,
+  ),
+  ownerNameUniqueIdx: uniqueIndex("private_assistants_owner_name_unique_idx").on(
+    table.ownerPrincipalId,
+    table.name,
   ),
 }));
 

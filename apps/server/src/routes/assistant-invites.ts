@@ -172,10 +172,12 @@ assistantInviteRoutes.post("/api/assistant-invites/:inviteToken/accept", async (
   const member: Member = {
     id: createId("mem"),
     roomId: invite.roomId,
+    principalId: null,
     type: "agent",
     roleKind: "assistant",
     displayName,
     ownerMemberId: invite.ownerMemberId,
+    sourcePrivateAssistantId: null,
     adapterType: inviteBackendType,
     adapterConfig: null,
     presenceStatus: "online",
