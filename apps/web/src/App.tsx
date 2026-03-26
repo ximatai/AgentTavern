@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type UIEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+  type UIEvent,
+} from "react";
 
 import type {
   ApprovalGrantDuration,
@@ -167,6 +175,91 @@ function summarizeMessage(message: PublicMessage): string {
 function approvalGrantLabel(value: ApprovalGrantDuration | null | undefined): string | null {
   const option = approvalGrantOptions.find((item) => item.value === value);
   return option?.label ?? null;
+}
+
+function approvalKindLabel(kind: PublicMessage["systemData"] extends infer T
+  ? T extends { kind: infer K }
+    ? K
+    : never
+  : never): string {
+  switch (kind) {
+    case "approval_required":
+      return "待审批";
+    case "approval_granted":
+      return "已批准";
+    case "approval_rejected":
+      return "已拒绝";
+    case "approval_expired":
+      return "已过期";
+    case "approval_owner_offline":
+      return "Owner 离线";
+    default:
+      return "审批";
+  }
+}
+
+function approvalCardStatus(status: PublicMessage["systemData"] extends infer T
+  ? T extends { status: infer S }
+    ? S
+    : never
+  : never): "warning" | "success" | "error" {
+  switch (status) {
+    case "success":
+      return "success";
+    case "error":
+      return "error";
+    default:
+      return "warning";
+  }
+}
+
+type ApprovalCardItem = {
+  label: string;
+  value: string;
+};
+
+type ApprovalSummaryCardProps = {
+  variant: "message" | "sidebar";
+  status: "warning" | "success" | "error";
+  badge: string;
+  grantLabel?: string | null;
+  title: string;
+  detail: string;
+  items: ApprovalCardItem[];
+  children?: ReactNode;
+};
+
+function ApprovalSummaryCard({
+  variant,
+  status,
+  badge,
+  grantLabel,
+  title,
+  detail,
+  items,
+  children,
+}: ApprovalSummaryCardProps) {
+  return (
+    <div className={`approval-surface approval-surface-${variant} approval-surface-${status}`}>
+      <div className="approval-surface-head">
+        <span className="approval-surface-badge">{badge}</span>
+        {grantLabel ? <span className="approval-surface-grant">{grantLabel}</span> : null}
+      </div>
+      <div className="approval-surface-copy">
+        <strong>{title}</strong>
+        <p>{detail}</p>
+      </div>
+      <div className="approval-surface-grid">
+        {items.map((item) => (
+          <div key={`${item.label}:${item.value}`}>
+            <span>{item.label}</span>
+            <strong>{item.value}</strong>
+          </div>
+        ))}
+      </div>
+      {children}
+    </div>
+  );
 }
 
 function runtimeLabel(member: PublicMember): string | null {
@@ -1178,20 +1271,48 @@ function App() {
                   message.messageType === "approval_request" ||
                   message.messageType === "approval_result";
                 const systemData = message.systemData;
+                const approvalAgent = systemData?.agentMemberId
+                  ? findMember(systemData.agentMemberId)
+                  : undefined;
+                const approvalOwner = systemData?.ownerMemberId
+                  ? findMember(systemData.ownerMemberId)
+                  : undefined;
+                const approvalRequester = systemData?.requesterMemberId
+                  ? findMember(systemData.requesterMemberId)
+                  : undefined;
+                const approvalGrant = approvalGrantLabel(systemData?.grantDuration);
+                const approvalSummaryItems = systemData
+                  ? [
+                      {
+                        label: "Requester",
+                        value: approvalRequester?.displayName ?? systemData.requesterMemberId ?? "未知",
+                      },
+                      {
+                        label: "Agent",
+                        value: approvalAgent?.displayName ?? systemData.agentMemberId ?? "未知",
+                      },
+                      {
+                        label: "Owner",
+                        value: approvalOwner?.displayName ?? systemData.ownerMemberId ?? "未知",
+                      },
+                      {
+                        label: "状态",
+                        value: approvalKindLabel(systemData.kind),
+                      },
+                    ]
+                  : [];
                 const systemFacts = systemData
                   ? [
                       systemData.agentMemberId
-                        ? `Agent：${findMember(systemData.agentMemberId)?.displayName ?? systemData.agentMemberId}`
+                        ? `Agent：${approvalAgent?.displayName ?? systemData.agentMemberId}`
                         : null,
                       systemData.ownerMemberId
-                        ? `Owner：${findMember(systemData.ownerMemberId)?.displayName ?? systemData.ownerMemberId}`
+                        ? `Owner：${approvalOwner?.displayName ?? systemData.ownerMemberId}`
                         : null,
                       systemData.requesterMemberId
-                        ? `Requester：${findMember(systemData.requesterMemberId)?.displayName ?? systemData.requesterMemberId}`
+                        ? `Requester：${approvalRequester?.displayName ?? systemData.requesterMemberId}`
                         : null,
-                      approvalGrantLabel(systemData.grantDuration)
-                        ? `授权：${approvalGrantLabel(systemData.grantDuration)}`
-                        : null,
+                      approvalGrant ? `授权：${approvalGrant}` : null,
                     ].filter((value): value is string => Boolean(value))
                   : [];
                 const tone = isApprovalMessage
@@ -1224,7 +1345,17 @@ function App() {
                     </header>
 
                     <div className={`chat-bubble chat-bubble-${tone}`}>
-                      {systemData ? (
+                      {systemData && isApprovalMessage ? (
+                        <ApprovalSummaryCard
+                          variant="message"
+                          status={approvalCardStatus(systemData.status)}
+                          badge={approvalKindLabel(systemData.kind)}
+                          grantLabel={approvalGrant}
+                          title={systemData.title}
+                          detail={systemData.detail}
+                          items={approvalSummaryItems}
+                        />
+                      ) : systemData ? (
                         <div className="system-message-copy">
                           <strong>{systemData.title}</strong>
                           <p>{systemData.detail}</p>
@@ -1553,48 +1684,72 @@ function App() {
                     const requester = findMember(approval.requesterMemberId);
                     const owner = findMember(approval.ownerMemberId);
                     const mine = approval.ownerMemberId === self?.memberId;
+                    const selectedGrant = approvalGrantById[approval.id] ?? "once";
+                    const sidebarItems = [
+                      {
+                        label: "Requester",
+                        value: requester?.displayName ?? approval.requesterMemberId,
+                      },
+                      {
+                        label: "Agent",
+                        value: agent?.displayName ?? approval.agentMemberId,
+                      },
+                      {
+                        label: "Owner",
+                        value: owner?.displayName ?? approval.ownerMemberId,
+                      },
+                      {
+                        label: "状态",
+                        value: mine ? "等待你处理" : "等待直属 owner",
+                      },
+                    ];
+                    const sidebarDetail = mine
+                      ? "正在等待你决定是否放行。"
+                      : "等待直属 owner 处理后继续执行。";
 
                     return (
                       <article key={approval.id} className="approval-card">
-                        <div className="approval-copy">
-                          <strong>{requester?.displayName ?? approval.requesterMemberId} 正在请求调用</strong>
-                          <p>
-                            目标助理：{agent?.displayName ?? approval.agentMemberId}
-                            {owner ? `，直属于 ${owner.displayName}` : ""}
-                          </p>
-                          <p>{mine ? "正在等待你决定是否放行。" : "等待直属 owner 处理后继续执行。"}</p>
-                        </div>
-                        <div className="approval-actions">
-                          <select
-                            value={approvalGrantById[approval.id] ?? "once"}
-                            onChange={(event) =>
-                              setApprovalGrantById((current) => ({
-                                ...current,
-                                [approval.id]: event.target.value as ApprovalGrantDuration,
-                              }))
-                            }
-                            disabled={!mine || approvalActionId === approval.id}
-                          >
-                            {approvalGrantOptions.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            onClick={() => handleApproval(approval.id, "approve")}
-                            disabled={!mine || approvalActionId === approval.id}
-                          >
-                            {approvalActionId === approval.id ? "处理中..." : "批准"}
-                          </button>
-                          <button
-                            className="ghost-button"
-                            onClick={() => handleApproval(approval.id, "reject")}
-                            disabled={!mine || approvalActionId === approval.id}
-                          >
-                            拒绝
-                          </button>
-                        </div>
+                        <ApprovalSummaryCard
+                          variant="sidebar"
+                          status="warning"
+                          badge="待审批"
+                          grantLabel={approvalGrantLabel(selectedGrant)}
+                          title={`${requester?.displayName ?? approval.requesterMemberId} 正在请求调用`}
+                          detail={sidebarDetail}
+                          items={sidebarItems}
+                        >
+                          <div className="approval-actions">
+                            <select
+                              value={selectedGrant}
+                              onChange={(event) =>
+                                setApprovalGrantById((current) => ({
+                                  ...current,
+                                  [approval.id]: event.target.value as ApprovalGrantDuration,
+                                }))
+                              }
+                              disabled={!mine || approvalActionId === approval.id}
+                            >
+                              {approvalGrantOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              onClick={() => handleApproval(approval.id, "approve")}
+                              disabled={!mine || approvalActionId === approval.id}
+                            >
+                              {approvalActionId === approval.id ? "处理中..." : "批准"}
+                            </button>
+                            <button
+                              className="ghost-button"
+                              onClick={() => handleApproval(approval.id, "reject")}
+                              disabled={!mine || approvalActionId === approval.id}
+                            >
+                              拒绝
+                            </button>
+                          </div>
+                        </ApprovalSummaryCard>
                       </article>
                     );
                   })

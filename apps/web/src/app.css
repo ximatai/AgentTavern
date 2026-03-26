@@ -43,7 +43,7 @@ h4,
 .section-heading h2,
 .member-section h3,
 .chat-author strong,
-.approval-copy strong {
+.approval-surface-copy strong {
   font-family: "Manrope", "Inter", "Noto Sans SC", sans-serif;
 }
 
@@ -154,7 +154,7 @@ textarea {
 .composer-footnote,
 .error-inline,
 .member-copy p,
-.approval-copy p,
+.approval-surface-copy p,
 .approval-summary,
 .reply-preview span,
 .pending-attachment-copy span,
@@ -502,6 +502,105 @@ textarea {
   font-weight: 700;
 }
 
+.approval-surface {
+  display: grid;
+  gap: 12px;
+  padding: 0.95rem 1rem;
+  border-radius: 16px;
+  box-shadow: inset 0 0 0 1px rgba(138, 126, 90, 0.12);
+}
+
+.approval-surface-message {
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.approval-surface-sidebar {
+  background: #fff;
+  box-shadow: 0 1px 0 rgba(225, 227, 228, 0.8);
+}
+
+.approval-surface-warning {
+  background: rgba(255, 250, 237, 0.92);
+}
+
+.approval-surface-success {
+  background: rgba(237, 247, 241, 0.96);
+}
+
+.approval-surface-error {
+  background: rgba(252, 239, 239, 0.96);
+}
+
+.approval-surface-head,
+.approval-surface-grid {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.approval-surface-badge,
+.approval-surface-grant {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.24rem 0.54rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.approval-surface-badge {
+  background: rgba(179, 104, 0, 0.12);
+  color: #8a4f00;
+}
+
+.approval-surface-grant {
+  background: rgba(0, 70, 74, 0.08);
+  color: #00464a;
+}
+
+.approval-surface-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.approval-surface-copy strong {
+  color: #2d3a34;
+  font-size: 0.95rem;
+}
+
+.approval-surface-copy p {
+  margin: 0;
+}
+
+.approval-surface-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.approval-surface-grid div {
+  display: grid;
+  gap: 4px;
+  padding: 0.65rem 0.75rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.approval-surface-grid span {
+  color: #808781;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.approval-surface-grid strong {
+  color: #2d3a34;
+  font-size: 0.82rem;
+}
+
 .chat-bubble-human {
   background: #fff;
   border-radius: 12px 12px 12px 2px;
@@ -845,21 +944,6 @@ textarea {
 
 .approval-card {
   display: grid;
-  gap: 12px;
-  padding: 16px;
-  border-radius: 24px;
-  background: #fff;
-  box-shadow: 0 1px 0 rgba(225, 227, 228, 0.8);
-}
-
-.approval-copy strong {
-  display: block;
-  margin-bottom: 6px;
-  font-size: 0.95rem;
-}
-
-.approval-copy p {
-  margin: 0.18rem 0 0;
 }
 
 .approval-actions {
