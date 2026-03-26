@@ -975,6 +975,70 @@ textarea {
   margin: 12px 0 0;
 }
 
+.collab-state-list {
+  display: grid;
+  gap: 12px;
+}
+
+.collab-state-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 18px;
+  background: #f8faf8;
+  box-shadow: inset 0 0 0 1px rgba(213, 221, 215, 0.8);
+}
+
+.collab-state-card strong {
+  font-size: 0.92rem;
+}
+
+.collab-state-card p {
+  margin: 0;
+  color: #727973;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.collab-state-head,
+.collab-state-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.collab-state-head span:last-child {
+  color: #808781;
+  font-size: 0.72rem;
+}
+
+.collab-state-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.24rem 0.56rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.collab-state-pill-warning {
+  background: rgba(179, 104, 0, 0.12);
+  color: #8a4f00;
+}
+
+.collab-state-pill-success {
+  background: rgba(31, 127, 87, 0.12);
+  color: #1f7f57;
+}
+
+.collab-state-pill-error {
+  background: rgba(176, 77, 77, 0.12);
+  color: #9b3434;
+}
+
 .protocol-card {
   padding: 14px 16px;
   border-radius: 14px;

@@ -10,11 +10,37 @@ async function createRoom(page: Page, roomName: string, nickname: string) {
 
 async function addAssistant(page: Page, assistantName: string) {
   const agentPanel = page.locator("details.subpanel").filter({ hasText: "添加本地 Agent" });
-  await agentPanel.locator("summary").click();
+  if (!(await agentPanel.evaluate((node) => node.hasAttribute("open")))) {
+    await agentPanel.locator("summary").click();
+  }
   await agentPanel.getByLabel("显示名").fill(assistantName);
   await agentPanel.getByLabel("类型").selectOption("assistant");
   await page.getByRole("button", { name: "添加本地 Agent", exact: true }).click();
   await expect(page.locator(".assistant-tree").getByText(assistantName)).toBeVisible();
+}
+
+async function addIndependentAgent(
+  page: Page,
+  options: {
+    name: string;
+    command?: string;
+    argsText?: string;
+  },
+) {
+  const agentPanel = page.locator("details.subpanel").filter({ hasText: "添加本地 Agent" });
+  if (!(await agentPanel.evaluate((node) => node.hasAttribute("open")))) {
+    await agentPanel.locator("summary").click();
+  }
+  await agentPanel.getByLabel("显示名").fill(options.name);
+  await agentPanel.getByLabel("类型").selectOption("independent");
+  if (options.command !== undefined) {
+    await agentPanel.getByLabel("命令").fill(options.command);
+  }
+  if (options.argsText !== undefined) {
+    await agentPanel.getByLabel("参数（每行一个）").fill(options.argsText);
+  }
+  await page.getByRole("button", { name: "添加本地 Agent", exact: true }).click();
+  await expect(page.locator(".member-section").filter({ hasText: "独立 Agent" }).getByText(options.name)).toBeVisible();
 }
 
 test.describe("chat attachments", () => {
@@ -214,5 +240,30 @@ test.describe("chat attachments", () => {
     await expect(approvalResult).toBeVisible();
 
     await bobContext.close();
+  });
+
+  test("shows running and recent failure summaries for agent collaboration", async ({ page }) => {
+    await createRoom(page, "Collab State Room", "Alice");
+    await addIndependentAgent(page, { name: "执行助手" });
+    await addIndependentAgent(page, {
+      name: "故障助手",
+      command: "definitely-not-a-real-command",
+      argsText: "",
+    });
+
+    const composer = page.getByPlaceholder("输入消息，使用 @成员名 触发协作...");
+    await composer.fill("@执行助手 帮我整理一下会议纪要");
+    await page.getByRole("button", { name: "发送" }).click();
+
+    const runningCard = page.locator(".collab-state-card").filter({ hasText: "执行助手 正在处理请求" });
+    await expect(runningCard).toContainText("运行中");
+    await expect(runningCard).toContainText("查看触发消息");
+
+    await composer.fill("@故障助手 试着执行一下");
+    await page.getByRole("button", { name: "发送" }).click();
+
+    const issueCard = page.locator(".collab-state-card").filter({ hasText: "Agent run failed" });
+    await expect(issueCard).toContainText("最近异常");
+    await expect(issueCard).toContainText("查看消息");
   });
 });

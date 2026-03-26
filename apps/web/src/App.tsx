@@ -10,6 +10,7 @@ import {
 
 import type {
   ApprovalGrantDuration,
+  AgentSession,
   MessageAttachment,
   PublicApproval,
   PublicMessage,
@@ -27,6 +28,11 @@ type SessionStream = {
 
 type SessionActor = {
   agentMemberId: string;
+};
+
+type SessionSnapshot = AgentSession & {
+  lastError?: string | null;
+  outputMessageId?: string | null;
 };
 
 type JoinResult = {
@@ -207,6 +213,40 @@ function approvalCardStatus(status: PublicMessage["systemData"] extends infer T
     case "success":
       return "success";
     case "error":
+      return "error";
+    default:
+      return "warning";
+  }
+}
+
+function sessionStatusLabel(status: AgentSession["status"]): string {
+  switch (status) {
+    case "pending":
+      return "排队中";
+    case "waiting_approval":
+      return "等待审批";
+    case "running":
+      return "运行中";
+    case "completed":
+      return "已完成";
+    case "rejected":
+      return "已拒绝";
+    case "failed":
+      return "失败";
+    case "cancelled":
+      return "已取消";
+    default:
+      return status;
+  }
+}
+
+function sessionTone(status: AgentSession["status"]): "warning" | "success" | "error" {
+  switch (status) {
+    case "completed":
+      return "success";
+    case "failed":
+    case "rejected":
+    case "cancelled":
       return "error";
     default:
       return "warning";
@@ -405,6 +445,7 @@ function App() {
   const [messages, setMessages] = useState<PublicMessage[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<PublicApproval[]>([]);
   const [streams, setStreams] = useState<Record<string, SessionStream>>({});
+  const [sessionSnapshots, setSessionSnapshots] = useState<Record<string, SessionSnapshot>>({});
   const [sessionActors, setSessionActors] = useState<Record<string, SessionActor>>({});
   const [statusText, setStatusText] = useState("未连接");
   const [flashText, setFlashText] = useState("");
@@ -522,6 +563,7 @@ function App() {
     setMessages(sortByCreatedAt(nextMessages));
     setPendingApprovals([]);
     setStreams({});
+    setSessionSnapshots({});
     setSessionActors({});
   }
 
@@ -595,6 +637,14 @@ function App() {
       }
 
       if (payload.type === "agent.session.started") {
+        setSessionSnapshots((current) => ({
+          ...current,
+          [payload.payload.session.id]: {
+            ...payload.payload.session,
+            lastError: null,
+            outputMessageId: current[payload.payload.session.id]?.outputMessageId ?? null,
+          },
+        }));
         setSessionActors((current) => ({
           ...current,
           [payload.payload.session.id]: {
@@ -623,11 +673,57 @@ function App() {
       }
 
       if (payload.type === "agent.message.committed") {
+        setSessionSnapshots((current) => ({
+          ...current,
+          [payload.payload.sessionId]: current[payload.payload.sessionId]
+            ? {
+                ...current[payload.payload.sessionId],
+                outputMessageId: payload.payload.message.id,
+              }
+            : ({
+                id: payload.payload.sessionId,
+                roomId: payload.payload.message.roomId,
+                agentMemberId: payload.payload.message.senderMemberId,
+                triggerMessageId: payload.payload.message.replyToMessageId ?? payload.payload.message.id,
+                requesterMemberId: "",
+                approvalId: null,
+                approvalRequired: false,
+                status: "completed",
+                startedAt: payload.payload.message.createdAt,
+                endedAt: payload.payload.message.createdAt,
+                lastError: null,
+                outputMessageId: payload.payload.message.id,
+              } satisfies SessionSnapshot),
+        }));
         setStreams((current) => {
           const next = { ...current };
           delete next[payload.payload.message.id];
           return next;
         });
+        return;
+      }
+
+      if (payload.type === "agent.session.completed") {
+        setSessionSnapshots((current) => ({
+          ...current,
+          [payload.payload.session.id]: {
+            ...payload.payload.session,
+            lastError: null,
+            outputMessageId: current[payload.payload.session.id]?.outputMessageId ?? null,
+          },
+        }));
+        return;
+      }
+
+      if (payload.type === "agent.session.failed") {
+        setSessionSnapshots((current) => ({
+          ...current,
+          [payload.payload.session.id]: {
+            ...payload.payload.session,
+            lastError: payload.payload.error,
+            outputMessageId: current[payload.payload.session.id]?.outputMessageId ?? null,
+          },
+        }));
       }
     });
 
@@ -1106,6 +1202,32 @@ function App() {
   const assistantTree = useMemo(() => buildOwnerTree(members), [members]);
   const myPendingApprovals = pendingApprovals.filter(
     (approval) => approval.ownerMemberId === self?.memberId,
+  );
+  const runningSessionSummaries = useMemo(
+    () =>
+      [...Object.values(sessionSnapshots)]
+        .filter(
+          (session) =>
+            session.status === "pending" ||
+            session.status === "waiting_approval" ||
+            session.status === "running",
+        )
+        .sort((left, right) =>
+          (left.startedAt ?? left.endedAt ?? "").localeCompare(right.startedAt ?? right.endedAt ?? ""),
+        ),
+    [sessionSnapshots],
+  );
+  const recentIssueMessages = useMemo(
+    () =>
+      sortByCreatedAt(
+        visibleMessages.filter(
+          (message) =>
+            message.systemData?.kind === "agent_failed" ||
+            message.systemData?.kind === "bridge_waiting" ||
+            message.systemData?.kind === "approval_owner_offline",
+        ),
+      ).slice(-4),
+    [visibleMessages],
   );
 
   function findPendingApproval(approvalId: string | null | undefined): PublicApproval | undefined {
@@ -1697,6 +1819,121 @@ function App() {
           </section>
 
           <aside className="member-sidebar">
+            <section className="side-card">
+              <div className="section-heading">
+                <h2>协作状态</h2>
+                <span>
+                  {pendingApprovals.length + runningSessionSummaries.length + recentIssueMessages.length} 条动态
+                </span>
+              </div>
+
+              <div className="collab-state-list">
+                {pendingApprovals.length === 0 &&
+                runningSessionSummaries.length === 0 &&
+                recentIssueMessages.length === 0 ? (
+                  <p className="muted-text">当前没有需要关注的协作状态。</p>
+                ) : null}
+
+                {pendingApprovals.map((approval) => {
+                  const agent = findMember(approval.agentMemberId);
+                  const requester = findMember(approval.requesterMemberId);
+
+                  return (
+                    <article key={`approval:${approval.id}`} className="collab-state-card">
+                      <div className="collab-state-head">
+                        <span className="collab-state-pill collab-state-pill-warning">待审批</span>
+                        <span>{formatTime(approval.createdAt)}</span>
+                      </div>
+                      <strong>
+                        {agent?.displayName ?? approval.agentMemberId} 正在等待 owner 放行
+                      </strong>
+                      <p>
+                        请求人：{requester?.displayName ?? approval.requesterMemberId}
+                      </p>
+                      <div className="collab-state-actions">
+                        <button
+                          type="button"
+                          className="chat-action-button"
+                          onClick={() => focusMessage(approval.triggerMessageId, "已定位到触发消息")}
+                        >
+                          查看原消息
+                        </button>
+                        {findApprovalMessage(approval.id, "approval_request") ? (
+                          <button
+                            type="button"
+                            className="chat-action-button"
+                            onClick={() =>
+                              focusMessage(
+                                findApprovalMessage(approval.id, "approval_request")?.id ?? null,
+                                "已定位到审批消息",
+                              )
+                            }
+                          >
+                            查看审批消息
+                          </button>
+                        ) : null}
+                      </div>
+                    </article>
+                  );
+                })}
+
+                {runningSessionSummaries.map((session) => {
+                  const agent = findMember(session.agentMemberId);
+                  const requester = session.requesterMemberId
+                    ? findMember(session.requesterMemberId)
+                    : undefined;
+                  const stream = Object.values(streams).find((item) => item.sessionId === session.id);
+
+                  return (
+                    <article key={`session:${session.id}`} className="collab-state-card">
+                      <div className="collab-state-head">
+                        <span className={`collab-state-pill collab-state-pill-${sessionTone(session.status)}`}>
+                          {sessionStatusLabel(session.status)}
+                        </span>
+                        <span>{formatTime(session.startedAt ?? new Date().toISOString())}</span>
+                      </div>
+                      <strong>{agent?.displayName ?? session.agentMemberId} 正在处理请求</strong>
+                      <p>
+                        请求人：{requester?.displayName ?? session.requesterMemberId ?? "未知"}
+                      </p>
+                      <p>{stream?.content ? `${stream.content.slice(-72)}` : "等待输出或结果消息..."}</p>
+                      <div className="collab-state-actions">
+                        <button
+                          type="button"
+                          className="chat-action-button"
+                          onClick={() => focusMessage(session.triggerMessageId, "已定位到触发消息")}
+                        >
+                          查看触发消息
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+
+                {recentIssueMessages.map((message) => (
+                  <article key={`issue:${message.id}`} className="collab-state-card">
+                    <div className="collab-state-head">
+                      <span className="collab-state-pill collab-state-pill-error">
+                        {message.systemData?.kind === "bridge_waiting" ? "等待 Bridge" : "最近异常"}
+                      </span>
+                      <span>{formatTime(message.createdAt)}</span>
+                    </div>
+                    <strong>{message.systemData?.title ?? "系统事件"}</strong>
+                    <p>{message.systemData?.detail ?? message.content}</p>
+                    <div className="collab-state-actions">
+                      <button
+                        type="button"
+                        className="chat-action-button"
+                        onClick={() => focusMessage(message.id, "已定位到相关系统消息")}
+                      >
+                        查看消息
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+
             <section className="side-card">
               <div className="section-heading">
                 <h2>房间成员</h2>
