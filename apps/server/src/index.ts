@@ -35,10 +35,11 @@ wss.on("connection", (socket: WebSocket, request) => {
 if (
   recoveryResult.expiredApprovals > 0 ||
   recoveryResult.rejectedSessions > 0 ||
-  recoveryResult.systemMessages > 0
+  recoveryResult.systemMessages > 0 ||
+  recoveryResult.expiredDraftAttachments > 0
 ) {
   console.log(
-    `runtime recovery: expiredApprovals=${recoveryResult.expiredApprovals} rejectedSessions=${recoveryResult.rejectedSessions} systemMessages=${recoveryResult.systemMessages}`,
+    `runtime recovery: expiredApprovals=${recoveryResult.expiredApprovals} rejectedSessions=${recoveryResult.rejectedSessions} systemMessages=${recoveryResult.systemMessages} expiredDraftAttachments=${recoveryResult.expiredDraftAttachments}`,
   );
 }
 

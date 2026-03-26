@@ -545,6 +545,7 @@ Bridge 提交失败结果。
 - 一条消息最多 `8` 个附件
 - 附件不能跨房间复用
 - 已挂到消息上的附件不可再次作为草稿发送
+- 未发送的草稿附件会按 TTL 自动清理，默认 `24h`
 
 #### `POST /api/rooms/:roomId/attachments`
 
@@ -577,6 +578,7 @@ Bridge 提交失败结果。
 - 当前单次请求最多 `8` 个附件
 - 单文件最大 `5 MB`
 - 单次上传总量最大 `20 MB`
+- 未绑定到消息的草稿附件会按 TTL 自动清理，默认 `24h`
 
 #### `DELETE /api/rooms/:roomId/attachments/:attachmentId`
 

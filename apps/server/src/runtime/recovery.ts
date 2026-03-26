@@ -5,6 +5,7 @@ import type { Approval, Message } from "@agent-tavern/shared";
 import { db, sqlite } from "../db/client";
 import { agentSessions, approvals, mentions, messages } from "../db/schema";
 import { createId } from "../lib/id";
+import { cleanupExpiredDraftAttachments } from "../lib/message-attachments";
 
 function now(): string {
   return new Date().toISOString();
@@ -14,8 +15,10 @@ export function recoverRuntimeState(): {
   expiredApprovals: number;
   rejectedSessions: number;
   systemMessages: number;
+  expiredDraftAttachments: number;
 } {
   const pendingApprovals = db.select().from(approvals).where(eq(approvals.status, "pending")).all();
+  const expiredDraftAttachments = cleanupExpiredDraftAttachments();
 
   let rejectedSessions = 0;
   let systemMessages = 0;
@@ -77,5 +80,6 @@ export function recoverRuntimeState(): {
     expiredApprovals: pendingApprovals.length,
     rejectedSessions,
     systemMessages,
+    expiredDraftAttachments,
   };
 }

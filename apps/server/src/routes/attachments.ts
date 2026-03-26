@@ -6,6 +6,7 @@ import {
   MAX_ATTACHMENT_SIZE_BYTES,
   MAX_MESSAGE_ATTACHMENTS,
   MAX_TOTAL_ATTACHMENT_BYTES,
+  cleanupExpiredDraftAttachments,
   createDraftAttachments,
   deleteDraftAttachment,
   readAttachmentContent,
@@ -18,6 +19,7 @@ const attachmentRoutes = new Hono();
 
 attachmentRoutes.post("/api/rooms/:roomId/attachments", async (c) => {
   const roomId = c.req.param("roomId");
+  cleanupExpiredDraftAttachments();
   const formData = await c.req.formData().catch(() => null);
   const senderMemberId =
     typeof formData?.get("senderMemberId") === "string"
@@ -88,6 +90,7 @@ attachmentRoutes.post("/api/rooms/:roomId/attachments", async (c) => {
 
 attachmentRoutes.delete("/api/rooms/:roomId/attachments/:attachmentId", async (c) => {
   const roomId = c.req.param("roomId");
+  cleanupExpiredDraftAttachments();
   const attachmentId = c.req.param("attachmentId");
   const body = await c.req.json().catch(() => null);
   const senderMemberId =

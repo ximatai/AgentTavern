@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt } from "drizzle-orm";
 
 import type { Message, MessageAttachment } from "@agent-tavern/shared";
 
@@ -12,6 +12,9 @@ import { createId } from "./id";
 export const MAX_MESSAGE_ATTACHMENTS = 8;
 export const MAX_ATTACHMENT_SIZE_BYTES = 5 * 1024 * 1024;
 export const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+export const DRAFT_ATTACHMENT_TTL_MS = Number(
+  process.env.AGENT_TAVERN_DRAFT_ATTACHMENT_TTL_MS ?? 24 * 60 * 60 * 1000,
+);
 
 const attachmentsDir = process.env.AGENT_TAVERN_ATTACHMENTS_DIR
   ? path.resolve(process.env.AGENT_TAVERN_ATTACHMENTS_DIR)
@@ -24,6 +27,14 @@ type MessageAttachmentRow = typeof messageAttachments.$inferSelect;
 function sanitizeAttachmentName(name: string): string {
   const trimmed = name.trim().replace(/\s+/g, " ");
   return trimmed.slice(0, 255) || "attachment";
+}
+
+function removeStoredAttachmentFile(storagePath: string): void {
+  try {
+    fs.unlinkSync(storagePath);
+  } catch {
+    // Ignore missing files so cleanup paths remain idempotent.
+  }
 }
 
 function isPreviewableImage(mimeType: string): boolean {
@@ -203,14 +214,34 @@ export function deleteDraftAttachment(params: {
   }
 
   db.delete(messageAttachments).where(eq(messageAttachments.id, row.id)).run();
-
-  try {
-    fs.unlinkSync(row.storagePath);
-  } catch {
-    // Ignore missing files so draft cleanup stays idempotent.
-  }
+  removeStoredAttachmentFile(row.storagePath);
 
   return true;
+}
+
+export function cleanupExpiredDraftAttachments(referenceTime = Date.now()): number {
+  const expiresBefore = new Date(referenceTime - DRAFT_ATTACHMENT_TTL_MS).toISOString();
+  const expiredDrafts = db
+    .select()
+    .from(messageAttachments)
+    .where(
+      and(
+        isNull(messageAttachments.messageId),
+        lt(messageAttachments.createdAt, expiresBefore),
+      ),
+    )
+    .all();
+
+  if (expiredDrafts.length === 0) {
+    return 0;
+  }
+
+  for (const draft of expiredDrafts) {
+    db.delete(messageAttachments).where(eq(messageAttachments.id, draft.id)).run();
+    removeStoredAttachmentFile(draft.storagePath);
+  }
+
+  return expiredDrafts.length;
 }
 
 export function readAttachmentContent(attachmentId: string): {
