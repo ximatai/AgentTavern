@@ -8,6 +8,15 @@ async function createRoom(page: Page, roomName: string, nickname: string) {
   await expect(page.getByText(new RegExp(`${nickname}（你）`))).toBeVisible();
 }
 
+async function addAssistant(page: Page, assistantName: string) {
+  const agentPanel = page.locator("details.subpanel").filter({ hasText: "添加本地 Agent" });
+  await agentPanel.locator("summary").click();
+  await agentPanel.getByLabel("显示名").fill(assistantName);
+  await agentPanel.getByLabel("类型").selectOption("assistant");
+  await page.getByRole("button", { name: "添加本地 Agent", exact: true }).click();
+  await expect(page.locator(".assistant-tree").getByText(assistantName)).toBeVisible();
+}
+
 test.describe("chat attachments", () => {
   test("uploads, removes, sends, and rehydrates multi-attachments across members", async ({
     browser,
@@ -147,5 +156,63 @@ test.describe("chat attachments", () => {
     await expect(replyMessage).toBeVisible();
     await expect(replyMessage.locator(".reply-preview")).toContainText("回复给 Alice");
     await expect(replyMessage.locator(".reply-preview")).toContainText("Base message for reply");
+  });
+
+  test("closes the approval loop from sidebar navigation to chat decision", async ({
+    browser,
+    page,
+  }) => {
+    await createRoom(page, "Approval Flow Room", "Alice");
+    await addAssistant(page, "架构助理");
+
+    const inviteToken = await page.locator(".room-current-meta span").nth(1).innerText();
+    const bobContext = await browser.newContext();
+    const bobPage = await bobContext.newPage();
+    await bobPage.goto("/");
+    await bobPage.getByLabel("你的昵称").fill("Bob");
+    await bobPage
+      .getByLabel("邀请链接或邀请码")
+      .fill(new URL(`/join/${inviteToken}`, page.url()).toString());
+    await bobPage.getByRole("button", { name: "通过邀请进入" }).click();
+
+    const bobComposer = bobPage.getByPlaceholder("输入消息，使用 @成员名 触发协作...");
+    await bobComposer.fill("@架构助理 帮我看一下预算方案");
+    await bobPage.getByRole("button", { name: "发送" }).click();
+
+    await expect(page.getByText("你当前有 1 条审批待处理。")).toBeVisible();
+    const pendingCard = page.locator(".approval-card").filter({ hasText: "Bob 正在请求调用" });
+    await expect(pendingCard).toBeVisible();
+
+    await pendingCard.getByRole("button", { name: "查看审批消息" }).click();
+    await expect(page.locator(".flash-badge")).toContainText("已定位到审批消息");
+
+    const requestMessage = page
+      .locator(".chat-row")
+      .filter({ hasText: "Owner approval required" })
+      .filter({ hasText: "架构助理 is waiting for owner approval." })
+      .last();
+    await expect(requestMessage).toBeVisible();
+
+    await requestMessage.getByRole("button", { name: "查看原消息" }).click();
+    await expect(page.locator(".flash-badge")).toContainText("已定位到触发消息");
+
+    const triggerMessage = page
+      .locator(".chat-row")
+      .filter({ hasText: "@架构助理 帮我看一下预算方案" })
+      .last();
+    await expect(triggerMessage).toBeVisible();
+
+    await pendingCard.getByRole("combobox").selectOption("10_minutes");
+    await requestMessage.getByRole("button", { name: "批准" }).click();
+
+    await expect(page.getByText("当前没有待处理审批。")).toBeVisible();
+    const approvalResult = page
+      .locator(".chat-row")
+      .filter({ hasText: "Approval granted" })
+      .filter({ hasText: "10 分钟" })
+      .last();
+    await expect(approvalResult).toBeVisible();
+
+    await bobContext.close();
   });
 });

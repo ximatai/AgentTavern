@@ -262,6 +262,48 @@ function ApprovalSummaryCard({
   );
 }
 
+type ApprovalDecisionControlsProps = {
+  approvalId: string;
+  mine: boolean;
+  selectedGrant: ApprovalGrantDuration;
+  busyApprovalId: string;
+  onGrantChange: (value: ApprovalGrantDuration) => void;
+  onApprove: () => void;
+  onReject: () => void;
+};
+
+function ApprovalDecisionControls({
+  approvalId,
+  mine,
+  selectedGrant,
+  busyApprovalId,
+  onGrantChange,
+  onApprove,
+  onReject,
+}: ApprovalDecisionControlsProps) {
+  return (
+    <div className="approval-actions">
+      <select
+        value={selectedGrant}
+        onChange={(event) => onGrantChange(event.target.value as ApprovalGrantDuration)}
+        disabled={!mine || busyApprovalId === approvalId}
+      >
+        {approvalGrantOptions.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <button onClick={onApprove} disabled={!mine || busyApprovalId === approvalId}>
+        {busyApprovalId === approvalId ? "处理中..." : "批准"}
+      </button>
+      <button className="ghost-button" onClick={onReject} disabled={!mine || busyApprovalId === approvalId}>
+        拒绝
+      </button>
+    </div>
+  );
+}
+
 function runtimeLabel(member: PublicMember): string | null {
   switch (member.runtimeStatus) {
     case "ready":
@@ -367,6 +409,7 @@ function App() {
   const [statusText, setStatusText] = useState("未连接");
   const [flashText, setFlashText] = useState("");
   const [errorText, setErrorText] = useState("");
+  const [focusedMessageId, setFocusedMessageId] = useState<string | null>(null);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [isPreparingAttachments, setIsPreparingAttachments] = useState(false);
   const [approvalActionId, setApprovalActionId] = useState("");
@@ -400,6 +443,20 @@ function App() {
       window.clearTimeout(timeoutId);
     };
   }, [flashText]);
+
+  useEffect(() => {
+    if (!focusedMessageId) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setFocusedMessageId((current) => (current === focusedMessageId ? null : current));
+    }, 1800);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [focusedMessageId]);
 
   useEffect(() => {
     setSelectedMentionIndex(0);
@@ -940,6 +997,26 @@ function App() {
     setComposerCaret(textarea.selectionStart ?? textarea.value.length);
   }
 
+  function focusMessage(messageId: string | null, successText = "已定位到相关消息"): void {
+    if (!messageId) {
+      setErrorText("关联消息已不可用");
+      return;
+    }
+
+    const container = messageStreamRef.current;
+    const target = container?.querySelector<HTMLElement>(`[data-message-id="${messageId}"]`);
+
+    if (!target) {
+      setErrorText("关联消息已不可用");
+      return;
+    }
+
+    autoScrollRef.current = false;
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    setFocusedMessageId(messageId);
+    setFlashText(successText);
+  }
+
   async function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): Promise<void> {
     const nativeEvent = event.nativeEvent as { isComposing?: boolean; keyCode?: number };
     if (nativeEvent.isComposing || nativeEvent.keyCode === 229) {
@@ -1030,6 +1107,22 @@ function App() {
   const myPendingApprovals = pendingApprovals.filter(
     (approval) => approval.ownerMemberId === self?.memberId,
   );
+
+  function findPendingApproval(approvalId: string | null | undefined): PublicApproval | undefined {
+    if (!approvalId) {
+      return undefined;
+    }
+
+    return pendingApprovals.find((approval) => approval.id === approvalId);
+  }
+
+  function findApprovalMessage(approvalId: string, messageType?: "approval_request" | "approval_result") {
+    return visibleMessages.find(
+      (message) =>
+        message.systemData?.approvalId === approvalId &&
+        (!messageType || message.messageType === messageType),
+    );
+  }
 
   return (
     <main className="lan-shell">
@@ -1281,6 +1374,12 @@ function App() {
                   ? findMember(systemData.requesterMemberId)
                   : undefined;
                 const approvalGrant = approvalGrantLabel(systemData?.grantDuration);
+                const linkedPendingApproval = findPendingApproval(systemData?.approvalId);
+                const canResolveLinkedApproval =
+                  !!linkedPendingApproval && linkedPendingApproval.ownerMemberId === self?.memberId;
+                const selectedLinkedGrant = linkedPendingApproval
+                  ? approvalGrantById[linkedPendingApproval.id] ?? "once"
+                  : "once";
                 const approvalSummaryItems = systemData
                   ? [
                       {
@@ -1327,7 +1426,10 @@ function App() {
                 return (
                   <article
                     key={message.id}
-                    className={`chat-row chat-row-${tone} ${isSelf ? "chat-row-self" : ""}`}
+                    data-message-id={message.id}
+                    className={`chat-row chat-row-${tone} ${isSelf ? "chat-row-self" : ""} ${
+                      focusedMessageId === message.id ? "chat-row-focused" : ""
+                    }`}
                   >
                     <header className="chat-meta">
                       <div className="chat-author">
@@ -1354,7 +1456,41 @@ function App() {
                           title={systemData.title}
                           detail={systemData.detail}
                           items={approvalSummaryItems}
-                        />
+                        >
+                          <div className="approval-surface-links">
+                            {message.replyToMessageId ? (
+                              <button
+                                type="button"
+                                className="chat-action-button"
+                                onClick={() =>
+                                  focusMessage(message.replyToMessageId, "已定位到触发消息")
+                                }
+                              >
+                                查看原消息
+                              </button>
+                            ) : null}
+                            {linkedPendingApproval ? (
+                              <ApprovalDecisionControls
+                                approvalId={linkedPendingApproval.id}
+                                mine={canResolveLinkedApproval}
+                                selectedGrant={selectedLinkedGrant}
+                                busyApprovalId={approvalActionId}
+                                onGrantChange={(value) =>
+                                  setApprovalGrantById((current) => ({
+                                    ...current,
+                                    [linkedPendingApproval.id]: value,
+                                  }))
+                                }
+                                onApprove={() =>
+                                  void handleApproval(linkedPendingApproval.id, "approve")
+                                }
+                                onReject={() =>
+                                  void handleApproval(linkedPendingApproval.id, "reject")
+                                }
+                              />
+                            ) : null}
+                          </div>
+                        </ApprovalSummaryCard>
                       ) : systemData ? (
                         <div className="system-message-copy">
                           <strong>{systemData.title}</strong>
@@ -1684,6 +1820,7 @@ function App() {
                     const requester = findMember(approval.requesterMemberId);
                     const owner = findMember(approval.ownerMemberId);
                     const mine = approval.ownerMemberId === self?.memberId;
+                    const approvalMessage = findApprovalMessage(approval.id, "approval_request");
                     const selectedGrant = approvalGrantById[approval.id] ?? "once";
                     const sidebarItems = [
                       {
@@ -1718,37 +1855,38 @@ function App() {
                           detail={sidebarDetail}
                           items={sidebarItems}
                         >
-                          <div className="approval-actions">
-                            <select
-                              value={selectedGrant}
-                              onChange={(event) =>
-                                setApprovalGrantById((current) => ({
-                                  ...current,
-                                  [approval.id]: event.target.value as ApprovalGrantDuration,
-                                }))
-                              }
-                              disabled={!mine || approvalActionId === approval.id}
-                            >
-                              {approvalGrantOptions.map((option) => (
-                                <option key={option.value} value={option.value}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
+                          <div className="approval-surface-links">
                             <button
-                              onClick={() => handleApproval(approval.id, "approve")}
-                              disabled={!mine || approvalActionId === approval.id}
+                              type="button"
+                              className="chat-action-button"
+                              onClick={() => focusMessage(approval.triggerMessageId, "已定位到触发消息")}
                             >
-                              {approvalActionId === approval.id ? "处理中..." : "批准"}
+                              查看原消息
                             </button>
-                            <button
-                              className="ghost-button"
-                              onClick={() => handleApproval(approval.id, "reject")}
-                              disabled={!mine || approvalActionId === approval.id}
-                            >
-                              拒绝
-                            </button>
+                            {approvalMessage ? (
+                              <button
+                                type="button"
+                                className="chat-action-button"
+                                onClick={() => focusMessage(approvalMessage.id, "已定位到审批消息")}
+                              >
+                                查看审批消息
+                              </button>
+                            ) : null}
                           </div>
+                          <ApprovalDecisionControls
+                            approvalId={approval.id}
+                            mine={mine}
+                            selectedGrant={selectedGrant}
+                            busyApprovalId={approvalActionId}
+                            onGrantChange={(value) =>
+                              setApprovalGrantById((current) => ({
+                                ...current,
+                                [approval.id]: value,
+                              }))
+                            }
+                            onApprove={() => void handleApproval(approval.id, "approve")}
+                            onReject={() => void handleApproval(approval.id, "reject")}
+                          />
                         </ApprovalSummaryCard>
                       </article>
                     );

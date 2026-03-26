@@ -429,10 +429,21 @@ textarea {
   display: grid;
   gap: 8px;
   max-width: 760px;
+  transition: transform 160ms ease, box-shadow 160ms ease;
 }
 
 .chat-row-self {
   justify-self: end;
+}
+
+.chat-row-focused {
+  transform: translateY(-1px);
+}
+
+.chat-row-focused .chat-bubble {
+  box-shadow:
+    0 0 0 3px rgba(33, 79, 67, 0.12),
+    0 14px 28px rgba(33, 79, 67, 0.08);
 }
 
 .chat-meta,
@@ -599,6 +610,12 @@ textarea {
 .approval-surface-grid strong {
   color: #2d3a34;
   font-size: 0.82rem;
+}
+
+.approval-surface-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .chat-bubble-human {
