@@ -1,0 +1,65 @@
+/* Error boundary fallback styles */
+
+.eb-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: var(--bg-base, #0a0f1c);
+  padding: 24px;
+}
+
+.eb-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  max-width: 400px;
+  text-align: center;
+}
+
+.eb-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--bg-surface, #1e293b);
+  border: 2px solid #f87171;
+  color: #f87171;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 44px;
+  text-align: center;
+}
+
+.eb-title {
+  font-family: "Inter", sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--font-primary, #fff);
+  margin: 0;
+}
+
+.eb-message {
+  font-family: "Inter", sans-serif;
+  font-size: 14px;
+  color: var(--font-secondary, #94a3b8);
+  margin: 0;
+  word-break: break-word;
+}
+
+.eb-retry {
+  margin-top: 8px;
+  padding: 8px 24px;
+  border-radius: 8px;
+  background: var(--accent, #22d3ee);
+  color: var(--bg-base, #0a0f1c);
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.eb-retry:hover {
+  opacity: 0.85;
+}

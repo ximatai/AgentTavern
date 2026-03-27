@@ -1,0 +1,130 @@
+/* Home Stage — guided steps when no room selected */
+
+/* ---- Center Area ---- */
+.home-stage {
+  flex: 1;
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.home-hero-card {
+  background: var(--bg-surface, #1e293b);
+  border-radius: 12px;
+}
+
+.home-eyebrow {
+  display: block;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+
+.home-hero-title {
+  margin: 0 0 12px !important;
+  color: var(--font-primary, #fff) !important;
+}
+
+.home-hero-desc {
+  margin-bottom: 0 !important;
+}
+
+/* Steps Grid */
+.home-steps-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.home-step-card {
+  background: var(--bg-surface, #1e293b);
+  border-radius: 12px;
+}
+
+.home-step-badge {
+  margin-bottom: 12px;
+}
+
+/* Stats Row */
+.home-stats-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.home-stat-card {
+  background: var(--bg-input, #1a2332);
+  border-radius: 12px;
+  text-align: center;
+}
+
+.home-stat-icon {
+  font-size: 24px;
+  color: var(--accent, #22d3ee);
+  margin-bottom: 8px;
+}
+
+.home-stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--font-primary, #fff);
+  margin-bottom: 4px;
+}
+
+/* ---- Right Sidebar ---- */
+.home-sidebar-content {
+  flex: 1;
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-height: 0;
+}
+
+.home-side-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.home-side-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.home-side-header h5 {
+  margin: 0 !important;
+  color: var(--font-primary, #fff) !important;
+}
+
+.home-side-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.home-side-card {
+  background: var(--bg-surface, #1e293b);
+  border-radius: 8px;
+}
+
+.home-side-card-desc {
+  margin-bottom: 0 !important;
+}
+
+.home-side-empty {
+  display: block;
+  text-align: center;
+  padding: 12px 0;
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 1023px) {
+  .home-steps-grid {
+    grid-template-columns: 1fr;
+  }
+}

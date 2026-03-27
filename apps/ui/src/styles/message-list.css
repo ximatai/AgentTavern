@@ -1,0 +1,415 @@
+/* ── Message List ── */
+.message-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Day divider */
+.day-divider {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0;
+}
+
+.day-divider-pill {
+  font-family: Inter, sans-serif;
+  font-size: 12px;
+  color: var(--font-tertiary, #64748B);
+  background: var(--bg-surface, #1E293B);
+  border-radius: 12px;
+  padding: 4px 16px;
+}
+
+/* Empty state */
+.message-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--font-muted, #475569);
+  font-family: Inter, sans-serif;
+  font-size: 14px;
+}
+
+/* ── Chat Row (other people's messages) ── */
+.chat-row {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+
+/* ── Chat Avatar ── */
+.chat-avatar {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avatar-text {
+  color: var(--font-primary, #FFFFFF);
+  font-family: Inter, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* ── Chat Row Content ── */
+.chat-row-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ── Chat Meta (header) ── */
+.chat-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.chat-author {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chat-author strong {
+  font-family: Inter, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--font-secondary, #94A3B8);
+}
+
+.chat-time {
+  font-family: Inter, sans-serif;
+  font-size: 11px;
+  color: var(--font-tertiary, #64748B);
+}
+
+/* ── Role Pills ── */
+.role-pill {
+  font-family: Inter, sans-serif;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 6px;
+}
+
+.role-pill-approval {
+  background: #FBBF2420;
+  color: #FBBF24;
+}
+
+/* ── Streaming Pill ── */
+.stream-pill {
+  font-family: Inter, sans-serif;
+  font-size: 10px;
+  color: var(--accent, #22D3EE);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ── Streaming Cursor Blink ── */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.stream-cursor {
+  animation: blink 1s step-end infinite;
+}
+
+/* ── Chat Bubble ── */
+.chat-bubble {
+  border-radius: 12px;
+  padding: 10px 16px;
+  max-width: 100%;
+}
+
+.chat-bubble p {
+  margin: 0;
+  font-family: Inter, sans-serif;
+  font-size: 14px;
+  font-weight: normal;
+  line-height: 1.5;
+  color: var(--font-primary, #FFFFFF);
+}
+
+/* Human bubble */
+.chat-bubble-human {
+  background: var(--bg-surface, #1E293B);
+}
+
+/* Agent bubble - with left accent border */
+.chat-bubble-agent {
+  background: var(--bg-surface, #1E293B);
+  border-left: 3px solid var(--accent, #22D3EE);
+}
+
+/* ── Notice (system messages) ── */
+.notice-wrap {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.notice-pill {
+  font-family: Inter, sans-serif;
+  font-size: 12px;
+  color: var(--font-tertiary, #64748B);
+  background: var(--bg-surface, #1E293B);
+  border-radius: 12px;
+  padding: 4px 16px;
+}
+
+/* System notice card */
+.system-notice-card {
+  width: 100%;
+  max-width: 560px;
+}
+
+.system-notice-card .ant-alert {
+  background: var(--bg-surface, #1E293B) !important;
+  border-color: transparent !important;
+  border-radius: 8px !important;
+}
+
+.system-notice-card .ant-alert-info {
+  background: rgba(59, 130, 246, 0.08) !important;
+}
+
+.system-notice-card .ant-alert-success {
+  background: rgba(52, 211, 153, 0.08) !important;
+}
+
+.system-notice-card .ant-alert-warning {
+  background: rgba(251, 191, 36, 0.08) !important;
+}
+
+.system-notice-card .ant-alert-error {
+  background: rgba(248, 113, 113, 0.08) !important;
+}
+
+.system-notice-card .ant-alert-message {
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  color: var(--font-secondary, #94A3B8) !important;
+  margin-bottom: 4px !important;
+}
+
+.system-notice-card .ant-alert-description {
+  color: var(--font-tertiary, #64748B) !important;
+}
+
+.system-notice-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.system-notice-detail {
+  margin: 0;
+  font-family: Inter, sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--font-tertiary, #64748B);
+}
+
+.system-notice-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.system-notice-fact {
+  font-family: Inter, sans-serif;
+  font-size: 11px;
+  color: var(--font-muted, #475569);
+  background: var(--bg-inset, rgba(255, 255, 255, 0.04));
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+
+/* ── Approval Row ── */
+.chat-row-approval {
+  border-left: none;
+}
+
+/* ── Own Messages (right-aligned) ── */
+.own-wrap {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+.own-wrap .chat-row {
+  flex-direction: row-reverse;
+}
+
+.own-bubble {
+  border-radius: 12px;
+  padding: 10px 16px;
+  background: var(--accent-dim, #0E7490);
+  max-width: 100%;
+}
+
+.own-bubble p {
+  margin: 0;
+  font-family: Inter, sans-serif;
+  font-size: 14px;
+  font-weight: normal;
+  line-height: 1.5;
+  color: var(--font-primary, #FFFFFF);
+}
+
+/* ── Focused Message Highlight ── */
+.chat-row-focused {
+  animation: focus-highlight 1.8s ease-out;
+}
+
+@keyframes focus-highlight {
+  0% { background: var(--accent-alpha, rgba(34, 211, 238, 0.13)); border-radius: 8px; }
+  100% { background: transparent; }
+}
+
+/* ── Reply Preview ── */
+.reply-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg-inset, #0A0F1C);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  border: none;
+  text-align: left;
+  width: 100%;
+  color: var(--font-secondary, #94A3B8);
+}
+
+.reply-preview:hover {
+  background: var(--bg-surface, #111827);
+}
+
+.reply-preview strong {
+  font-family: Inter, sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--font-tertiary, #64748B);
+}
+
+.reply-preview span {
+  font-family: Inter, sans-serif;
+  font-size: 12px;
+  color: var(--font-muted, #475569);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Action Buttons ── */
+.chat-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.chat-action-button {
+  font-family: Inter, sans-serif;
+  font-size: 11px;
+  color: var(--font-tertiary, #64748B);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 0;
+  margin-top: 6px;
+}
+
+.chat-action-button:hover {
+  color: var(--accent, #22D3EE);
+}
+
+/* ── Message Attachments ── */
+.message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.message-attachment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--bg-surface, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--ant-color-border, #1e293b);
+  text-decoration: none;
+  color: inherit;
+  max-width: 240px;
+  transition: background 0.15s;
+}
+
+.message-attachment:hover {
+  background: var(--border-default, rgba(255, 255, 255, 0.08));
+}
+
+.message-attachment-preview {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.message-attachment-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  border-radius: 4px;
+  background: var(--ant-color-bg-container, #0a0f1c);
+  color: var(--font-tertiary, #64748b);
+  font-size: 16px;
+}
+
+.message-attachment-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.message-attachment-copy strong {
+  font-family: Inter, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--font-primary, #fff);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message-attachment-copy span {
+  font-family: Inter, sans-serif;
+  font-size: 11px;
+  color: var(--font-tertiary, #64748b);
+}

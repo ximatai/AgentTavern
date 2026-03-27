@@ -1,0 +1,144 @@
+/* Left Sidebar Room List */
+
+/* Section heading */
+.room-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px 8px;
+  flex-shrink: 0;
+}
+
+.room-list-title {
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.room-list-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--font-secondary, #94a3b8);
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.room-list-add-btn:hover {
+  background: var(--bg-surface, #1e293b);
+  color: var(--accent, #22d3ee);
+}
+
+/* Empty state */
+.room-list-empty {
+  display: block;
+  padding: 16px;
+  font-size: 12px;
+  text-align: center;
+}
+
+/* Room item */
+.room-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--font-primary, #fff);
+  cursor: pointer;
+  font-size: 0;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.room-item:hover {
+  background: var(--bg-surface, #1e293b);
+}
+
+.room-item-active {
+  background: var(--accent-dim, #0e7490);
+}
+
+.room-item-active:hover {
+  background: var(--accent-dim, #0e7490);
+}
+
+.room-item-hash {
+  flex-shrink: 0;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--font-tertiary, #64748b);
+  line-height: 1;
+}
+
+.room-item-active .room-item-hash {
+  color: var(--font-secondary, #94a3b8);
+}
+
+.room-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--font-primary, #fff);
+}
+
+.room-item-time {
+  flex-shrink: 0;
+  font-family: "Inter", sans-serif;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--font-muted, #475569);
+}
+
+/* Bottom create button override */
+.sidebar-bottom .ant-btn-primary {
+  background: var(--accent, #22d3ee);
+  border-color: var(--accent, #22d3ee);
+  font-weight: 600;
+  font-size: 13px;
+  height: 40px;
+}
+
+.sidebar-bottom .ant-btn-primary:hover {
+  background: #06b6d4;
+  border-color: #06b6d4;
+}
+
+/* Room Modal */
+.room-modal-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.room-modal-section + .room-modal-section {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-default, #1e293b);
+}
+
+.room-modal-label {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.room-modal-action {
+  margin-top: 4px;
+}

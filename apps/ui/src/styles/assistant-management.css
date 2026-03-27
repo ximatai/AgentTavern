@@ -1,0 +1,230 @@
+/* Assistant Management Modal */
+
+.assistant-management-modal .ant-modal-content {
+  background: var(--bg-inset, #111827);
+  border: 1px solid var(--border-default, rgba(30, 41, 59, 0.6));
+  border-radius: 12px;
+  padding: 0;
+}
+
+.assistant-management-modal .ant-modal-header {
+  display: none;
+}
+
+.assistant-management-modal .ant-modal-body {
+  padding: 0;
+}
+
+.assistant-management-modal .ant-modal-close {
+  color: var(--font-secondary, #94a3b8);
+}
+
+.assistant-management-modal .ant-modal-close:hover {
+  color: var(--font-primary, #ffffff);
+}
+
+/* Panel container */
+.am-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Panel header */
+.am-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+}
+
+.am-panel-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.am-panel-title {
+  font-family: "Inter", sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--font-primary, #ffffff);
+}
+
+.am-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--accent-alpha, rgba(14, 116, 144, 0.15));
+  color: var(--accent, #22d3ee);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Section */
+.am-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.am-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+}
+
+.am-section-title {
+  font-family: "Inter", sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--font-secondary, #94a3b8);
+}
+
+.am-section-count {
+  font-family: "Inter", sans-serif;
+  font-size: 12px;
+  color: var(--font-tertiary, #64748b);
+}
+
+/* List */
+.am-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.am-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border-default, rgba(30, 41, 59, 0.5));
+}
+
+.am-list-item:last-child {
+  border-bottom: none;
+}
+
+.am-item-left {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.am-item-name {
+  font-family: "Inter", sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--font-primary, #e2e8f0);
+}
+
+.am-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.am-item-status {
+  font-size: 12px !important;
+}
+
+.am-backend-tag {
+  background: var(--accent-alpha, rgba(14, 116, 144, 0.15)) !important;
+  color: var(--accent, #22d3ee) !important;
+  border: none !important;
+  font-size: 11px;
+  line-height: 18px;
+  padding: 0 6px;
+  border-radius: 4px;
+}
+
+.am-status-tag {
+  background: rgba(100, 116, 139, 0.15) !important;
+  color: var(--font-secondary, #94a3b8) !important;
+  border: none !important;
+  font-size: 11px;
+  line-height: 18px;
+  padding: 0 6px;
+  border-radius: 4px;
+}
+
+.am-invite-prompt {
+  font-size: 12px !important;
+  word-break: break-all;
+  max-width: 400px;
+}
+
+.am-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: 16px;
+}
+
+/* Empty state */
+.am-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 32px 24px;
+}
+
+.am-empty-icon {
+  font-size: 32px;
+  color: var(--font-muted, #475569);
+}
+
+.am-empty-title {
+  font-family: "Inter", sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--font-tertiary, #64748b);
+}
+
+.am-empty-hint {
+  font-family: "Inter", sans-serif;
+  font-size: 12px;
+  color: var(--font-tertiary, #64748b);
+  text-align: center;
+  max-width: 400px;
+}
+
+/* Invite section */
+.am-invite-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 24px 24px;
+  border-top: 1px solid var(--border-default, rgba(30, 41, 59, 0.5));
+}
+
+.am-invite-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--font-secondary, #94a3b8);
+}
+
+.am-invite-form {
+  display: flex;
+  gap: 8px;
+}
+
+.am-name-input {
+  flex: 1;
+}
+
+.am-create-btn {
+  flex-shrink: 0;
+}
+
+.am-invite-tip {
+  font-size: 12px;
+  color: var(--font-muted, #475569);
+}

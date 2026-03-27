@@ -1,0 +1,83 @@
+/* Add Local Agent Modal */
+
+.add-local-agent-modal .ant-modal-content {
+  background: var(--bg-inset, #111827);
+  border: 1px solid var(--border-default, rgba(30, 41, 59, 0.6));
+  border-radius: 12px;
+  padding: 0;
+}
+
+.add-local-agent-modal .ant-modal-header {
+  display: none;
+}
+
+.add-local-agent-modal .ant-modal-body {
+  padding: 0;
+}
+
+.add-local-agent-modal .ant-modal-close {
+  color: var(--font-secondary, #94a3b8);
+}
+
+.add-local-agent-modal .ant-modal-close:hover {
+  color: var(--font-primary, #ffffff);
+}
+
+/* Panel container */
+.ala-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header */
+.ala-header {
+  display: flex;
+  align-items: center;
+  padding: 20px 24px;
+  font-family: "Inter", sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--font-primary, #ffffff);
+  border-bottom: 1px solid var(--border-default, rgba(30, 41, 59, 0.5));
+}
+
+/* Form */
+.ala-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px 24px;
+}
+
+.ala-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ala-label {
+  font-family: "Inter", sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--font-secondary, #94a3b8);
+}
+
+.ala-input,
+.ala-textarea,
+.ala-select {
+  width: 100%;
+}
+
+.ala-radio-group {
+  display: flex;
+  gap: 16px;
+}
+
+/* Actions */
+.ala-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-default, rgba(30, 41, 59, 0.5));
+}
