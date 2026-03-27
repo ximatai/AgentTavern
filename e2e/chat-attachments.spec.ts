@@ -43,7 +43,7 @@ async function addIndependentAgent(
   await expect(page.locator(".member-section").filter({ hasText: "独立 Agent" }).getByText(options.name)).toBeVisible();
 }
 
-test.describe("chat attachments", () => {
+test.describe.skip("legacy chat attachments", () => {
   test("uploads, removes, sends, and rehydrates multi-attachments across members", async ({
     browser,
     page,

@@ -64,6 +64,17 @@ async function createAssistantInvite(
   });
 }
 
+async function removeAssistantInvite(
+  inviteId: string,
+  principalId: string,
+  principalToken: string,
+): Promise<{ ok: true }> {
+  return request<{ ok: true }>(
+    `/api/me/assistants/invites/${inviteId}?principalId=${principalId}&principalToken=${principalToken}`,
+    { method: "DELETE" },
+  );
+}
+
 async function removePrivateAssistant(
   privateAssistantId: string,
   principalId: string,
@@ -102,6 +113,26 @@ async function createRoomAssistantInvite(
   });
 }
 
+async function takeAssistantOffline(
+  roomId: string,
+  params: {
+    actorMemberId: string;
+    wsToken: string;
+    assistantMemberId: string;
+  },
+): Promise<{ ok: true }> {
+  return request<{ ok: true }>(
+    `/api/rooms/${roomId}/assistants/${params.assistantMemberId}/offline`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        actorMemberId: params.actorMemberId,
+        wsToken: params.wsToken,
+      }),
+    },
+  );
+}
+
 async function addLocalAgent(
   roomId: string,
   params: {
@@ -128,8 +159,10 @@ export {
   getPrivateAssistants,
   getAssistantInvites,
   createAssistantInvite,
+  removeAssistantInvite,
   removePrivateAssistant,
   adoptAssistant,
   createRoomAssistantInvite,
+  takeAssistantOffline,
   addLocalAgent,
 };

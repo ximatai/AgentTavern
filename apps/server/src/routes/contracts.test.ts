@@ -2328,6 +2328,112 @@ test("private assistant projections reject concurrent runs across rooms for the 
   );
 });
 
+test("private assistant projections do not treat same-room pending sessions as different-room busy", async () => {
+  const createdAt = new Date("2026-03-25T05:10:00.000Z").toISOString();
+
+  db.insert(rooms).values({
+    id: "room_private_same_room_busy",
+    name: "Private Same Room Busy",
+    inviteToken: createInviteToken(),
+    status: "active",
+    createdAt,
+  }).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_same_room_requester",
+      roomId: "room_private_same_room_busy",
+      type: "human",
+      roleKind: "none",
+      displayName: "RequesterSameRoom",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_same_room_assistant",
+      roomId: "room_private_same_room_busy",
+      principalId: null,
+      type: "agent",
+      roleKind: "assistant",
+      displayName: "SameRoomAssistant",
+      ownerMemberId: "mem_same_room_requester",
+      sourcePrivateAssistantId: "pa_same_room_busy",
+      adapterType: "codex_cli",
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(messages).values([
+    {
+      id: "msg_same_room_existing",
+      roomId: "room_private_same_room_busy",
+      senderMemberId: "mem_same_room_requester",
+      messageType: "user_text",
+      content: "@SameRoomAssistant first task",
+      systemData: null,
+      replyToMessageId: null,
+      createdAt,
+    },
+    {
+      id: "msg_same_room_new",
+      roomId: "room_private_same_room_busy",
+      senderMemberId: "mem_same_room_requester",
+      messageType: "user_text",
+      content: "@SameRoomAssistant second task",
+      systemData: null,
+      replyToMessageId: null,
+      createdAt: new Date("2026-03-25T05:11:00.000Z").toISOString(),
+    },
+  ]).run();
+
+  db.insert(agentSessions).values({
+    id: "ags_same_room_existing",
+    roomId: "room_private_same_room_busy",
+    agentMemberId: "mem_same_room_assistant",
+    triggerMessageId: "msg_same_room_existing",
+    requesterMemberId: "mem_same_room_requester",
+    approvalId: null,
+    approvalRequired: false,
+    status: "pending",
+    startedAt: null,
+    endedAt: null,
+  }).run();
+
+  const requesterToken = issueWsToken("mem_same_room_requester", "room_private_same_room_busy");
+  const response = await app.request("http://localhost/api/rooms/room_private_same_room_busy/messages", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_same_room_requester",
+      wsToken: requesterToken,
+      content: "@SameRoomAssistant second task",
+    }),
+  });
+
+  assert.equal(response.status, 201);
+
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  const roomMessages = db
+    .select()
+    .from(messages)
+    .where(eq(messages.roomId, "room_private_same_room_busy"))
+    .all();
+
+  assert.ok(
+    !roomMessages.some(
+      (message) =>
+        message.messageType === "system_notice" &&
+        message.content === "SameRoomAssistant is already handling another request in a different room.",
+    ),
+  );
+});
+
 test("bridge register creates a reusable bridge identity and heartbeat refreshes it", async () => {
   const registerResponse = await app.request("http://localhost/api/bridges/register", {
     method: "POST",

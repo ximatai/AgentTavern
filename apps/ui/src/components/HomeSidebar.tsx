@@ -2,6 +2,7 @@ import { Card, Tag, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { useRoomStore } from "../stores/room";
+import { usePrincipalStore } from "../stores/principal";
 
 import "../styles/home.css";
 
@@ -10,6 +11,7 @@ const { Title, Paragraph, Text } = Typography;
 export function HomeSidebar() {
   const { t } = useTranslation();
   const lobbyPrincipals = useRoomStore((s) => s.lobbyPrincipals);
+  const principal = usePrincipalStore((s) => s.principal);
 
   const visiblePrincipals = lobbyPrincipals.slice(0, 4);
 
@@ -22,7 +24,7 @@ export function HomeSidebar() {
           <Text type="secondary">{t("home.sidebarTipsBefore")}</Text>
         </div>
         <div className="home-side-cards">
-          <Card size="small" bordered={false} className="home-side-card">
+          <Card size="small" variant="borderless" className="home-side-card">
             <Tag color="warning" className="home-step-badge">
               {t("home.step1Badge")}
             </Tag>
@@ -31,7 +33,7 @@ export function HomeSidebar() {
               {t("home.step1Description")}
             </Paragraph>
           </Card>
-          <Card size="small" bordered={false} className="home-side-card">
+          <Card size="small" variant="borderless" className="home-side-card">
             <Tag color="success" className="home-step-badge">
               {t("home.step2Badge")}
             </Tag>
@@ -53,11 +55,16 @@ export function HomeSidebar() {
         </div>
         <div className="home-side-cards">
           {visiblePrincipals.map((item) => (
-            <Card key={item.id} size="small" bordered={false} className="home-side-card">
+            <Card key={item.id} size="small" variant="borderless" className="home-side-card">
               <Tag color="success" className="home-step-badge">
                 {item.kind === "agent" ? t("home.kindAgent") : t("home.kindHuman")}
               </Tag>
-              <strong>{item.globalDisplayName}</strong>
+              <strong>
+                {item.globalDisplayName}
+                {(item.principalId ?? item.id) === principal?.principalId
+                  ? ` (${t("onlineMembers.self")})`
+                  : ""}
+              </strong>
               <Text type="secondary" className="home-side-card-desc">
                 {item.loginKey}
               </Text>

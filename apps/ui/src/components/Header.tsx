@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { SettingOutlined, RobotOutlined, LoginOutlined, PlusOutlined } from "@ant-design/icons";
-import { message } from "antd";
+import { SettingOutlined, RobotOutlined, LoginOutlined, PlusOutlined, ShareAltOutlined } from "@ant-design/icons";
 
+import { toast } from "../lib/feedback";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 import { LoginModal } from "./LoginModal";
@@ -11,38 +11,27 @@ import { AddLocalAgentModal } from "./AddLocalAgentModal";
 import { usePrincipalStore } from "../stores/principal";
 import { useConnectionStore } from "../stores/connection";
 import { useRoomStore } from "../stores/room";
-import type { ConnectionStatus } from "../stores/connection";
 
 import "../styles/header.css";
 
-function ConnectionIndicator() {
+function ConnectionNotifications() {
   const { t } = useTranslation();
   const status = useConnectionStore((s) => s.status);
   const prevStatus = useRef(status);
 
   useEffect(() => {
-    if (prevStatus.current === status) return;
+    const previousStatus = prevStatus.current;
+    if (previousStatus === status) return;
     prevStatus.current = status;
 
-    if (status === "disconnected") {
-      message.warning(t("header.connectionLost"));
-    } else if (status === "connected" && prevStatus.current === "disconnected") {
-      message.success(t("header.connectionRestored"));
+    if (status === "disconnected" && previousStatus === "connected") {
+      toast().warning(t("header.connectionLost"));
+    } else if (status === "connected" && previousStatus === "disconnected") {
+      toast().success(t("header.connectionRestored"));
     }
   }, [status, t]);
 
-  const label: Record<ConnectionStatus, string> = {
-    connected: t("header.connectionConnected"),
-    disconnected: t("header.connectionDisconnected"),
-    none: t("header.connectionNone"),
-  };
-
-  return (
-    <div className="connection-status">
-      <span className={`connection-dot ${status}`} />
-      <span>{label[status]}</span>
-    </div>
-  );
+  return null;
 }
 
 function IdentitySection() {
@@ -96,22 +85,53 @@ function IdentitySection() {
 export function Header() {
   const { t } = useTranslation();
   const principal = usePrincipalStore((s) => s.principal);
+  const room = useRoomStore((s) => s.room);
   const self = useRoomStore((s) => s.self);
+  const connectionStatus = useConnectionStore((s) => s.status);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [localAgentOpen, setLocalAgentOpen] = useState(false);
+  const [copyingRoomInvite, setCopyingRoomInvite] = useState(false);
+
+  const handleCopyRoomInvite = async () => {
+    if (!room) return;
+
+    setCopyingRoomInvite(true);
+    try {
+      const shareUrl = new URL(`/join/${room.inviteToken}`, window.location.origin).toString();
+      await navigator.clipboard.writeText(shareUrl);
+      toast().success(t("header.roomInviteCopied"));
+    } catch (error) {
+      toast().error(
+        error instanceof Error ? error.message : t("header.roomInviteCopyFailed"),
+      );
+    } finally {
+      setCopyingRoomInvite(false);
+    }
+  };
 
   return (
     <header className="chat-header">
+      <ConnectionNotifications />
       <div className="header-left">
         <div className="header-brand">
           <span className="header-brand-name">AgentTavern</span>
-          <span className="header-brand-subtitle">
-            {t("header.subtitle")}
-          </span>
+          {room ? (
+            <div className="header-room-line">
+              <span className="header-room-name">{room.name}</span>
+              {connectionStatus === "disconnected" ? (
+                <span className="header-room-status is-disconnected">
+                  {t("header.connectionDisconnected")}
+                </span>
+              ) : null}
+            </div>
+          ) : (
+            <span className="header-brand-subtitle">
+              {t("header.subtitle")}
+            </span>
+          )}
         </div>
       </div>
       <div className="header-right">
-        <ConnectionIndicator />
         {principal && (
           <>
             <button type="button" className="assistant-badge" onClick={() => setAssistantOpen(true)}>
@@ -126,6 +146,15 @@ export function Header() {
         )}
         {self && (
           <>
+            <button
+              type="button"
+              className="assistant-badge"
+              onClick={() => void handleCopyRoomInvite()}
+              disabled={copyingRoomInvite}
+            >
+              <ShareAltOutlined />
+              <span>{copyingRoomInvite ? t("header.copying") : t("header.shareRoom")}</span>
+            </button>
             <button type="button" className="assistant-badge" onClick={() => setLocalAgentOpen(true)}>
               <PlusOutlined />
               <span>{t("header.addLocalAgent")}</span>

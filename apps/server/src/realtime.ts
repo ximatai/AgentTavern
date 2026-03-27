@@ -6,6 +6,7 @@ import { WebSocket } from "ws";
 
 import { db } from "./db/client";
 import { members, principals } from "./db/schema";
+import { now } from "./routes/support";
 
 type ConnectionContext = {
   memberId?: string;
@@ -22,6 +23,29 @@ const principalTokens = new Map<string, { principalId: string; active: boolean }
 function syncPrincipalPresence(principalId: string, status: "online" | "offline"): void {
   db.update(principals).set({ status }).where(eq(principals.id, principalId)).run();
   db.update(members).set({ presenceStatus: status }).where(eq(members.principalId, principalId)).run();
+}
+
+function broadcastLobbyPresenceChanged(
+  changedPrincipalId: string,
+  status: "online" | "offline",
+): void {
+  const serialized = JSON.stringify({
+    type: "lobby.presence.changed",
+    principalId: changedPrincipalId,
+    timestamp: now(),
+    payload: {
+      changedPrincipalId,
+      status,
+    },
+  } satisfies RealtimeEvent);
+
+  for (const sockets of principalSockets.values()) {
+    for (const socket of sockets) {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(serialized);
+      }
+    }
+  }
 }
 
 export function issueWsToken(memberId: string, roomId: string): string {
@@ -102,6 +126,7 @@ export function registerSocket(socket: WebSocket, request: IncomingMessage): boo
     sockets.add(socket);
     socketContexts.set(socket, { principalId });
     syncPrincipalPresence(principalId, "online");
+    broadcastLobbyPresenceChanged(principalId, "online");
 
     socket.on("close", () => {
       const context = socketContexts.get(socket);
@@ -116,6 +141,7 @@ export function registerSocket(socket: WebSocket, request: IncomingMessage): boo
       if (principalSet?.size === 0) {
         principalSockets.delete(context.principalId);
         syncPrincipalPresence(context.principalId, "offline");
+        broadcastLobbyPresenceChanged(context.principalId, "offline");
       }
 
       socketContexts.delete(socket);

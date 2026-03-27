@@ -1,9 +1,14 @@
 import { and, eq, isNull, or } from "drizzle-orm";
 import { Hono } from "hono";
 
+import type { Member } from "@agent-tavern/shared";
+
 import { db } from "../db/client";
 import { agentBindings, localBridges, members } from "../db/schema";
 import { createId, createInviteToken } from "../lib/id";
+import { resolveMemberRuntimeStatus } from "../lib/member-runtime";
+import { toPublicMember } from "../lib/public";
+import { broadcastToRoom } from "../realtime";
 import { now } from "./support";
 
 const bridgeRoutes = new Hono();
@@ -25,6 +30,51 @@ type StoredBridge = {
   createdAt: string;
   updatedAt: string;
 };
+
+function broadcastBindingMemberUpdates(params: {
+  principalId: string | null;
+  privateAssistantId: string | null;
+  bridge: StoredBridge;
+}): void {
+  if (!params.principalId && !params.privateAssistantId) {
+    return;
+  }
+
+  const linkedMembers = db
+    .select()
+    .from(members)
+    .all()
+    .filter((member) => {
+      if (params.principalId && member.principalId === params.principalId) {
+        return true;
+      }
+      if (
+        params.privateAssistantId &&
+        member.sourcePrivateAssistantId === params.privateAssistantId
+      ) {
+        return true;
+      }
+      return false;
+    }) as Member[];
+
+  for (const member of linkedMembers) {
+    broadcastToRoom(member.roomId, {
+      type: "member.updated",
+      roomId: member.roomId,
+      timestamp: now(),
+      payload: {
+        member: toPublicMember(
+          member,
+          resolveMemberRuntimeStatus(
+            member,
+            { bridgeId: params.bridge.id, status: "active" },
+            params.bridge,
+          ),
+        ),
+      },
+    });
+  }
+}
 
 bridgeRoutes.post("/api/bridges/register", async (c) => {
   const body = await c.req.json().catch(() => null);
@@ -290,6 +340,12 @@ bridgeRoutes.post("/api/bridges/:bridgeId/agents/attach", async (c) => {
 
     return c.json({ error: "agent binding attach conflict" }, 409);
   }
+
+  broadcastBindingMemberUpdates({
+    principalId: binding.principalId,
+    privateAssistantId: binding.privateAssistantId,
+    bridge: bridge as StoredBridge,
+  });
 
   return c.json({
     bindingId: binding.id,

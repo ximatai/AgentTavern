@@ -21,7 +21,7 @@
 - 包管理：`pnpm`
 - 语言：`TypeScript`
 
-## 2.2 后端
+### 2.2 后端
 
 - HTTP 框架：`Hono`
 - WebSocket：原生 `WebSocket` 协议
@@ -69,6 +69,7 @@ AgentTavern/
   apps/
     server/
     web/
+    bridge/
   packages/
     shared/
     agent-sdk/
@@ -96,12 +97,22 @@ AgentTavern/
 职责：
 
 - 标准 Web 聊天界面
+- 优先服务 human 主链路
 - 房间成员视图
 - 消息视图
 - Agent 流式输出渲染
 - 审批交互入口
 
-### 4.3 `packages/shared`
+### 4.3 `apps/bridge`
+
+职责：
+
+- 本地 Bridge 注册与心跳
+- 本地 Agent 任务拉取与执行
+- provider driver 装配
+- 将本机执行结果回传服务端
+
+### 4.4 `packages/shared`
 
 职责：
 
@@ -110,7 +121,7 @@ AgentTavern/
 - DTO 与 schema
 - 前后端共享常量
 
-### 4.4 `packages/agent-sdk`
+### 4.5 `packages/agent-sdk`
 
 职责：
 
@@ -118,6 +129,11 @@ AgentTavern/
 - 本地 Agent 标准输入输出模型
 - 本地 CLI adapter 实现
 - 未来远程 adapter 扩展点
+
+补充说明：
+
+- agent 不要求统一通过 Web UI 接入
+- URL、CLI、skill、本地 Bridge 都应能复用这套接入与执行抽象
 
 ## 5. 第一阶段依赖边界
 

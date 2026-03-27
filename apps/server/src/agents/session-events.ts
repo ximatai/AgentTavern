@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 
-import type { AgentSession, Message, RealtimeEvent } from "@agent-tavern/shared";
+import type { AgentSession, Message, RealtimeEvent, SystemMessageData } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
 import { agentSessions, messages } from "../db/schema";
@@ -94,13 +94,14 @@ function createFailureMessage(
   roomId: string,
   agentMemberId: string,
   triggerMessageId: string,
-  content: string,
+  failure: string | SystemMessageData,
 ): Message {
   return createStructuredSystemMessage({
     roomId,
     senderMemberId: agentMemberId,
     messageType: "system_notice",
-    systemData: createAgentFailedSystemData(content),
+    systemData:
+      typeof failure === "string" ? createAgentFailedSystemData(failure) : failure,
     replyToMessageId: triggerMessageId,
     createdAt: now(),
   });
@@ -191,7 +192,10 @@ export function commitSessionMessage(params: {
   return completedSession;
 }
 
-export function failSession(session: AgentSession, error: string): AgentSession {
+export function failSession(
+  session: AgentSession,
+  failure: string | SystemMessageData,
+): AgentSession {
   const endedAt = now();
   const failedSession: AgentSession = {
     ...session,
@@ -210,14 +214,18 @@ export function failSession(session: AgentSession, error: string): AgentSession 
 
   broadcastToRoom(
     session.roomId,
-    createSessionFailedEvent(session.roomId, failedSession, error),
+    createSessionFailedEvent(
+      session.roomId,
+      failedSession,
+      typeof failure === "string" ? failure : failure.detail,
+    ),
   );
 
   const failureMessage = createFailureMessage(
     session.roomId,
     session.agentMemberId,
     session.triggerMessageId,
-    error,
+    failure,
   );
 
   insertMessage(failureMessage);

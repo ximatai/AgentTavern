@@ -1,8 +1,9 @@
 import { useState, useMemo } from "react";
-import { Modal, Input, Button, message, Radio, Select } from "antd";
+import { Modal, Input, Button, Radio, Select } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 
+import { toast } from "../lib/feedback";
 import { useRoomStore } from "../stores/room";
 import { addLocalAgent } from "../api/assistants";
 import type { AgentRoleKind } from "@agent-tavern/shared";
@@ -68,12 +69,12 @@ export function AddLocalAgentModal({ open, onClose }: AddLocalAgentModalProps) {
           inputFormat,
         },
       });
-      message.success(t("localAgent.createSuccess"));
+      toast().success(t("localAgent.createSuccess"));
       await hydrateRoom(room.id);
       handleReset();
       onClose();
     } catch (err) {
-      message.error(err instanceof Error ? err.message : t("localAgent.createFailed"));
+      toast().error(err instanceof Error ? err.message : t("localAgent.createFailed"));
     } finally {
       setSubmitting(false);
     }
@@ -99,7 +100,7 @@ export function AddLocalAgentModal({ open, onClose }: AddLocalAgentModalProps) {
       open={open}
       onCancel={handleClose}
       footer={null}
-      destroyOnClose
+      destroyOnHidden
       width={480}
       className="add-local-agent-modal"
     >

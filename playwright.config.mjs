@@ -22,12 +22,12 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: `rm -rf "${e2eTmpDir}" && PORT=${e2eServerPort} AGENT_TAVERN_DB_PATH="${e2eDbPath}" AGENT_TAVERN_ATTACHMENTS_DIR="${e2eAttachmentsDir}" pnpm --filter @agent-tavern/server db:migrate && PORT=${e2eServerPort} AGENT_TAVERN_DB_PATH="${e2eDbPath}" AGENT_TAVERN_ATTACHMENTS_DIR="${e2eAttachmentsDir}" pnpm dev:server`,
+      command: `rm -rf "${e2eTmpDir}" && PORT=${e2eServerPort} AGENT_TAVERN_DB_PATH="${e2eDbPath}" AGENT_TAVERN_ATTACHMENTS_DIR="${e2eAttachmentsDir}" pnpm --filter @agent-tavern/server db:migrate && PORT=${e2eServerPort} AGENT_TAVERN_DB_PATH="${e2eDbPath}" AGENT_TAVERN_ATTACHMENTS_DIR="${e2eAttachmentsDir}" pnpm --filter @agent-tavern/server exec tsx src/index.ts`,
       url: `http://127.0.0.1:${e2eServerPort}/healthz`,
       reuseExistingServer: false,
     },
     {
-      command: `VITE_DEV_PORT=${e2eWebPort} VITE_API_TARGET="http://127.0.0.1:${e2eServerPort}" VITE_WS_TARGET="ws://127.0.0.1:${e2eServerPort}" pnpm dev:web`,
+      command: `VITE_DEV_PORT=${e2eWebPort} VITE_API_TARGET="http://127.0.0.1:${e2eServerPort}" VITE_WS_TARGET="ws://127.0.0.1:${e2eServerPort}" pnpm --filter @agent-tavern/ui dev`,
       url: `http://127.0.0.1:${e2eWebPort}`,
       reuseExistingServer: false,
     },

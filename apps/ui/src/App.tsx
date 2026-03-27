@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { ConfigProvider, message } from "antd";
+import { App as AntdApp, ConfigProvider } from "antd";
 import { I18nextProvider } from "react-i18next";
 import { useTranslation } from "react-i18next";
 
@@ -28,16 +28,26 @@ import {
   applyThemeCssVars,
   useSystemThemeListener,
 } from "./stores/settings";
+import { setMessageApi } from "./lib/feedback";
+import { usePrincipalStore } from "./stores/principal";
 import { useRoomStore } from "./stores/room";
 import { useRoomWebSocket } from "./hooks/useRoomWebSocket";
 import { usePrincipalWebSocket } from "./hooks/usePrincipalWebSocket";
 import { usePollingSync } from "./hooks/usePollingSync";
 
-// Global message toast duration (matches previous flash timeout)
-message.config({ duration: 2.4 });
+function FeedbackBridge() {
+  const { message } = AntdApp.useApp();
+
+  useEffect(() => {
+    setMessageApi(message);
+  }, [message]);
+
+  return null;
+}
 
 function App() {
   const { t } = useTranslation();
+  const principal = usePrincipalStore((s) => s.principal);
   const room = useRoomStore((s) => s.room);
   const themeId = useSettingsStore((s) => s.themeId);
   const antdThemeConfig = getAntdThemeConfig(themeId);
@@ -50,37 +60,57 @@ function App() {
     applyThemeCssVars(themeId);
   }, [themeId]);
 
+  useEffect(() => {
+    usePrincipalStore.getState().restoreFromStorage();
+  }, []);
+
+  useEffect(() => {
+    const roomStore = useRoomStore.getState();
+
+    if (!principal) {
+      roomStore.reset();
+      return;
+    }
+
+    roomStore.restoreRecentRooms();
+    void roomStore.refreshLobbyPresence();
+    void roomStore.refreshJoinedRooms();
+  }, [principal]);
+
   return (
     <ConfigProvider theme={antdThemeConfig}>
-      <I18nextProvider i18n={i18n}>
-        <ErrorBoundary>
-          <div className="app-shell">
-            <aside className="room-sidebar">
-              <div className="sidebar-brand">
-                <span className="brand-icon">AT</span>
-                <div className="brand-text">
-                  <span className="brand-name">AgentTavern</span>
-                  <span className="brand-subtitle">{t("sidebar.subtitle")}</span>
+      <AntdApp message={{ duration: 2.4 }}>
+        <FeedbackBridge />
+        <I18nextProvider i18n={i18n}>
+          <ErrorBoundary>
+            <div className="app-shell">
+              <aside className="room-sidebar">
+                <div className="sidebar-brand">
+                  <span className="brand-icon">AT</span>
+                  <div className="brand-text">
+                    <span className="brand-name">AgentTavern</span>
+                    <span className="brand-subtitle">{t("sidebar.subtitle")}</span>
+                  </div>
                 </div>
-              </div>
-              <ChatSidebar />
-            </aside>
-            <section className="chat-shell">
-              <Header />
-              <div className="chat-layout">
-                <section className="message-panel">
-                  {room ? <MessageList /> : <HomeStage />}
-                </section>
-                <aside className="member-sidebar">
-                  {room ? <RoomSidebar /> : <HomeSidebar />}
-                </aside>
-              </div>
-              {room ? <InputBar /> : null}
-            </section>
-            <OnlineMembersPanel />
-          </div>
-        </ErrorBoundary>
-      </I18nextProvider>
+                <ChatSidebar />
+              </aside>
+              <section className="chat-shell">
+                <Header />
+                <div className="chat-layout">
+                  <section className="message-panel">
+                    {room ? <MessageList /> : <HomeStage />}
+                  </section>
+                  <aside className="member-sidebar">
+                    {room ? <RoomSidebar /> : <HomeSidebar />}
+                  </aside>
+                </div>
+                {room ? <InputBar /> : null}
+              </section>
+              <OnlineMembersPanel />
+            </div>
+          </ErrorBoundary>
+        </I18nextProvider>
+      </AntdApp>
     </ConfigProvider>
   );
 }

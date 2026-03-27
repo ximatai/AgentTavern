@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Modal, Input, Button, message, Typography } from "antd";
+import { Modal, Input, Button, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
+import { toast } from "../lib/feedback";
 import { useRoomStore } from "../stores/room";
 
 const { Text } = Typography;
@@ -40,10 +41,10 @@ export function RoomModal({ open, onClose }: RoomModalProps) {
     setCreating(true);
     try {
       await createRoom(name);
-      message.success(t("roomModal.createSuccess"));
+      toast().success(t("roomModal.createSuccess"));
       handleClose();
     } catch (err) {
-      message.error(err instanceof Error ? err.message : t("roomModal.createFailed"));
+      toast().error(err instanceof Error ? err.message : t("roomModal.createFailed"));
     } finally {
       setCreating(false);
     }
@@ -55,10 +56,10 @@ export function RoomModal({ open, onClose }: RoomModalProps) {
     setJoining(true);
     try {
       await joinRoom(token);
-      message.success(t("roomModal.joinSuccess"));
+      toast().success(t("roomModal.joinSuccess"));
       handleClose();
     } catch (err) {
-      message.error(err instanceof Error ? err.message : t("roomModal.joinFailed"));
+      toast().error(err instanceof Error ? err.message : t("roomModal.joinFailed"));
     } finally {
       setJoining(false);
     }
@@ -70,7 +71,7 @@ export function RoomModal({ open, onClose }: RoomModalProps) {
       open={open}
       onCancel={handleClose}
       footer={null}
-      destroyOnClose
+      destroyOnHidden
     >
       {/* Section 1: Create room */}
       <div className="room-modal-section">

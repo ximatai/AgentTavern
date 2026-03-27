@@ -14,7 +14,7 @@ const serverBaseUrl = process.env.AGENT_TAVERN_SERVER_URL ?? "http://127.0.0.1:8
 const bridgeName = process.env.AGENT_TAVERN_BRIDGE_NAME ?? "Local Bridge";
 const heartbeatMs = Number(process.env.AGENT_TAVERN_BRIDGE_HEARTBEAT_MS ?? 10_000);
 const pollMs = Number(process.env.AGENT_TAVERN_BRIDGE_POLL_MS ?? 3_000);
-const enableTaskLoop = process.env.AGENT_TAVERN_BRIDGE_ENABLE_TASKS === "true";
+const enableTaskLoop = process.env.AGENT_TAVERN_BRIDGE_ENABLE_TASKS !== "false";
 const bridgeStatePath =
   process.env.AGENT_TAVERN_BRIDGE_STATE_PATH ??
   path.join(os.homedir(), ".agent-tavern", "bridge-state.json");

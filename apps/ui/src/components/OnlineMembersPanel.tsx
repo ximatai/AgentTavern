@@ -2,8 +2,8 @@ import { useMemo, useState } from "react";
 import { Button, Popover } from "antd";
 import { TeamOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import { message } from "antd";
 
+import { toast } from "../lib/feedback";
 import { useRoomStore } from "../stores/room";
 import { usePrincipalStore } from "../stores/principal";
 import type { LobbyPrincipal } from "../api/principals";
@@ -11,6 +11,7 @@ import type { LobbyPrincipal } from "../api/principals";
 export function OnlineMembersPanel() {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  const [actioningPrincipalId, setActioningPrincipalId] = useState<string | null>(null);
 
   const principal = usePrincipalStore((s) => s.principal);
   const room = useRoomStore((s) => s.room);
@@ -27,22 +28,39 @@ export function OnlineMembersPanel() {
   }, [members]);
 
   const visiblePrincipals = useMemo(() => {
-    return lobbyPrincipals.filter((p) => p.principalId !== principal?.principalId);
-  }, [lobbyPrincipals, principal]);
+    return lobbyPrincipals;
+  }, [lobbyPrincipals]);
 
-  const handleStartDirectRoom = (targetPrincipalId: string) => {
-    setOpen(false);
-    void useRoomStore.getState().startDirectRoom(targetPrincipalId);
+  const handleStartDirectRoom = async (targetPrincipalId: string) => {
+    setActioningPrincipalId(targetPrincipalId);
+    try {
+      await useRoomStore.getState().startDirectRoom(targetPrincipalId);
+      setOpen(false);
+    } catch (error) {
+      toast().error(
+        error instanceof Error ? error.message : t("onlineMembers.startChatFailed"),
+      );
+    } finally {
+      setActioningPrincipalId(null);
+    }
   };
 
-  const handlePullPrincipal = (targetPrincipalId: string) => {
+  const handlePullPrincipal = async (targetPrincipalId: string) => {
     if (!room || !self) return;
-    setOpen(false);
-    void useRoomStore
-      .getState()
-      .pullPrincipal(room.id, self.memberId, self.wsToken, targetPrincipalId)
-      .then(() => message.success(t("onlineMembers.pullSuccess")))
-      .catch(() => message.error(t("onlineMembers.pullFailed")));
+    setActioningPrincipalId(targetPrincipalId);
+    try {
+      await useRoomStore
+        .getState()
+        .pullPrincipal(room.id, self.memberId, self.wsToken, targetPrincipalId);
+      setOpen(false);
+      toast().success(t("onlineMembers.pullSuccess"));
+    } catch (error) {
+      toast().error(
+        error instanceof Error ? error.message : t("onlineMembers.pullFailed"),
+      );
+    } finally {
+      setActioningPrincipalId(null);
+    }
   };
 
   const panelContent = (
@@ -66,7 +84,10 @@ export function OnlineMembersPanel() {
       {visiblePrincipals.length > 0 ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {visiblePrincipals.map((item) => {
-            const inRoom = room && roomPrincipalIds.has(item.principalId);
+            const principalId = item.principalId ?? item.id;
+            const isSelf = principalId === principal?.principalId;
+            const inRoom = room && roomPrincipalIds.has(principalId);
+            const actioning = actioningPrincipalId === principalId;
             return (
               <div
                 key={item.id}
@@ -82,6 +103,7 @@ export function OnlineMembersPanel() {
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontWeight: 600, fontSize: 13, color: "#fff" }}>
                     {item.globalDisplayName}
+                    {isSelf ? ` (${t("onlineMembers.self")})` : ""}
                   </div>
                   <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>
                     {item.kind === "agent"
@@ -89,7 +111,11 @@ export function OnlineMembersPanel() {
                       : `${t("onlineMembers.kindHuman")} · ${item.loginKey}`}
                   </div>
                 </div>
-                {inRoom ? (
+                {isSelf ? (
+                  <Button size="small" disabled>
+                    {t("onlineMembers.selfAction")}
+                  </Button>
+                ) : inRoom ? (
                   <Button size="small" disabled>
                     {t("onlineMembers.alreadyInRoom")}
                   </Button>
@@ -97,7 +123,9 @@ export function OnlineMembersPanel() {
                   <Button
                     size="small"
                     type="primary"
-                    onClick={() => handlePullPrincipal(item.principalId)}
+                    loading={actioning}
+                    disabled={actioning}
+                    onClick={() => void handlePullPrincipal(principalId)}
                   >
                     {t("onlineMembers.pullToRoom")}
                   </Button>
@@ -105,7 +133,9 @@ export function OnlineMembersPanel() {
                   <Button
                     size="small"
                     type="primary"
-                    onClick={() => handleStartDirectRoom(item.principalId)}
+                    loading={actioning}
+                    disabled={actioning}
+                    onClick={() => void handleStartDirectRoom(principalId)}
                   >
                     {t("onlineMembers.startChat")}
                   </Button>

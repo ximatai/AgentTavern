@@ -26,9 +26,12 @@ import {
   rooms,
 } from "../db/schema";
 import { resolveBindingForMember } from "../lib/agent-binding-resolution";
+import { expireStalePendingBridgeTasks } from "../lib/bridge-task-maintenance";
 import { createId } from "../lib/id";
 import { insertMessage } from "../lib/message-records";
 import {
+  createAgentBusySystemData,
+  createBridgeAttachRequiredSystemData,
   createBridgeWaitingSystemData,
   createStructuredSystemMessage,
 } from "../lib/system-messages";
@@ -255,6 +258,8 @@ function createBridgePendingMessage(params: {
 }
 
 async function runAgentSession(sessionId: string): Promise<void> {
+  expireStalePendingBridgeTasks();
+
   const session = db
     .select()
     .from(agentSessions)
@@ -297,6 +302,7 @@ async function runAgentSession(sessionId: string): Promise<void> {
       .where(
         and(
           ne(agentSessions.id, session.id),
+          ne(agentSessions.roomId, session.roomId),
           or(
             eq(agentSessions.status, "pending"),
             eq(agentSessions.status, "waiting_approval"),
@@ -320,7 +326,7 @@ async function runAgentSession(sessionId: string): Promise<void> {
       if (hasSameAssistantRunning) {
         failSession(
           typedSession,
-          `${typedAgent.displayName} is already handling another request in a different room.`,
+          createAgentBusySystemData(typedAgent.displayName, typedAgent.id),
         );
         return;
       }
@@ -374,7 +380,7 @@ async function runAgentSession(sessionId: string): Promise<void> {
     if (!typedBinding.bridgeId || typedBinding.status !== "active") {
       failSession(
         typedSession,
-        `${typedAgent.displayName} is waiting for a local bridge to attach.`,
+        createBridgeAttachRequiredSystemData(typedAgent.displayName, typedAgent.id),
       );
       return;
     }

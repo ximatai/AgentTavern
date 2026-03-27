@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 
 import { createPrincipalSocket, isRealtimeEvent } from "../api/ws";
 import { usePrincipalStore } from "../stores/principal";
+import { useRoomStore } from "../stores/room";
 
 /**
  * Manages the principal WebSocket connection for cross-room events.
@@ -25,7 +26,14 @@ export function usePrincipalWebSocket() {
       principal.principalId,
       principal.principalToken,
     );
+    let disposed = false;
     socketRef.current = socket;
+
+    socket.addEventListener("open", () => {
+      if (disposed) {
+        socket.close();
+      }
+    });
 
     socket.addEventListener("message", (event) => {
       let raw: unknown;
@@ -38,12 +46,27 @@ export function usePrincipalWebSocket() {
 
       if (raw.type === "private_assistants.changed") {
         usePrincipalStore.getState().markPrivateAssetsChanged();
+        return;
+      }
+
+      if (raw.type === "rooms.changed") {
+        void useRoomStore.getState().refreshJoinedRooms();
+        return;
+      }
+
+      if (raw.type === "lobby.presence.changed") {
+        void useRoomStore.getState().refreshLobbyPresence();
       }
     });
 
     return () => {
-      socket.close();
-      socketRef.current = null;
+      disposed = true;
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.close();
+      }
+      if (socketRef.current === socket) {
+        socketRef.current = null;
+      }
     };
   }, [principal]);
 

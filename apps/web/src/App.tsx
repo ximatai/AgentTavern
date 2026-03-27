@@ -695,8 +695,10 @@ function buildOwnerTree(members: PublicMember[]): Array<{
 
 function App() {
   const [roomName, setRoomName] = useState("策略室");
+  const [principalKind, setPrincipalKind] = useState<"human" | "agent">("human");
   const [loginKey, setLoginKey] = useState("aruis@example.com");
   const [globalDisplayName, setGlobalDisplayName] = useState("阿南");
+  const [principalBackendThreadId, setPrincipalBackendThreadId] = useState("");
   const [inviteInput, setInviteInput] = useState("");
   const [messageInput, setMessageInput] = useState("");
   const [replyTargetId, setReplyTargetId] = useState<string | null>(null);
@@ -780,13 +782,11 @@ function App() {
 
     try {
       const parsed = JSON.parse(cached) as PrincipalSession;
-      if (parsed.kind !== "human") {
-        window.localStorage.removeItem(PRINCIPAL_STORAGE_KEY);
-        return;
-      }
       setPrincipal(parsed);
+      setPrincipalKind(parsed.kind);
       setLoginKey(parsed.loginKey);
       setGlobalDisplayName(parsed.globalDisplayName);
+      setPrincipalBackendThreadId(parsed.backendThreadId ?? "");
     } catch {
       window.localStorage.removeItem(PRINCIPAL_STORAGE_KEY);
     }
@@ -805,8 +805,10 @@ function App() {
     function handlePrincipalRefresh(event: Event): void {
       const nextPrincipal = (event as CustomEvent<PrincipalSession>).detail;
       setPrincipal(nextPrincipal);
+      setPrincipalKind(nextPrincipal.kind);
       setLoginKey(nextPrincipal.loginKey);
       setGlobalDisplayName(nextPrincipal.globalDisplayName);
+      setPrincipalBackendThreadId(nextPrincipal.backendThreadId ?? "");
     }
 
     window.addEventListener(PRINCIPAL_REFRESH_EVENT, handlePrincipalRefresh);
@@ -1266,16 +1268,22 @@ function App() {
   async function ensurePrincipal(): Promise<PrincipalSession> {
     const trimmedLoginKey = loginKey.trim();
     const trimmedGlobalDisplayName = globalDisplayName.trim();
+    const trimmedBackendThreadId = principalBackendThreadId.trim();
 
     if (!trimmedLoginKey || !trimmedGlobalDisplayName) {
-      throw new Error("请先填写邮箱和全局昵称");
+      throw new Error(principalKind === "agent" ? "请先填写智能体标识和显示名" : "请先填写邮箱和全局昵称");
+    }
+
+    if (principalKind === "agent" && !trimmedBackendThreadId) {
+      throw new Error("请先填写 Codex thread id");
     }
 
     if (
       principal &&
-      principal.kind === "human" &&
+      principal.kind === principalKind &&
       principal.loginKey === trimmedLoginKey &&
-      principal.globalDisplayName === trimmedGlobalDisplayName
+      principal.globalDisplayName === trimmedGlobalDisplayName &&
+      (principal.kind !== "agent" || principal.backendThreadId === trimmedBackendThreadId)
     ) {
       return principal;
     }
@@ -1283,11 +1291,11 @@ function App() {
     const nextPrincipal = await request<PrincipalSession>("/api/principals/bootstrap", {
       method: "POST",
       body: JSON.stringify({
-        kind: "human",
+        kind: principalKind,
         loginKey: trimmedLoginKey,
         globalDisplayName: trimmedGlobalDisplayName,
-        backendType: null,
-        backendThreadId: null,
+        backendType: principalKind === "agent" ? "codex_cli" : null,
+        backendThreadId: principalKind === "agent" ? trimmedBackendThreadId : null,
       }),
     });
 
@@ -1303,7 +1311,11 @@ function App() {
       const activePrincipal = await ensurePrincipal();
       setPrincipal(activePrincipal);
       setStatusText("身份已登记");
-      setFlashText(`已登记为人类一等公民：${activePrincipal.globalDisplayName}`);
+      setFlashText(
+        activePrincipal.kind === "agent"
+          ? `已登记为智能体一等公民：${activePrincipal.globalDisplayName}`
+          : `已登记为人类一等公民：${activePrincipal.globalDisplayName}`,
+      );
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : "身份登记失败");
       setStatusText("登记失败");
@@ -1313,6 +1325,7 @@ function App() {
   function handleLogoutPrincipal(): void {
     socketRef.current?.close();
     setPrincipal(null);
+    setPrincipalKind("human");
     setRoom(null);
     setSelf(null);
     setMembers([]);
@@ -1321,6 +1334,7 @@ function App() {
     setStreams({});
     setSessionSnapshots({});
     setSessionActors({});
+    setPrincipalBackendThreadId("");
     setStatusText("未连接");
     setFlashText("已退出当前身份");
     setShowAccountPanel(false);
@@ -2096,11 +2110,14 @@ function App() {
     () => new Set(members.map((member) => member.sourcePrivateAssistantId).filter(Boolean)),
     [members],
   );
-  const loginKeyLabel = "邮箱";
-  const loginKeyPlaceholder = "用于恢复身份";
+  const loginKeyLabel = principalKind === "agent" ? "智能体标识" : "邮箱";
+  const loginKeyPlaceholder =
+    principalKind === "agent" ? "例如 agent:finance-bot" : "用于恢复身份";
   const principalStatusLine = principal
-    ? `当前已登记为人类一等公民：${principal.globalDisplayName}`
-    : "首次进入需要先登记人类身份";
+    ? principal.kind === "agent"
+      ? `当前已登记为智能体一等公民：${principal.globalDisplayName}`
+      : `当前已登记为人类一等公民：${principal.globalDisplayName}`
+    : "首次进入需要先登记身份";
   const joinedRooms = useMemo<Array<RecentRoomRecord & { isCurrent: boolean }>>(() => {
     const items = recentRooms.map((item) => ({
       ...item,
@@ -2642,7 +2659,7 @@ function App() {
                   <p className="eyebrow">进入方式</p>
                   <h2>先登记身份，再开始聊天或进入已有聊天室</h2>
                   <p>
-                    这是一个局域网协作聊天室。你可以先登记为人类或智能体身份，然后：
+                    这是一个局域网协作聊天室。你可以先登记人类或智能体身份，再通过统一入口进入协作：
                   </p>
                   <div className="home-bullet-list">
                     <span>新建一个聊天室并立即进入</span>
@@ -2834,7 +2851,7 @@ function App() {
                         <span className="collab-state-pill collab-state-pill-warning">第一步</span>
                       </div>
                       <strong>先登记你的身份</strong>
-                      <p>支持人类和智能体两种身份。完成登记后，你就可以开始聊天、进入房间或管理私有助理。</p>
+                      <p>支持人类和智能体两种身份。人类用邮箱登记，智能体用标识和 Codex thread id 登记。</p>
                     </article>
                     <article className="collab-state-card">
                       <div className="collab-state-head">
@@ -3105,6 +3122,16 @@ function App() {
               </button>
             </div>
             <label>
+              <span>身份类型</span>
+              <select
+                value={principalKind}
+                onChange={(event) => setPrincipalKind(event.target.value as "human" | "agent")}
+              >
+                <option value="human">人类</option>
+                <option value="agent">智能体</option>
+              </select>
+            </label>
+            <label>
               <span>{loginKeyLabel}</span>
               <input
                 value={loginKey}
@@ -3119,6 +3146,16 @@ function App() {
                 onChange={(event) => setGlobalDisplayName(event.target.value)}
               />
             </label>
+            {principalKind === "agent" ? (
+              <label>
+                <span>Codex Thread ID</span>
+                <input
+                  value={principalBackendThreadId}
+                  onChange={(event) => setPrincipalBackendThreadId(event.target.value)}
+                  placeholder="例如 thread_agent_principal_finance"
+                />
+              </label>
+            ) : null}
             <div className="floating-panel-actions">
               <button type="button" className="btn-primary" onClick={() => void handleBootstrapPrincipal()}>
                 {principal ? "保存身份" : "登录"}

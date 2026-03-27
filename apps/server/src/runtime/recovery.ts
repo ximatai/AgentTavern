@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import type { Approval, Message } from "@agent-tavern/shared";
 
 import { db, sqlite } from "../db/client";
+import { expireStalePendingBridgeTasks } from "../lib/bridge-task-maintenance";
 import { cleanupExpiredDraftAttachments } from "../lib/message-attachments";
 import { insertMessage } from "../lib/message-records";
 import {
@@ -20,12 +21,14 @@ export function recoverRuntimeState(): {
   rejectedSessions: number;
   systemMessages: number;
   expiredDraftAttachments: number;
+  expiredBridgeTasks: number;
 } {
   const pendingApprovals = db.select().from(approvals).where(eq(approvals.status, "pending")).all();
   const expiredDraftAttachments = cleanupExpiredDraftAttachments();
+  const expiredBridgeTasksResult = expireStalePendingBridgeTasks();
 
-  let rejectedSessions = 0;
-  let systemMessages = 0;
+  let rejectedSessions = expiredBridgeTasksResult.failedSessions;
+  let systemMessages = expiredBridgeTasksResult.failedSessions;
 
   for (const approvalRow of pendingApprovals) {
     const approval = approvalRow as Approval;
@@ -90,5 +93,6 @@ export function recoverRuntimeState(): {
     rejectedSessions,
     systemMessages,
     expiredDraftAttachments,
+    expiredBridgeTasks: expiredBridgeTasksResult.expiredTasks,
   };
 }

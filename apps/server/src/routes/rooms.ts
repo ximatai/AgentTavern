@@ -9,7 +9,13 @@ import { createId, createInviteToken } from "../lib/id";
 import { resolveBindingForPrincipal } from "../lib/agent-binding-resolution";
 import { resolveMemberRuntimeStatus } from "../lib/member-runtime";
 import { toPublicMember } from "../lib/public";
-import { broadcastToRoom, issueWsToken, verifyPrincipalToken, verifyWsToken } from "../realtime";
+import {
+  broadcastToPrincipal,
+  broadcastToRoom,
+  issueWsToken,
+  verifyPrincipalToken,
+  verifyWsToken,
+} from "../realtime";
 import { isUniqueConstraintError, isValidDisplayName, now } from "./support";
 
 const roomRoutes = new Hono();
@@ -167,14 +173,59 @@ roomRoutes.post("/api/rooms", async (c) => {
   });
 });
 
+roomRoutes.get("/api/me/rooms", (c) => {
+  const principalId = c.req.query("principalId")?.trim() ?? "";
+  const principalToken = c.req.query("principalToken")?.trim() ?? "";
+
+  if (!principalId || !principalToken) {
+    return c.json({ error: "principalId and principalToken are required" }, 400);
+  }
+
+  if (!verifyPrincipalToken(principalToken, principalId)) {
+    return c.json({ error: "invalid principal token" }, 403);
+  }
+
+  const joinedMembers = db
+    .select()
+    .from(members)
+    .where(eq(members.principalId, principalId))
+    .all() as Member[];
+
+  const joinedRoomIds = Array.from(new Set(joinedMembers.map((member) => member.roomId)));
+  const joinedRooms = joinedRoomIds
+    .map((roomId) => db.select().from(rooms).where(eq(rooms.id, roomId)).get() as Room | undefined)
+    .filter(Boolean)
+    .sort((a, b) => b!.createdAt.localeCompare(a!.createdAt))
+    .map((room) => ({
+      id: room!.id,
+      name: room!.name,
+      inviteToken: room!.inviteToken,
+      createdAt: room!.createdAt,
+    }));
+
+  return c.json({ rooms: joinedRooms });
+});
+
 roomRoutes.post("/api/direct-rooms", async (c) => {
   const body = await c.req.json().catch(() => null);
   const actorPrincipalId =
-    typeof body?.actorPrincipalId === "string" ? body.actorPrincipalId.trim() : "";
+    typeof body?.actorPrincipalId === "string"
+      ? body.actorPrincipalId.trim()
+      : typeof body?.principalId === "string"
+        ? body.principalId.trim()
+        : "";
   const actorPrincipalToken =
-    typeof body?.actorPrincipalToken === "string" ? body.actorPrincipalToken.trim() : "";
+    typeof body?.actorPrincipalToken === "string"
+      ? body.actorPrincipalToken.trim()
+      : typeof body?.principalToken === "string"
+        ? body.principalToken.trim()
+        : "";
   const peerPrincipalId =
-    typeof body?.peerPrincipalId === "string" ? body.peerPrincipalId.trim() : "";
+    typeof body?.peerPrincipalId === "string"
+      ? body.peerPrincipalId.trim()
+      : typeof body?.targetPrincipalId === "string"
+        ? body.targetPrincipalId.trim()
+        : "";
 
   if (!actorPrincipalId || !actorPrincipalToken || !peerPrincipalId) {
     return c.json({ error: "actorPrincipalId, actorPrincipalToken and peerPrincipalId are required" }, 400);
@@ -217,6 +268,16 @@ roomRoutes.post("/api/direct-rooms", async (c) => {
     }
 
     const wsToken = issueWsToken(actorMember.id, reusable.id);
+
+    broadcastToPrincipal(peerPrincipalId, {
+      type: "rooms.changed",
+      principalId: peerPrincipalId,
+      timestamp: now(),
+      payload: {
+        reason: "room_joined",
+        roomId: reusable.id,
+      },
+    });
 
     return c.json({
       room: reusable,
@@ -274,6 +335,16 @@ roomRoutes.post("/api/direct-rooms", async (c) => {
   db.insert(members).values([actorMember, peerMember]).run();
 
   const wsToken = issueWsToken(actorMember.id, room.id);
+
+  broadcastToPrincipal(peerPrincipalId, {
+    type: "rooms.changed",
+    principalId: peerPrincipalId,
+    timestamp: now(),
+    payload: {
+      reason: "direct_room_created",
+      roomId: room.id,
+    },
+  });
 
   return c.json({
     room,

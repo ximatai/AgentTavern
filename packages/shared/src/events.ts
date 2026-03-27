@@ -99,6 +99,24 @@ export type PrincipalEvent =
       payload: {
         reason: "invite_created" | "invite_accepted" | "assistant_deleted";
       };
+    }
+  | {
+      type: "rooms.changed";
+      principalId: string;
+      timestamp: string;
+      payload: {
+        reason: "room_joined" | "direct_room_created";
+        roomId: string;
+      };
+    }
+  | {
+      type: "lobby.presence.changed";
+      principalId: string;
+      timestamp: string;
+      payload: {
+        changedPrincipalId: string;
+        status: "online" | "offline";
+      };
     };
 
 export type RealtimeEvent =

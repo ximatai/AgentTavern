@@ -4,6 +4,7 @@ import type { PublicMember, Room } from "@agent-tavern/shared";
 import {
   createRoom as createRoomAPI,
   createDirectRoom as createDirectRoomAPI,
+  getJoinedRooms as getJoinedRoomsAPI,
   getRoom,
   getRoomMembers,
   getRoomMessages,
@@ -57,7 +58,7 @@ interface RoomActions {
   startDirectRoom: (targetPrincipalId: string) => Promise<JoinResult>;
   pullPrincipal: (
     roomId: string,
-    memberId: string,
+    actorMemberId: string,
     wsToken: string,
     targetPrincipalId: string,
   ) => Promise<JoinResult>;
@@ -65,12 +66,45 @@ interface RoomActions {
   addOrUpdateMember: (member: PublicMember) => void;
   removeMember: (memberId: string) => void;
   refreshLobbyPresence: () => Promise<void>;
+  refreshJoinedRooms: () => Promise<void>;
   restoreRecentRooms: () => void;
   persistRecentRooms: () => void;
   reset: () => void;
 }
 
 type RoomStore = RoomState & RoomActions;
+
+function rememberRoom(
+  current: RecentRoomRecord[],
+  room: Pick<Room, "id" | "name" | "inviteToken"> | null,
+): RecentRoomRecord[] {
+  if (!room) {
+    return current;
+  }
+
+  return mergeRecentRoom(current, {
+    roomId: room.id,
+    name: room.name,
+    inviteToken: room.inviteToken,
+  });
+}
+
+function mergeJoinedRooms(
+  current: RecentRoomRecord[],
+  joinedRooms: Array<{ id: string; name: string; inviteToken: string; createdAt: string }>,
+): RecentRoomRecord[] {
+  let next = [...current];
+  for (const room of joinedRooms) {
+    if (next.some((item) => item.roomId === room.id)) continue;
+    next.push({
+      roomId: room.id,
+      name: room.name,
+      inviteToken: room.inviteToken,
+      visitedAt: room.createdAt,
+    });
+  }
+  return sortRecentRooms(next).slice(0, MAX_RECENT_ROOMS);
+}
 
 export const useRoomStore = create<RoomStore>()((set, get) => ({
   room: null,
@@ -128,6 +162,10 @@ export const useRoomStore = create<RoomStore>()((set, get) => ({
 
     await get().hydrateRoom(joinResult.roomId);
     set({ self: joinResult });
+    set((state) => ({
+      recentRooms: rememberRoom(state.recentRooms, get().room),
+    }));
+    get().persistRecentRooms();
 
     return joinResult;
   },
@@ -144,6 +182,10 @@ export const useRoomStore = create<RoomStore>()((set, get) => ({
 
     await get().hydrateRoom(joinResult.roomId);
     set({ self: joinResult });
+    set((state) => ({
+      recentRooms: rememberRoom(state.recentRooms, get().room),
+    }));
+    get().persistRecentRooms();
 
     return joinResult;
   },
@@ -157,9 +199,9 @@ export const useRoomStore = create<RoomStore>()((set, get) => ({
     if (!principal) throw new Error("Not authenticated");
 
     const result = await createDirectRoomAPI({
-      principalId: principal.principalId,
-      principalToken: principal.principalToken,
-      targetPrincipalId,
+      actorPrincipalId: principal.principalId,
+      actorPrincipalToken: principal.principalToken,
+      peerPrincipalId: targetPrincipalId,
     });
 
     await get().hydrateRoom(result.room.id);
@@ -179,11 +221,11 @@ export const useRoomStore = create<RoomStore>()((set, get) => ({
 
   pullPrincipal: async (
     roomId: string,
-    memberId: string,
+    actorMemberId: string,
     wsToken: string,
     targetPrincipalId: string,
   ) => {
-    return pullPrincipalAPI(roomId, memberId, wsToken, targetPrincipalId);
+    return pullPrincipalAPI(roomId, actorMemberId, wsToken, targetPrincipalId);
   },
 
   refreshMembers: async () => {
@@ -215,6 +257,24 @@ export const useRoomStore = create<RoomStore>()((set, get) => ({
       set({ lobbyPrincipals: payload.principals });
     } catch {
       set({ lobbyPrincipals: [] });
+    }
+  },
+
+  refreshJoinedRooms: async () => {
+    const principal = usePrincipalStore.getState().principal;
+    if (!principal) {
+      set({ recentRooms: [] });
+      return;
+    }
+
+    try {
+      const payload = await getJoinedRoomsAPI(principal.principalId, principal.principalToken);
+      set((state) => ({
+        recentRooms: mergeJoinedRooms(state.recentRooms, payload.rooms),
+      }));
+      get().persistRecentRooms();
+    } catch {
+      // Ignore transient failures.
     }
   },
 

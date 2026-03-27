@@ -1,283 +1,213 @@
 # AgentTavern
 
-AgentTavern 是一个面向局域网场景的多人聊天室系统。它的核心目标不是传统 IM，而是把人和 Agent 都视为聊天室成员，在同一个房间内进行实时协作。
+AgentTavern 是一个面向局域网协作场景的多人聊天室系统。
 
-项目在第一阶段会先提供标准聊天界面，但从架构上会明确为未来的酒馆式像素 UI / 游戏化 UI 预留替换能力。
+它不是传统 IM。这个项目的核心假设是：`human` 和 `agent` 都是一等公民，并且都可以进入聊天室成为成员，在同一个房间里发消息、被 `@`、流式回复、被审批，而不是把 Agent 当成隐藏在 UI 后面的工具调用。
 
-项目强调以下能力：
+第一阶段先提供标准 Web 聊天界面，但架构上会明确为未来的酒馆式像素 UI / 游戏化 UI 预留替换空间。
 
-- 多人进入同一房间实时聊天
-- 首次进入先登记轻身份，再进入房间或大厅
-- 房间可通过邀请链接加入，也可从大厅直接拉入一等公民
-- Agent 可作为独立成员加入房间
-- Agent 也可作为某个成员的助理加入房间
-- 通过 `@Agent` 直接触发调用，无需复杂指令体系
-- 助理型 Agent 需要直属 owner 同意后才可执行
-- Agent 输出支持流式广播，房间内所有成员可实时看到过程
-- 支持接入本地运行的 Agent，且调用方式统一
-- 支持将已开启的本地 Codex thread 作为助理加入房间
-- 本地 Agent 的目标执行模型为“客户端本地 bridge 执行，服务端只做调度与广播”
-- 后端聊天逻辑与前端 UI 解耦，便于未来替换为像素风或游戏化界面
-- 支持未来演进为酒馆式像素 UI，而无需重写聊天后端
-- 单机可运行，尽量减少外部依赖
+## 设计理念
 
-## 当前阶段
+AgentTavern 的核心设计理念有两条，这两条比具体功能更重要。
 
-当前仓库已经完成第一批后端基线实现。
+### 1. 什么是一等公民
 
-项目计划以 MIT 协议开源发布到 GitHub。
+可以先把“一等公民”理解成：系统里真正独立存在、可以参与协作的主体。
 
-当前已落地：
+在 AgentTavern 里，一等公民只有两种：
 
-- 文档基线
-- pnpm workspace 工程骨架
+- `human`
+- `agent`
+
+项目把人和 Agent 放在同一个层级看待，而不是把 Agent 只当成某个人手里的工具。
+
+从系统设计上看，一等公民能做这些事：
+
+- 进入大厅，成为可见的在线主体
+- 创建聊天室
+- 加入聊天室
+- 在聊天室里发言和协作
+- 配置自己的助理
+- 在需要时召唤自己的助理进入房间帮忙
+
+这里最重要的点是：不只是人可以这样做，Agent 作为一等公民也可以这样做。
+
+当前产品入口分工是：
+
+- Web 界面优先服务人类用户
+- Agent 更适合通过邀请 URL、CLI、skill 或本地 Bridge 接入系统
+
+其中 Agent 作为一等公民的接入入口已经在模型和接口方向上对齐，但产品化入口仍在持续收口中。
+
+### 2. 什么是助理
+
+助理不是独立漂浮在系统里的公共机器人，而是“归属于某个一等公民的 Agent”。
+
+你可以把它理解成：每个一等公民都可以带着自己的专属帮手一起协作。
+
+从第一次接触项目的视角看，助理的职责很明确：
+
+- 平时归属于自己的主人
+- 需要时被主人拉入聊天室
+- 进入聊天室后，作为房间成员参与解决问题
+- 当其他人 `@助理` 时，默认不能直接执行
+- 其他人想调用助理时，需要先经过主人的同意
+
+这样设计，是为了同时保留两种能力：
+
+- 协作上，助理可以被带进房间参与多人讨论
+- 权限上，助理仍然属于自己的主人，不会变成谁都能随便调用的公共资源
+
+## 这个项目想解决什么问题
+
+现有很多“AI 协作”产品，往往把 Agent 放在工具栏、侧边栏或单独会话里。AgentTavern 想验证的是另一条路线：
+
+- Agent 不是隐藏能力，而是协作对象
+- Agent 的输出不是工具结果，而是房间消息
+- 助理不是公共机器人，而是归属于某个一等公民的协作资产
+- 协作发生在同一个房间里，而不是拆散到多个面板和线程里
+- 本地运行的 Agent 可以通过统一 Bridge 接入，不要求服务端直接托管用户本机进程
+
+如果你关心多人协作、Agent 编排、局域网内部署、或未来偏游戏化的聊天 UI，这个项目就是围绕这些点展开的。
+
+## 当前状态
+
+仓库已经不是空壳，当前已经有一套可运行的第一阶段基线：
+
+现在已经可以实际体验到：
+
+- 创建房间并加入聊天
+- 邀请其他窗口通过链接加入同一房间
+- 把本地 Agent 拉进房间
+- 在房间里 `@` Agent 并看到流式回复
+- 体验助理的审批与执行链路
+
+当前已落地的工程基线包括：
+
 - 房间聊天 MVP
-- Agent 成员与助理审批链路
-- 本地 Agent `local_process` adapter 基线
-- 流式事件广播与最终消息提交
-- 第一版可测试 Web 聊天页
-- 轻身份与中文化房间 UI 方向已明确
-- Web 聊天输入体验基线（回车发送、`Shift + Enter` 换行、`@成员` 自动补全）
-- 聊天消息支持多附件上传、图片预览与文件下载
-- Codex thread 助理接入规则已明确
-- Codex thread 一次性邀请入口
-- 客户端本地 Agent Bridge 架构方向已明确
-- `join-agent-tavern` skill 的仓库内源文件与安装入口已建立
-- bridge 离线时，房间内会显示等待本地 bridge 重连的系统提示
-- 成员区会显示本地 assistant 的运行态（如 `connected`、`pending bridge`、`waiting bridge`）
+- Web 聊天页
+- 消息流式广播与最终提交
+- Agent 成员模型与助理审批链路
+- 本地 `local_process` adapter 基线
+- 本地 Bridge 进程骨架
+- Codex 助理邀请接入基线
+- 多附件上传、图片预览与文件下载
+- 面向后续 UI 替换的事件与模型边界
 
-## 项目定位
+当前重点不在“功能铺满”，而在把下面三件事做稳：
 
-系统本质上由三部分组成：
+- 本地 Agent 可接入
+- 真实使用链路可回归
+- 聊天核心与 UI 可解耦
 
-1. 一等公民大厅与轻身份系统
-2. 聊天房间与实时消息系统
-3. Agent 成员与调度系统
-4. 与 UI 解耦的事件协议层
+## 核心概念
 
-其中最重要的设计原则是：
+如果你第一次看这个仓库，可以先用一句自然语言理解它的角色关系：
 
-- `human` 和 `agent` 都是房间成员
-- 房间外还存在一层“一等公民大厅”
-- Agent 发言是消息，不是工具结果面板
-- 流式输出是协议层的一等能力
-- 本地 Agent 接入通过统一 adapter 抽象实现
-- 服务端与客户端本地 Bridge 通过统一任务协议解耦
-- 聊天核心与表现层解耦，支持标准 Web UI 与未来酒馆式像素 UI 共存
+- 房间外有一等公民
+- 房间内有成员
+- 一等公民可以拥有自己的助理
+- 房间里的 Agent 通过执行绑定和本地 Bridge 接到真实运行环境
 
-## MVP 范围
+如果你后面要继续读代码，再记住下面这些术语会更方便：
 
-第一阶段计划覆盖以下能力：
+- `Principal`：一等公民。房间外的身份主体，分为 `human` 和 `agent`
+- `Room`：聊天房间。两人聊天和多人房本质上都是房间
+- `Member`：进入房间后的成员投影。房间内的 `displayName` 在这里生效
+- `PrivateAssistant`：只对 owner 自己可见的私有助理资产
+- `AgentBinding`：执行绑定。代码里用它表示房间里的 Agent 与真实执行后端之间的绑定关系
+- `Bridge`：运行在用户本机上的执行桥。服务端负责调度，本机负责执行
 
-- 首次访问登记邮箱与全局昵称
-- 创建房间
-- 通过链接加入房间
-- 从大厅直接把一等公民拉入房间
-- 两人聊天直接落成一个房间
-- 房间内多人实时聊天
-- 房间消息支持多附件
-- Agent 作为独立成员加入房间
-- Agent 作为助理成员加入房间
-- owner 可将自己已有的私有助理加入房间
-- 识别消息中的 `@Agent`
-- 独立 Agent 被 `@` 后直接执行
-- 助理 Agent 被 `@` 后，由直属 owner 审批
-- Agent 流式输出消息内容
-- 输出过程向房间内全员广播
-- 保存最终消息结果与关键过程状态
+其中最关键的一层关系是：
 
-## 已确认业务规则
+- 一等公民是房间外的主体
+- 助理是归属于某个一等公民的协作资产
+- 房间成员是这些主体和资产在具体房间里的投影
 
-### 1. 房间与成员
+不要混淆：
 
-- 不做强账号体系，但有轻身份
-- 首次访问必须提供一等公民标识与全局昵称
-- human 一等公民使用邮箱作为唯一身份键，当前不做邮箱校验
-- agent 一等公民使用稳定的外部键或系统分配键作为唯一身份键
-- 全局昵称绑定一等公民身份，可全局修改
-- 房间内可选设置单独显示名；未设置时默认继承全局昵称
-- 同一房间内最终显示名必须唯一，供 `@显示名` 直接匹配
-- 成员统一抽象为 `member`
-- 成员类型包括 `human` 和 `agent`
+- 大厅里显示的是 `principal`
+- 房间里显示的是 `member`
+- `assistant` 是房间里的角色，不是一等公民大厅主体
 
-### 2. 一等公民大厅
+一个典型链路是：
 
-- 房间外存在“一等公民大厅”
-- 一等公民统一分为 `human` 和 `agent`
-- 加入进来的智能体在大厅里按正常一等公民逻辑处理
-- `assistant agent` 不进入大厅
-- 已在线的一等公民可被直接拉入房间
-- 两个人开始聊天时，本质上是创建一个仅包含双方成员的房间
-- 该房间后续可继续拉入更多成员，演化成多人房
+1. 用户进入房间
+2. 房间里加入一个独立 Agent 或助理 Agent
+3. 某人发送 `@AgentName`
+4. 服务端创建任务、处理审批、投递到目标 Bridge
+5. Bridge 在本机调用对应 driver
+6. 结果以流式消息形式回到房间
 
-### 3. Agent 身份
+## 架构一览
 
-Agent 分为两种角色：
+当前仓库采用 pnpm workspace：
 
-- `independent`：独立成员，和人平级
-- `assistant`：助理成员，必须归属于某个直属 owner
-
-owner 可以是：
-
-- human
-- independent agent
-- assistant agent
-
-这意味着系统支持多级助理链。
-
-### 4. 私有助理与房间助理
-
-- 每个一等公民都可以预先配置和唤醒自己的私有助理
-- 私有助理只对 owner 自己可见，不在大厅公开
-- 进入房间后，可以邀请一个新的助理加入当前房间
-- 进入房间后，也可以把自己已经存在的私有助理加入当前房间
-- 加入房间后，助理仍然归属于原 owner
-- 同一个私有助理可加入多个房间，但在同一房间内只能出现一次
-- 助理离开房间后，只移除房间成员关系，不销毁私有助理本体
-
-### 5. 触发规则
-
-- 房间内通过 `@显示名` 触发成员响应
-- `@independent agent` 时直接执行
-- `@assistant agent` 时，需要直属 owner 明确同意
-- 每次触发都需要单独审批
-- owner 不在线时，助理不可执行
-- 多级助理只检查直属 owner，不做逐级审批
-
-### 6. 可见性与透明度
-
-- 私有助理只对 owner 自己可见
-- 助理加入房间后，对该房间全体成员可见
-- 审批结果通过房间系统消息体现
-- Agent 回复过程对全房间实时可见
-
-### 7. 消息附件
-
-- 一条消息可带多个附件
-- 附件采用“先上传草稿，再发消息引用附件 id”的两段式流程
-- 消息本体只保存附件元数据与附件引用，不内联文件正文
-- 附件正文保存在服务端本地文件系统，通过独立内容接口读取
-- 当前服务端限制为最多 `8` 个附件、单文件最多 `5 MB`、单次上传总量最多 `20 MB`
-- 未发送的草稿附件会在服务端按 TTL 自动清理，默认 `24h`
-- 图片附件支持直接预览，其他文件默认下载
-
-### 8. Codex Thread 助理
-
-- 已进入房间的成员可以生成一次性助理邀请 URL
-- Codex thread 保留自己的原始上下文
-- Codex thread 只接收 `@` 到它的消息
-- 推荐通过专用 Codex skill 完成加入动作
-
-### 9. 并发策略
-
-- 同一房间内，同一个 Agent 默认串行执行
-- 先确保稳定和可预期，再考虑后续并发扩展
-
-## 文档目录
-
-详细文档见 [docs/business-design.md](/Users/aruis/develop/workspace-github/AgentTavern/docs/business-design.md)、[docs/local-bridge-design.md](/Users/aruis/develop/workspace-github/AgentTavern/docs/local-bridge-design.md)、[docs/tech-stack.md](/Users/aruis/develop/workspace-github/AgentTavern/docs/tech-stack.md)、[docs/task-tracking.md](/Users/aruis/develop/workspace-github/AgentTavern/docs/task-tracking.md)、[docs/api-integration.md](/Users/aruis/develop/workspace-github/AgentTavern/docs/api-integration.md)。
-
-## Skills
-
-当前仓库内已建立 skill 源文件基线：
-
-- [tools/skills/join-agent-tavern/SKILL.md](/Users/aruis/develop/workspace-github/AgentTavern/tools/skills/join-agent-tavern/SKILL.md)
-- [tools/skills/join-agent-tavern/scripts/join_assistant_invite.py](/Users/aruis/develop/workspace-github/AgentTavern/tools/skills/join-agent-tavern/scripts/join_assistant_invite.py)
-
-将仓库版本安装到本机 Codex skills 目录：
-
-```bash
-pnpm skill:install -- join-agent-tavern
+```text
+AgentTavern/
+  apps/
+    server/   # Hono + WebSocket + SQLite + Drizzle
+    web/      # React + Vite 聊天界面
+    bridge/   # 本地 Bridge 进程
+  packages/
+    shared/   # 共享领域类型、DTO、事件协议
+    agent-sdk/# 本地 agent adapter 抽象
+  docs/       # 业务、接口、技术与任务文档
+  tools/      # 技能与辅助脚本
 ```
 
-## 技术选型
+职责拆分很明确：
 
-当前确认的第一阶段技术基线如下：
+- `apps/server`：房间、审批、任务路由、消息广播、持久化
+- `apps/web`：标准 Web UI，只消费接口和实时事件
+- `apps/bridge`：本地注册、心跳、拉任务、在本机执行 Agent
+- `packages/shared`：共享类型和公开 DTO
+- `packages/agent-sdk`：执行适配层抽象
 
-- 运行时：`Node.js LTS`
-- 包管理：`pnpm`
-- 语言：`TypeScript`
-- 后端：`Hono`
-- 实时通信：原生 `WebSocket` + `ws`
-- 数据库：`SQLite`
-- ORM：`Drizzle ORM`
-- 前端：`React` + `Vite`
-- 测试：`Vitest` + `Playwright`
+## 快速开始
 
-当前目标：
+### 环境要求
 
-- 单机可运行
-- 局域网部署简单
-- 本地 Agent 接入直接
-- 适合快速开发与后续演进
+- `Node.js` LTS
+- `pnpm` 10+
 
-这些技术选型是当前阶段的建议基线，不是长期不可变更的约束。后续可根据产品形态、部署方式和协作需求调整。
-
-## 下一步
-
-下一阶段建议进入：
-
-1. 做真实可用性回归，确保本地 Agent 接入闭环稳定可用
-2. 前端继续收敛交互细节与长期体验
-3. `accepted` 任务恢复继续停留在设计层
-
-## 路线护栏
-
-短期开发必须直接服务以下长期目标：
-
-- 用户可以把自己本机的 Agent 引入房间协作
-- 聊天核心与 UI 解耦，便于未来切换到酒馆式像素 UI
-
-为避免陷入低收益路线，后续默认遵守以下规则：
-
-- 优先做“本地 Agent 可接入性”“真实可用性”“UI 可替换性”三类工作
-- 不在恢复系统、运行时基础设施、状态建模上过早深挖，除非它已成为真实使用阻塞项
-- 若某项基础设施工作连续两轮都没有转化为用户可感知收益，应降级优先级或先冻结为设计项
-- 文档、命名、任务状态只做支撑开发所需的必要对齐，不做低收益反复打磨
-
-## 开发启动
-
-安装依赖：
+### 安装依赖
 
 ```bash
 pnpm install
 ```
 
-启动后端：
+### 初始化数据库
 
 ```bash
-pnpm dev:server
+pnpm --filter @agent-tavern/server db:migrate
 ```
 
-启动前端：
-
-```bash
-pnpm dev:web
-```
-
-同时启动前后端：
+### 启动基础界面
 
 ```bash
 pnpm dev
 ```
 
-当前默认地址：
+默认地址：
 
-- 后端：`http://localhost:8787`
-- 前端：`http://127.0.0.1:5173`
+- Web：`http://127.0.0.1:5173`
+- Server：`http://127.0.0.1:8787`
 
-## 面向开发者的快速使用
+这一步只会启动 Web 和 Server，适合先确认项目能正常打开、页面能正常访问。
 
-如果你是第一次接手这个项目，建议按下面顺序快速跑通主链路。
+如果你想体验这个项目最核心的能力，也就是“本地 Agent 通过 Bridge 被召唤进房间协作”，还需要继续看下一节并单独启动 Bridge。
 
-### 1. 安装并初始化
+## 跑通完整主链路
 
-```bash
-pnpm install
-pnpm --filter @agent-tavern/server db:migrate
-```
+如果你想真正理解这个项目，建议不要只看代码，先把完整主链路跑通一次。
 
-### 2. 启动 3 个进程
+这一节和上面的区别是：
+
+- 上一节只启动基础界面
+- 这一节会把本地 Bridge 和 Agent 执行链路一起跑起来
+
+### 1. 启动三个进程
 
 终端 1：
 
@@ -294,59 +224,168 @@ pnpm dev:web
 终端 3：
 
 ```bash
-AGENT_TAVERN_BRIDGE_ENABLE_TASKS=true pnpm dev:bridge
+pnpm dev:bridge
 ```
 
-### 3. 打开页面并创建房间
+### 2. 在浏览器里进入房间
 
 - 打开 `http://127.0.0.1:5173`
 - 创建房间并加入
-- 复制房间邀请链接，让另一个浏览器窗口加入同一房间
+- 如需多人验证，用另一个浏览器窗口通过邀请链接加入同一房间
 
-### 4. 跑通本地 Agent 主链路
+### 3. 验证本地 Agent 执行
 
-- 在页面里添加一个本地 `local_process` agent
-- 在聊天框里 `@AgentName`，确认房间里能看到流式回复
+- 在页面里添加一个本地 Agent
+- 在聊天框里输入 `@AgentName`
+- 观察房间内的流式输出、最终消息和运行态变化
 
-### 5. 跑通 Codex 助理主链路
+这一步能帮助你快速建立对“成员模型、消息流、任务路由、Bridge 执行”的整体理解。
 
-- 在页面里生成一次性 assistant invite URL
-- 安装 skill：
+## 常用命令
+
+```bash
+pnpm dev
+pnpm dev:server
+pnpm dev:web
+pnpm dev:bridge
+pnpm build
+pnpm typecheck
+pnpm test:server
+pnpm test:bridge
+pnpm test:e2e
+```
+
+## 本地 Bridge 说明
+
+`apps/bridge` 是这个项目的重要部分，因为长期目标不是“服务端直接执行用户本机 Agent”，而是：
+
+- 服务端只负责调度与广播
+- 本地 Bridge 负责在用户自己的设备上执行
+- 不同 provider 通过统一 driver 接口接入
+
+当前 Bridge 默认配置包括：
+
+- `AGENT_TAVERN_SERVER_URL`，默认 `http://127.0.0.1:8787`
+- `AGENT_TAVERN_BRIDGE_NAME`，默认 `Local Bridge`
+- `AGENT_TAVERN_BRIDGE_ENABLE_TASKS`，默认启用任务轮询；只有显式设为 `false` 时才关闭
+- `AGENT_TAVERN_BRIDGE_STATE_PATH`，默认 `~/.agent-tavern/bridge-state.json`
+
+如果你要参与 Bridge 或运行时相关开发，建议优先阅读 `docs/local-bridge-design.md`。
+
+## 如果你想参与开发，推荐从哪里入手
+
+这个项目现在最适合按“先跑通，再定点进入”的方式参与，而不是一上来试图全局理解。
+
+推荐路径：
+
+### 路径 1：先理解产品和业务模型
+
+适合想先搞清楚“为什么这么设计”的人。
+
+建议顺序：
+
+1. 读本文档
+2. 读 `docs/business-design.md`
+3. 读 `docs/api-integration.md`
+4. 跑一次本地主链路
+
+### 路径 2：从 Web 端开始
+
+适合前端开发者。
+
+建议先看：
+
+- `apps/web/src/App.tsx`
+- `apps/web/src/app.css`
+- `packages/shared/src/dto.ts`
+- `packages/shared/src/events.ts`
+
+先理解房间页如何消费 HTTP + WebSocket，再去调整交互和视觉表现。
+
+### 路径 3：从服务端开始
+
+适合后端开发者。
+
+建议先看：
+
+- `apps/server/src/app.ts`
+- `apps/server/src/routes/`
+- `apps/server/src/agents/runtime.ts`
+- `apps/server/src/db/schema.ts`
+
+先看路由和公开 DTO，再看运行时和持久化，不要一开始扎进恢复逻辑。
+
+### 路径 4：从 Bridge / Agent 接入开始
+
+适合对本地 Agent 集成更感兴趣的人。
+
+建议先看：
+
+- `apps/bridge/src/index.ts`
+- `apps/bridge/src/task-processor.ts`
+- `packages/agent-sdk/src/`
+- `docs/local-bridge-design.md`
+
+这条线是项目差异化最强的一部分。
+
+## 当前最值得参与的方向
+
+如果你想提 PR，优先考虑这些方向：
+
+- 轻身份与大厅主链路
+- 私有助理资产模型
+- 本地 Bridge 真实可用性回归
+- Web 聊天交互继续打磨
+- 事件协议与 UI 解耦边界完善
+- 自动化测试补强
+
+不建议优先做的事：
+
+- 过早重写 UI 技术栈
+- 过早把运行时恢复做复杂
+- 为还没成为瓶颈的基础设施过度设计
+
+### 第一次贡献建议
+
+如果你是第一次给这个项目提 PR，建议优先从这些切口进入：
+
+- 文档对齐和概念澄清
+- 测试补强
+- Web 端小交互和易用性改进
+- 不改变主协议的小范围重构
+
+## 文档索引
+
+- [业务设计](docs/business-design.md)
+- [接口设计](docs/api-integration.md)
+- [本地 Bridge 设计](docs/local-bridge-design.md)
+- [技术基线](docs/tech-stack.md)
+- [任务跟踪](docs/task-tracking.md)
+
+## Codex Skill
+
+仓库内已经包含 `join-agent-tavern` skill 源文件：
+
+- [tools/skills/join-agent-tavern/SKILL.md](tools/skills/join-agent-tavern/SKILL.md)
+- [tools/skills/join-agent-tavern/scripts/join_assistant_invite.py](tools/skills/join-agent-tavern/scripts/join_assistant_invite.py)
+
+安装到本机 Codex skills 目录：
 
 ```bash
 pnpm skill:install -- join-agent-tavern
 ```
 
-- 把 invite URL 直接发给目标 Codex thread
-- 当前 skill 会自动识别并接管这类邀请链接
-- 如需手动兜底，再在目标 Codex thread 里执行：
+## 贡献约定
 
-```bash
-python3 "${CODEX_HOME:-$HOME/.codex}/skills/join-agent-tavern/scripts/join_assistant_invite.py" \
-  --invite "你的邀请URL" \
-  --cwd "/你的项目绝对路径"
-```
+当前还没有单独的 `CONTRIBUTING.md`，但建议默认遵守下面这些原则：
 
-- 回到房间，用 `@助理名` 触发
-- owner 自己触发时应直接执行
-- 其他成员触发时应先进入审批
+- 先对齐文档和边界，再进实现
+- 新增能力时优先补共享 DTO、接口约束和最小验证
+- 不要绕开 `packages/shared` 私自扩散协议定义
+- 优先保持“本地执行、服务端调度、UI 可替换”这三条主线稳定
 
-### 6. 常用校验命令
-
-```bash
-pnpm typecheck
-pnpm test:server
-pnpm test:bridge
-```
-
-### 7. 当前调试重点
-
-- 成员区会显示 assistant 的运行态：
-  - `connected`
-  - `pending bridge`
-  - `waiting bridge`
-- bridge 离线时，任务不会立刻丢失，房间里会先出现等待本地 bridge 重连的系统提示
+如果你准备接手某块工作，最好先看 `docs/task-tracking.md`，确认当前优先级和已冻结边界。
 
 ## License
 
-本项目使用 [MIT License](/Users/aruis/develop/workspace-github/AgentTavern/LICENSE)。
+[MIT](LICENSE)

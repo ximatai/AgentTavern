@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, Input, message } from "antd";
+import { Button, Input } from "antd";
 import type { TextAreaRef } from "antd/es/input/TextArea";
 import { PlusOutlined, SendOutlined } from "@ant-design/icons";
 import type { PublicMember, PublicMessage } from "@agent-tavern/shared";
 import { useTranslation } from "react-i18next";
 
+import { toast } from "../lib/feedback";
 import { useRoomStore } from "../stores/room";
 import { useMessageStore } from "../stores/message";
 
@@ -184,7 +185,7 @@ export function InputBar() {
         fileInputRef.current.value = "";
       }
     } catch (err) {
-      message.error(err instanceof Error ? err.message : t("inputBar.sendFailed"));
+      toast().error(err instanceof Error ? err.message : t("inputBar.sendFailed"));
     } finally {
       setSending(false);
     }
@@ -260,7 +261,7 @@ export function InputBar() {
     const remainingSlots = MAX_ATTACHMENT_COUNT - pendingAttachments.length;
 
     if (remainingSlots <= 0) {
-      message.error(t("inputBar.maxAttachmentsReached"));
+      toast().error(t("inputBar.maxAttachmentsReached"));
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
@@ -271,7 +272,7 @@ export function InputBar() {
     );
 
     if (oversized) {
-      message.error(
+      toast().error(
         t("inputBar.fileTooLarge", {
           name: oversized.name,
           size: formatFileSize(MAX_ATTACHMENT_SIZE_BYTES),
@@ -291,12 +292,12 @@ export function InputBar() {
       });
 
       if (selectedFiles.length > remainingSlots) {
-        message.warning(
+        toast().warning(
           t("inputBar.truncatedAttachments", { count: remainingSlots }),
         );
       }
     } catch (err) {
-      message.error(
+      toast().error(
         err instanceof Error ? err.message : t("inputBar.uploadFailed"),
       );
     } finally {

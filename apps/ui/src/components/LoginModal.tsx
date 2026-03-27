@@ -1,8 +1,9 @@
 import { useState, useCallback, useEffect } from "react";
-import { Modal, Input, Form, message } from "antd";
+import { Modal, Input, Form, Radio } from "antd";
 import { LogoutOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 
+import { toast } from "../lib/feedback";
 import { usePrincipalStore } from "../stores/principal";
 import { useRoomStore } from "../stores/room";
 import { useMessageStore } from "../stores/message";
@@ -18,21 +19,30 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
   const bootstrap = usePrincipalStore((s) => s.bootstrap);
   const logout = usePrincipalStore((s) => s.logout);
   const resetRoom = useRoomStore((s) => s.reset);
+  const refreshLobbyPresence = useRoomStore((s) => s.refreshLobbyPresence);
   const resetMessage = useMessageStore((s) => s.reset);
 
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
 
   const isLoggedIn = !!principal;
+  const selectedKind = Form.useWatch("kind", form) ?? principal?.kind ?? "human";
 
   useEffect(() => {
     if (open && isLoggedIn && principal) {
       form.setFieldsValue({
+        kind: principal.kind,
         globalDisplayName: principal.globalDisplayName,
         loginKey: principal.loginKey,
+        backendThreadId: principal.backendThreadId ?? "",
       });
     } else if (open) {
-      form.resetFields();
+      form.setFieldsValue({
+        kind: "human",
+        loginKey: "",
+        globalDisplayName: "",
+        backendThreadId: "",
+      });
     }
   }, [open, isLoggedIn, principal, form]);
 
@@ -40,18 +50,20 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
     try {
       const values = await form.validateFields();
       setLoading(true);
+      const kind = values.kind as "human" | "agent";
       await bootstrap({
-        kind: "human",
+        kind,
         loginKey: values.loginKey,
         globalDisplayName: values.globalDisplayName,
-        backendType: null,
-        backendThreadId: null,
+        backendType: kind === "agent" ? "codex_cli" : null,
+        backendThreadId: kind === "agent" ? values.backendThreadId : null,
       });
-      message.success(t("login.loginSuccess"));
+      await refreshLobbyPresence();
+      toast().success(t("login.loginSuccess"));
       onClose();
     } catch (err) {
       if (err instanceof Error) {
-        message.error(t("login.loginFailed") + ": " + err.message);
+        toast().error(t("login.loginFailed") + ": " + err.message);
       }
     } finally {
       setLoading(false);
@@ -62,9 +74,10 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
     logout();
     resetRoom();
     resetMessage();
-    message.success(t("login.logoutSuccess"));
+    void refreshLobbyPresence();
+    toast().success(t("login.logoutSuccess"));
     onClose();
-  }, [logout, resetRoom, resetMessage, onClose, t]);
+  }, [logout, resetRoom, resetMessage, refreshLobbyPresence, onClose, t]);
 
   const statusText = isLoggedIn
     ? t("login.statusRegistered", {
@@ -81,7 +94,7 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
       confirmLoading={loading}
       okText={isLoggedIn ? t("login.saveIdentity") : t("login.loginButton")}
       cancelText={t("common.cancel")}
-      destroyOnClose
+      destroyOnHidden
       footer={(_, { OkBtn, CancelBtn }) => (
         <div style={{ display: "flex", justifyContent: "space-between" }}>
           <span>
@@ -105,11 +118,36 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
     >
       <Form form={form} layout="vertical">
         <Form.Item
-          name="loginKey"
-          label={t("login.emailLabel")}
-          rules={[{ required: true, message: t("login.emailRequired") }]}
+          name="kind"
+          label={t("login.identityKindLabel")}
+          rules={[{ required: true, message: t("login.identityKindRequired") }]}
         >
-          <Input placeholder={t("login.emailPlaceholder")} disabled={isLoggedIn} />
+          <Radio.Group disabled={isLoggedIn}>
+            <Radio.Button value="human">{t("login.kindHuman")}</Radio.Button>
+            <Radio.Button value="agent">{t("login.kindAgent")}</Radio.Button>
+          </Radio.Group>
+        </Form.Item>
+        <Form.Item
+          name="loginKey"
+          label={selectedKind === "agent" ? t("login.agentKeyLabel") : t("login.emailLabel")}
+          rules={[
+            {
+              required: true,
+              message:
+                selectedKind === "agent"
+                  ? t("login.agentKeyRequired")
+                  : t("login.emailRequired"),
+            },
+          ]}
+        >
+          <Input
+            placeholder={
+              selectedKind === "agent"
+                ? t("login.agentKeyPlaceholder")
+                : t("login.emailPlaceholder")
+            }
+            disabled={isLoggedIn}
+          />
         </Form.Item>
         <Form.Item
           name="globalDisplayName"
@@ -120,6 +158,18 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
         >
           <Input placeholder={t("login.displayNamePlaceholder")} />
         </Form.Item>
+        {selectedKind === "agent" ? (
+          <Form.Item
+            name="backendThreadId"
+            label={t("login.threadIdLabel")}
+            rules={[{ required: true, message: t("login.threadIdRequired") }]}
+          >
+            <Input
+              placeholder={t("login.threadIdPlaceholder")}
+              disabled={isLoggedIn}
+            />
+          </Form.Item>
+        ) : null}
       </Form>
       <div style={{ color: "#94A3B8", fontSize: 13, marginTop: 8 }}>
         {statusText}

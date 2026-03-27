@@ -33,42 +33,43 @@
   text-overflow: ellipsis;
 }
 
+.header-room-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.header-room-name {
+  font-family: "Inter", sans-serif;
+  font-size: 11px;
+  color: var(--font-tertiary, #64748b);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.header-room-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.header-room-status.is-disconnected {
+  background: rgba(248, 113, 113, 0.14);
+  color: #fca5a5;
+  border: 1px solid rgba(248, 113, 113, 0.26);
+}
+
 .header-right {
   display: flex;
   align-items: center;
   gap: 12px;
   flex-shrink: 0;
-}
-
-/* Connection status */
-.connection-status {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--font-tertiary, #64748b);
-  white-space: nowrap;
-}
-
-.connection-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.connection-dot.connected {
-  background: #34d399;
-  box-shadow: 0 0 4px #34d39980;
-}
-
-.connection-dot.disconnected {
-  background: #f87171;
-  box-shadow: 0 0 4px #f8717180;
-}
-
-.connection-dot.none {
-  background: var(--font-muted, #475569);
 }
 
 /* Assistant badge button */
@@ -189,8 +190,8 @@
 
 /* Responsive */
 @media (max-width: 767px) {
-  .connection-status,
-  .header-brand-subtitle {
+  .header-brand-subtitle,
+  .header-room-line {
     display: none;
   }
 

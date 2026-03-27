@@ -8,13 +8,11 @@ import { useRoomStore } from "../stores/room";
  * broadcast over WebSocket (e.g. bridge attachment updating
  * runtimeStatus from "pending_bridge" to "ready").
  *
- * Two independent intervals:
- *   1. Room members  -- every 10 s when a room is active
- *   2. Lobby presence -- every 10 s when principal is authenticated
+ * Currently only room members are polled. Lobby presence is updated
+ * via principal-scoped realtime events.
  */
 export function usePollingSync() {
   const room = useRoomStore((s) => s.room);
-  const principal = usePrincipalStore((s) => s.principal);
 
   useEffect(() => {
     if (!room) return;
@@ -25,14 +23,4 @@ export function usePollingSync() {
 
     return () => window.clearInterval(id);
   }, [room]);
-
-  useEffect(() => {
-    if (!principal) return;
-
-    const id = window.setInterval(() => {
-      void useRoomStore.getState().refreshLobbyPresence();
-    }, 10_000);
-
-    return () => window.clearInterval(id);
-  }, [principal]);
 }

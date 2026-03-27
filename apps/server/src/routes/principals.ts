@@ -236,6 +236,7 @@ principalRoutes.get("/api/presence/lobby", (c) => {
               );
             })()
           : null,
+      principalId: principal.id,
       id: principal.id,
       kind: principal.kind,
       loginKey: principal.loginKey,

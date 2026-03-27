@@ -77,6 +77,31 @@ const ALERT_STATUS_MAP: Record<SystemMessageStatus, "info" | "success" | "warnin
   error: "error",
 };
 
+function systemTitleKey(kind: string): string | null {
+  switch (kind) {
+    case "agent_failed":
+      return "systemNotice.agentFailed";
+    case "agent_busy":
+      return "systemNotice.agentBusy";
+    case "bridge_attach_required":
+      return "systemNotice.bridgeAttachRequired";
+    case "bridge_waiting":
+      return "systemNotice.bridgeWaiting";
+    case "approval_required":
+      return "systemNotice.approvalRequired";
+    case "approval_granted":
+      return "systemNotice.approvalGranted";
+    case "approval_rejected":
+      return "systemNotice.approvalRejected";
+    case "approval_expired":
+      return "systemNotice.approvalExpired";
+    case "approval_owner_offline":
+      return "systemNotice.ownerUnavailable";
+    default:
+      return null;
+  }
+}
+
 function isImageAttachment(att: MessageAttachment): boolean {
   return att.mimeType.startsWith("image/");
 }
@@ -173,7 +198,13 @@ export function MessageRow({
             <Alert
               type={alertType}
               showIcon
-              message={sysData.title && <strong>{sysData.title}</strong>}
+              message={
+                <strong>
+                  {systemTitleKey(sysData.kind)
+                    ? t(systemTitleKey(sysData.kind)!)
+                    : sysData.title}
+                </strong>
+              }
               description={
                 <div className="system-notice-body">
                   {sysData.detail && <p className="system-notice-detail">{sysData.detail}</p>}

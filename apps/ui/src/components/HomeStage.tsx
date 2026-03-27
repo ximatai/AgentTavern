@@ -39,7 +39,7 @@ export function HomeStage() {
   return (
     <div className="home-stage">
       {/* Hero Card */}
-      <Card className="home-hero-card" bordered={false}>
+      <Card className="home-hero-card" variant="borderless">
         <Text type="secondary" className="home-eyebrow">
           {t("home.eyebrow")}
         </Text>
@@ -53,21 +53,21 @@ export function HomeStage() {
 
       {/* Step Cards */}
       <div className="home-steps-grid">
-        <Card className="home-step-card" bordered={false}>
+        <Card className="home-step-card" variant="borderless">
           <Tag color="warning" className="home-step-badge">
             {t("home.step1Badge")}
           </Tag>
           <Title level={4}>{t("home.step1Title")}</Title>
           <Paragraph type="secondary">{t("home.step1Description")}</Paragraph>
         </Card>
-        <Card className="home-step-card" bordered={false}>
+        <Card className="home-step-card" variant="borderless">
           <Tag color="success" className="home-step-badge">
             {t("home.step2Badge")}
           </Tag>
           <Title level={4}>{t("home.step2Title")}</Title>
           <Paragraph type="secondary">{t("home.step2Description")}</Paragraph>
         </Card>
-        <Card className="home-step-card" bordered={false}>
+        <Card className="home-step-card" variant="borderless">
           <Tag color="cyan" className="home-step-badge">
             {t("home.step3Badge")}
           </Tag>
@@ -78,17 +78,17 @@ export function HomeStage() {
 
       {/* Stats Row */}
       <div className="home-stats-row">
-        <Card className="home-stat-card" bordered={false}>
+        <Card className="home-stat-card" variant="borderless">
           <UserOutlined className="home-stat-icon" />
           <div className="home-stat-value">{lobbyPrincipals.length}</div>
           <Text type="secondary">{t("home.statsOnline")}</Text>
         </Card>
-        <Card className="home-stat-card" bordered={false}>
+        <Card className="home-stat-card" variant="borderless">
           <RobotOutlined className="home-stat-icon" />
           <div className="home-stat-value">{assistantCount}</div>
           <Text type="secondary">{t("home.statsAssistants")}</Text>
         </Card>
-        <Card className="home-stat-card" bordered={false}>
+        <Card className="home-stat-card" variant="borderless">
           <HistoryOutlined className="home-stat-icon" />
           <div className="home-stat-value">{recentRooms.length}</div>
           <Text type="secondary">{t("home.statsRecentRooms")}</Text>

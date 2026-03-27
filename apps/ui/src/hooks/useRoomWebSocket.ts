@@ -45,13 +45,21 @@ export function useRoomWebSocket() {
     }
 
     const socket = createRoomSocket(room.id, self.memberId, self.wsToken);
+    let disposed = false;
     socketRef.current = socket;
 
     socket.addEventListener("open", () => {
+      if (disposed) {
+        socket.close();
+        return;
+      }
       useConnectionStore.getState().setStatus("connected");
     });
 
     socket.addEventListener("close", () => {
+      if (disposed) {
+        return;
+      }
       useConnectionStore.getState().setStatus("disconnected");
     });
 
@@ -68,8 +76,14 @@ export function useRoomWebSocket() {
     });
 
     return () => {
-      socket.close();
-      socketRef.current = null;
+      disposed = true;
+      useConnectionStore.getState().setStatus("none");
+      if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+        socket.close();
+      }
+      if (socketRef.current === socket) {
+        socketRef.current = null;
+      }
     };
   }, [self, room]);
 

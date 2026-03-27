@@ -1,18 +1,26 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { Modal, Input, Button, message, Typography, Tag } from "antd";
+import { Modal, Input, Button, Typography, Tag } from "antd";
 import { RobotOutlined, CopyOutlined, PlusOutlined, DeleteOutlined, TeamOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 
+import { toast } from "../lib/feedback";
 import { usePrincipalStore } from "../stores/principal";
 import { useRoomStore } from "../stores/room";
 import {
   getPrivateAssistants,
   getAssistantInvites,
   createAssistantInvite,
+  removeAssistantInvite,
   removePrivateAssistant,
   adoptAssistant,
+  createRoomAssistantInvite,
+  takeAssistantOffline,
 } from "../api/assistants";
-import type { PrivateAssistantRecord, PrivateAssistantInviteRecord } from "../api/assistants";
+import type {
+  AssistantInviteResult,
+  PrivateAssistantRecord,
+  PrivateAssistantInviteRecord,
+} from "../api/assistants";
 
 import "../styles/assistant-management.css";
 
@@ -58,6 +66,12 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
   const [copyingId, setCopyingId] = useState<string | null>(null);
   const [adoptingId, setAdoptingId] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [removingInviteId, setRemovingInviteId] = useState<string | null>(null);
+  const [offliningId, setOffliningId] = useState<string | null>(null);
+  const [roomInviteName, setRoomInviteName] = useState("架构助理");
+  const [creatingRoomInvite, setCreatingRoomInvite] = useState(false);
+  const [copyingRoomInvite, setCopyingRoomInvite] = useState(false);
+  const [roomAssistantInvite, setRoomAssistantInvite] = useState<AssistantInviteResult | null>(null);
 
   const refreshData = useCallback(async () => {
     if (!principal) {
@@ -90,6 +104,23 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
     () => new Set(members.map((m) => m.sourcePrivateAssistantId).filter(Boolean)),
     [members],
   );
+  const pendingInvites = useMemo(
+    () => invites.filter((invite) => invite.status === "pending"),
+    [invites],
+  );
+  const archivedInvites = useMemo(
+    () => invites.filter((invite) => invite.status !== "pending"),
+    [invites],
+  );
+  const joinedAssistantMembers = useMemo(
+    () =>
+      new Map(
+        members
+          .filter((m) => m.sourcePrivateAssistantId)
+          .map((m) => [m.sourcePrivateAssistantId as string, m]),
+      ),
+    [members],
+  );
 
   async function handleCreate() {
     const name = nameInput.trim();
@@ -108,9 +139,9 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
         return sortByCreatedAt(next);
       });
       setNameInput("");
-      message.success(created.reused ? t("assistantPanel.inviteReused") : t("assistantPanel.inviteCreated"));
+      toast().success(created.reused ? t("assistantPanel.inviteReused") : t("assistantPanel.inviteCreated"));
     } catch (err) {
-      message.error(err instanceof Error ? err.message : t("assistantPanel.createFailed"));
+      toast().error(err instanceof Error ? err.message : t("assistantPanel.createFailed"));
     } finally {
       setCreating(false);
     }
@@ -120,9 +151,9 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
     setCopyingId(invite.id);
     try {
       await navigator.clipboard.writeText(buildInvitePrompt(invite));
-      message.success(t("common.copied"));
+      toast().success(t("common.copied"));
     } catch {
-      message.error(t("assistantPanel.copyFailed"));
+      toast().error(t("assistantPanel.copyFailed"));
     } finally {
       setCopyingId(null);
     }
@@ -133,10 +164,10 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
     setAdoptingId(assistantId);
     try {
       await adoptAssistant(room.id, self.memberId, self.wsToken, assistantId);
-      message.success(t("assistantPanel.adoptSuccess"));
+      toast().success(t("assistantPanel.adoptSuccess"));
       await hydrateRoom(room.id);
     } catch (err) {
-      message.error(err instanceof Error ? err.message : t("assistantPanel.adoptFailed"));
+      toast().error(err instanceof Error ? err.message : t("assistantPanel.adoptFailed"));
     } finally {
       setAdoptingId(null);
     }
@@ -148,14 +179,86 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
     try {
       await removePrivateAssistant(assistantId, principal.principalId, principal.principalToken);
       setAssistants((prev) => prev.filter((a) => a.id !== assistantId));
-      message.success(t("assistantPanel.removeSuccess"));
+      toast().success(t("assistantPanel.removeSuccess"));
       if (room) {
         await hydrateRoom(room.id);
       }
     } catch (err) {
-      message.error(err instanceof Error ? err.message : t("assistantPanel.removeFailed"));
+      toast().error(err instanceof Error ? err.message : t("assistantPanel.removeFailed"));
     } finally {
       setRemovingId(null);
+    }
+  }
+
+  async function handleRemoveInvite(inviteId: string) {
+    if (!principal) return;
+
+    setRemovingInviteId(inviteId);
+    try {
+      await removeAssistantInvite(inviteId, principal.principalId, principal.principalToken);
+      setInvites((prev) => prev.filter((invite) => invite.id !== inviteId));
+      toast().success(t("assistantPanel.removeInviteSuccess"));
+    } catch (err) {
+      toast().error(err instanceof Error ? err.message : t("assistantPanel.removeInviteFailed"));
+    } finally {
+      setRemovingInviteId(null);
+    }
+  }
+
+  async function handleCreateRoomInvite() {
+    if (!room || !self) return;
+
+    setCreatingRoomInvite(true);
+    try {
+      const created = await createRoomAssistantInvite(room.id, {
+        actorMemberId: self.memberId,
+        wsToken: self.wsToken,
+        backendType: "codex_cli",
+        presetDisplayName: roomInviteName.trim() || undefined,
+      });
+      setRoomAssistantInvite(created);
+      toast().success(t("assistantPanel.roomInviteCreated"));
+    } catch (err) {
+      toast().error(err instanceof Error ? err.message : t("assistantPanel.roomInviteCreateFailed"));
+    } finally {
+      setCreatingRoomInvite(false);
+    }
+  }
+
+  async function handleCopyRoomInvite() {
+    if (!roomAssistantInvite) return;
+
+    setCopyingRoomInvite(true);
+    try {
+      const inviteUrl = new URL(roomAssistantInvite.inviteUrl, resolveInviteOrigin()).toString();
+      await navigator.clipboard.writeText(inviteUrl);
+      toast().success(t("assistantPanel.roomInviteCopied"));
+    } catch (err) {
+      toast().error(err instanceof Error ? err.message : t("assistantPanel.roomInviteCopyFailed"));
+    } finally {
+      setCopyingRoomInvite(false);
+    }
+  }
+
+  async function handleTakeOffline(assistantId: string) {
+    if (!room || !self) return;
+
+    const assistantMember = joinedAssistantMembers.get(assistantId);
+    if (!assistantMember) return;
+
+    setOffliningId(assistantId);
+    try {
+      await takeAssistantOffline(room.id, {
+        actorMemberId: self.memberId,
+        wsToken: self.wsToken,
+        assistantMemberId: assistantMember.id,
+      });
+      toast().success(t("assistantPanel.leaveRoomSuccess"));
+      await hydrateRoom(room.id);
+    } catch (err) {
+      toast().error(err instanceof Error ? err.message : t("assistantPanel.leaveRoomFailed"));
+    } finally {
+      setOffliningId(null);
     }
   }
 
@@ -178,7 +281,7 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
       open={open}
       onCancel={onClose}
       footer={null}
-      destroyOnClose
+      destroyOnHidden
       width={640}
       className="assistant-management-modal"
     >
@@ -219,17 +322,26 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
                   </div>
                   <div className="am-item-actions">
                     {room ? (
-                      <Button
-                        size="small"
-                        disabled={joinedAssistantIds.has(assistant.id) || adoptingId === assistant.id}
-                        loading={adoptingId === assistant.id}
-                        onClick={() => void handleAdopt(assistant.id)}
-                        icon={<TeamOutlined />}
-                      >
-                        {joinedAssistantIds.has(assistant.id)
-                          ? t("assistantPanel.alreadyInRoom")
-                          : t("assistantPanel.joinRoom")}
-                      </Button>
+                      joinedAssistantIds.has(assistant.id) ? (
+                        <Button
+                          size="small"
+                          danger
+                          loading={offliningId === assistant.id}
+                          onClick={() => void handleTakeOffline(assistant.id)}
+                        >
+                          {t("assistantPanel.leaveRoom")}
+                        </Button>
+                      ) : (
+                        <Button
+                          size="small"
+                          disabled={adoptingId === assistant.id}
+                          loading={adoptingId === assistant.id}
+                          onClick={() => void handleAdopt(assistant.id)}
+                          icon={<TeamOutlined />}
+                        >
+                          {t("assistantPanel.joinRoom")}
+                        </Button>
+                      )
                     ) : null}
                     <Button
                       size="small"
@@ -249,37 +361,77 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
         ) : null}
 
         {/* Pending invites */}
-        {invites.length > 0 ? (
+        {pendingInvites.length > 0 ? (
           <div className="am-section">
             <div className="am-section-header">
               <span className="am-section-title">{t("assistantPanel.pendingTitle")}</span>
-              <span className="am-section-count">{invites.length}</span>
+              <span className="am-section-count">{pendingInvites.length}</span>
             </div>
             <div className="am-list">
-              {invites.map((invite) => (
+              {pendingInvites.map((invite) => (
                 <div key={invite.id} className="am-list-item">
                   <div className="am-item-left">
                     <div className="am-item-name">{invite.name}</div>
                     <div className="am-item-meta">
                       <Tag className="am-status-tag">{inviteStatusLabel(invite.status)}</Tag>
-                      {invite.status === "pending" && (
-                        <Text type="secondary" className="am-invite-prompt">
-                          {buildInvitePrompt(invite)}
-                        </Text>
-                      )}
+                      <Text type="secondary" className="am-invite-prompt">
+                        {buildInvitePrompt(invite)}
+                      </Text>
                     </div>
                   </div>
                   <div className="am-item-actions">
-                    {invite.status === "pending" && (
-                      <Button
-                        size="small"
-                        loading={copyingId === invite.id}
-                        onClick={() => void handleCopy(invite)}
-                        icon={<CopyOutlined />}
-                      >
-                        {t("assistantPanel.copyPrompt")}
-                      </Button>
-                    )}
+                    <Button
+                      size="small"
+                      loading={copyingId === invite.id}
+                      onClick={() => void handleCopy(invite)}
+                      icon={<CopyOutlined />}
+                    >
+                      {t("assistantPanel.copyPrompt")}
+                    </Button>
+                    <Button
+                      size="small"
+                      type="text"
+                      danger
+                      loading={removingInviteId === invite.id}
+                      onClick={() => void handleRemoveInvite(invite.id)}
+                      icon={<DeleteOutlined />}
+                    >
+                      {t("assistantPanel.revokeInvite")}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {/* Invite history */}
+        {archivedInvites.length > 0 ? (
+          <div className="am-section">
+            <div className="am-section-header">
+              <span className="am-section-title">{t("assistantPanel.historyTitle")}</span>
+              <span className="am-section-count">{archivedInvites.length}</span>
+            </div>
+            <div className="am-list">
+              {archivedInvites.map((invite) => (
+                <div key={invite.id} className="am-list-item">
+                  <div className="am-item-left">
+                    <div className="am-item-name">{invite.name}</div>
+                    <div className="am-item-meta">
+                      <Tag className="am-status-tag">{inviteStatusLabel(invite.status)}</Tag>
+                    </div>
+                  </div>
+                  <div className="am-item-actions">
+                    <Button
+                      size="small"
+                      type="text"
+                      danger
+                      loading={removingInviteId === invite.id}
+                      onClick={() => void handleRemoveInvite(invite.id)}
+                      icon={<DeleteOutlined />}
+                    >
+                      {t("assistantPanel.removeInvite")}
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -288,7 +440,7 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
         ) : null}
 
         {/* Empty state */}
-        {assistants.length === 0 && invites.length === 0 ? (
+        {assistants.length === 0 && pendingInvites.length === 0 && archivedInvites.length === 0 ? (
           <div className="am-empty">
             <RobotOutlined className="am-empty-icon" />
             <div className="am-empty-title">{t("assistantPanel.emptyTitle")}</div>
@@ -298,6 +450,47 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
 
         {/* Create invite section */}
         <div className="am-invite-section">
+          {room && self ? (
+            <>
+              <Text type="secondary" className="am-invite-label">
+                {t("assistantPanel.roomInviteLabel")}
+              </Text>
+              <div className="am-invite-form">
+                <Input
+                  value={roomInviteName}
+                  onChange={(e) => setRoomInviteName(e.target.value)}
+                  placeholder={t("assistantPanel.roomInviteNamePlaceholder")}
+                  onPressEnter={handleCreateRoomInvite}
+                  className="am-name-input"
+                />
+                <Button
+                  type="primary"
+                  loading={creatingRoomInvite}
+                  onClick={() => void handleCreateRoomInvite()}
+                  className="am-create-btn"
+                >
+                  {t("assistantPanel.createRoomInvite")}
+                </Button>
+                <Button
+                  disabled={!roomAssistantInvite}
+                  loading={copyingRoomInvite}
+                  onClick={() => void handleCopyRoomInvite()}
+                  icon={<CopyOutlined />}
+                >
+                  {t("assistantPanel.copyRoomInvite")}
+                </Button>
+              </div>
+              {roomAssistantInvite ? (
+                <Text type="secondary" className="am-invite-tip">
+                  {new URL(roomAssistantInvite.inviteUrl, resolveInviteOrigin()).toString()}
+                </Text>
+              ) : (
+                <Text type="secondary" className="am-invite-tip">
+                  {t("assistantPanel.roomInviteTip")}
+                </Text>
+              )}
+            </>
+          ) : null}
           <Text type="secondary" className="am-invite-label">
             {t("assistantPanel.inviteLabel")}
           </Text>

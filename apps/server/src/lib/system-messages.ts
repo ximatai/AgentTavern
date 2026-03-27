@@ -32,6 +32,32 @@ export function createAgentFailedSystemData(error: string): SystemMessageData {
   };
 }
 
+export function createAgentBusySystemData(
+  agentDisplayName: string,
+  agentMemberId?: string | null,
+): SystemMessageData {
+  return {
+    kind: "agent_busy",
+    status: "warning",
+    title: "Agent is busy",
+    detail: `${agentDisplayName} is already handling another request in a different room.`,
+    agentMemberId: agentMemberId ?? null,
+  };
+}
+
+export function createBridgeAttachRequiredSystemData(
+  agentDisplayName: string,
+  agentMemberId?: string | null,
+): SystemMessageData {
+  return {
+    kind: "bridge_attach_required",
+    status: "warning",
+    title: "Bridge attachment required",
+    detail: `${agentDisplayName} is waiting for a local bridge to attach.`,
+    agentMemberId: agentMemberId ?? null,
+  };
+}
+
 export function createBridgeWaitingSystemData(agentDisplayName: string): SystemMessageData {
   return {
     kind: "bridge_waiting",

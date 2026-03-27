@@ -21,7 +21,7 @@ interface PrincipalActions {
     backendThreadId: string | null;
   }) => Promise<PrincipalSession>;
   logout: () => void;
-  restoreFromStorage: () => void;
+  restoreFromStorage: () => Promise<void>;
   persistToStorage: () => void;
   markPrivateAssetsChanged: () => void;
 }
@@ -50,23 +50,32 @@ export const usePrincipalStore = create<PrincipalStore>()((set, get) => ({
     localStorage.removeItem(STORAGE_KEY);
   },
 
-  restoreFromStorage: () => {
+  restoreFromStorage: async () => {
     const cached = localStorage.getItem(STORAGE_KEY);
     if (!cached) return;
 
     try {
       const parsed = JSON.parse(cached) as PrincipalSession;
-      if (parsed.kind !== "human") {
+      if (parsed.kind !== "human" && parsed.kind !== "agent") {
         localStorage.removeItem(STORAGE_KEY);
         return;
       }
-      set({
-        principal: parsed,
+      const refreshed = await bootstrapAPI({
+        kind: parsed.kind,
         loginKey: parsed.loginKey,
         globalDisplayName: parsed.globalDisplayName,
+        backendType: parsed.backendType,
+        backendThreadId: parsed.backendThreadId,
       });
+      set({
+        principal: refreshed,
+        loginKey: refreshed.loginKey,
+        globalDisplayName: refreshed.globalDisplayName,
+      });
+      get().persistToStorage();
     } catch {
       localStorage.removeItem(STORAGE_KEY);
+      set({ principal: null, loginKey: "", globalDisplayName: "", privateAssetsVersion: 0 });
     }
   },
 

@@ -15,6 +15,13 @@ export type DirectRoomResult = {
   join: JoinResult;
 };
 
+export type JoinedRoomRecord = {
+  id: string;
+  name: string;
+  inviteToken: string;
+  createdAt: string;
+};
+
 async function getRoom(roomId: string): Promise<Room> {
   return request<Room>(`/api/rooms/${roomId}`);
 }
@@ -49,9 +56,9 @@ async function joinExistingRoom(
 }
 
 async function createDirectRoom(params: {
-  principalId: string;
-  principalToken: string;
-  targetPrincipalId: string;
+  actorPrincipalId: string;
+  actorPrincipalToken: string;
+  peerPrincipalId: string;
 }): Promise<DirectRoomResult> {
   return request<DirectRoomResult>("/api/direct-rooms", {
     method: "POST",
@@ -61,13 +68,13 @@ async function createDirectRoom(params: {
 
 async function pullPrincipal(
   roomId: string,
-  memberId: string,
+  actorMemberId: string,
   wsToken: string,
   targetPrincipalId: string,
 ): Promise<JoinResult> {
   return request<JoinResult>(`/api/rooms/${roomId}/pull`, {
     method: "POST",
-    body: JSON.stringify({ memberId, wsToken, targetPrincipalId }),
+    body: JSON.stringify({ actorMemberId, wsToken, targetPrincipalId }),
   });
 }
 
@@ -79,6 +86,15 @@ async function getRoomMessages(roomId: string): Promise<PublicMessage[]> {
   return request<PublicMessage[]>(`/api/rooms/${roomId}/messages`);
 }
 
+async function getJoinedRooms(
+  principalId: string,
+  principalToken: string,
+): Promise<{ rooms: JoinedRoomRecord[] }> {
+  return request<{ rooms: JoinedRoomRecord[] }>(
+    `/api/me/rooms?principalId=${principalId}&principalToken=${principalToken}`,
+  );
+}
+
 export {
   getRoom,
   createRoom,
@@ -88,4 +104,5 @@ export {
   pullPrincipal,
   getRoomMembers,
   getRoomMessages,
+  getJoinedRooms,
 };
