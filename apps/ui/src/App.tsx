@@ -1,0 +1,88 @@
+import { useEffect } from "react";
+import { ConfigProvider, message } from "antd";
+import { I18nextProvider } from "react-i18next";
+import { useTranslation } from "react-i18next";
+
+import i18n from "./i18n";
+import "./i18n";
+import "./styles/global.css";
+import "./styles/shell.css";
+import "./styles/sidebar.css";
+import "./styles/home.css";
+import "./styles/room-sidebar.css";
+import "./styles/message-list.css";
+import "./styles/input-bar.css";
+import "./styles/error-boundary.css";
+import { Header } from "./components/Header";
+import { ChatSidebar } from "./components/ChatSidebar";
+import { HomeStage } from "./components/HomeStage";
+import { HomeSidebar } from "./components/HomeSidebar";
+import { RoomSidebar } from "./components/RoomSidebar";
+import { OnlineMembersPanel } from "./components/OnlineMembersPanel";
+import { MessageList } from "./components/MessageList";
+import { InputBar } from "./components/InputBar";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import {
+  useSettingsStore,
+  getAntdThemeConfig,
+  applyThemeCssVars,
+  useSystemThemeListener,
+} from "./stores/settings";
+import { useRoomStore } from "./stores/room";
+import { useRoomWebSocket } from "./hooks/useRoomWebSocket";
+import { usePrincipalWebSocket } from "./hooks/usePrincipalWebSocket";
+import { usePollingSync } from "./hooks/usePollingSync";
+
+// Global message toast duration (matches previous flash timeout)
+message.config({ duration: 2.4 });
+
+function App() {
+  const { t } = useTranslation();
+  const room = useRoomStore((s) => s.room);
+  const themeId = useSettingsStore((s) => s.themeId);
+  const antdThemeConfig = getAntdThemeConfig(themeId);
+  useSystemThemeListener();
+  useRoomWebSocket();
+  usePrincipalWebSocket();
+  usePollingSync();
+
+  useEffect(() => {
+    applyThemeCssVars(themeId);
+  }, [themeId]);
+
+  return (
+    <ConfigProvider theme={antdThemeConfig}>
+      <I18nextProvider i18n={i18n}>
+        <ErrorBoundary>
+          <div className="app-shell">
+            <aside className="room-sidebar">
+              <div className="sidebar-brand">
+                <span className="brand-icon">AT</span>
+                <div className="brand-text">
+                  <span className="brand-name">AgentTavern</span>
+                  <span className="brand-subtitle">{t("sidebar.subtitle")}</span>
+                </div>
+              </div>
+              <ChatSidebar />
+            </aside>
+            <section className="chat-shell">
+              <Header />
+              <div className="chat-layout">
+                <section className="message-panel">
+                  {room ? <MessageList /> : <HomeStage />}
+                </section>
+                <aside className="member-sidebar">
+                  {room ? <RoomSidebar /> : <HomeSidebar />}
+                </aside>
+              </div>
+              {room ? <InputBar /> : null}
+            </section>
+            <OnlineMembersPanel />
+          </div>
+        </ErrorBoundary>
+      </I18nextProvider>
+    </ConfigProvider>
+  );
+}
+
+export default App;

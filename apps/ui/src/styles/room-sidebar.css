@@ -1,0 +1,407 @@
+/* Room Sidebar — collaboration status, members, approvals */
+
+/* ── Content Wrapper ── */
+.room-sidebar-content {
+  flex: 1;
+  padding: 12px 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+}
+
+/* ── Section ── */
+.rs-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rs-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+}
+
+.rs-section-header h4 {
+  margin: 0;
+  font-family: Inter, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--font-secondary, #94A3B8);
+}
+
+.rs-section-badge {
+  font-family: Inter, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--font-primary, #fff);
+  background: var(--accent-alpha, rgba(34, 211, 238, 0.15));
+  border-radius: 10px;
+  padding: 2px 8px;
+}
+
+.rs-muted {
+  margin: 0;
+  font-family: Inter, sans-serif;
+  font-size: 12px;
+  color: var(--font-tertiary, #64748B);
+  text-align: center;
+  padding: 12px 0;
+}
+
+/* ── Pills ── */
+.rs-pill {
+  font-family: Inter, sans-serif;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 8px;
+  border-radius: 6px;
+}
+
+.rs-pill-warning {
+  background: rgba(251, 191, 36, 0.15);
+  color: #FBBF24;
+}
+
+.rs-pill-success {
+  background: rgba(52, 211, 153, 0.15);
+  color: #34D399;
+}
+
+.rs-pill-error {
+  background: rgba(248, 113, 113, 0.15);
+  color: #F87171;
+}
+
+/* ── Collab State Cards ── */
+.rs-collab-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rs-collab-card {
+  background: var(--bg-surface, #1E293B);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rs-collab-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.rs-collab-time {
+  font-family: Inter, sans-serif;
+  font-size: 11px;
+  color: var(--font-tertiary, #64748B);
+}
+
+.rs-collab-title {
+  font-family: Inter, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--font-primary, #fff);
+}
+
+.rs-collab-desc {
+  margin: 0;
+  font-family: Inter, sans-serif;
+  font-size: 12px;
+  color: var(--font-secondary, #94A3B8);
+  line-height: 1.4;
+}
+
+.rs-collab-stream {
+  margin: 0;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--font-tertiary, #64748B);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rs-collab-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* ── Member Sections ── */
+.rs-member-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rs-member-section-title {
+  margin: 0;
+  font-family: Inter, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--font-tertiary, #64748B);
+  padding: 0 12px;
+}
+
+.rs-member-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rs-member-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+
+.rs-member-row:hover {
+  background: var(--bg-surface, rgba(255, 255, 255, 0.03));
+}
+
+.rs-member-avatar {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  border-radius: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--font-primary, #FFFFFF);
+  font-family: Inter, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.rs-member-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rs-member-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.rs-member-title strong {
+  font-family: Inter, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--font-primary, #fff);
+}
+
+.rs-member-info p {
+  margin: 0;
+  font-family: Inter, sans-serif;
+  font-size: 12px;
+  color: var(--font-tertiary, #64748B);
+}
+
+.rs-self-marker {
+  font-weight: 400;
+  color: var(--font-tertiary, #64748B);
+  font-size: 12px;
+}
+
+/* ── Role Badges ── */
+.rs-role-badge {
+  font-family: Inter, sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.rs-role-badge-human {
+  background: rgba(99, 102, 241, 0.15);
+  color: #818CF8;
+}
+
+.rs-role-badge-independent {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ADE80;
+}
+
+.rs-role-badge-assistant {
+  background: var(--accent-alpha, rgba(14, 116, 144, 0.15));
+  color: var(--accent, #22D3EE);
+}
+
+/* ── Runtime Status Pills ── */
+.rs-runtime-pill {
+  font-family: Inter, sans-serif;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.rs-runtime-pill-ready {
+  background: rgba(52, 211, 153, 0.15);
+  color: #34D399;
+}
+
+.rs-runtime-pill-pending_bridge,
+.rs-runtime-pill-waiting_bridge {
+  background: rgba(251, 191, 36, 0.15);
+  color: #FBBF24;
+}
+
+/* ── Human + Assistant Group ── */
+.rs-human-group {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Assistant Children (under human) ── */
+.rs-assistant-children {
+  padding: 2px 0 4px 8px;
+  margin-left: 28px;
+  border-left: 1px solid var(--border-default, rgba(30, 41, 59, 0.8));
+}
+
+.rs-member-row-child .rs-member-avatar {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  font-size: 11px;
+}
+
+/* ── Approval Cards ── */
+.rs-approval-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rs-approval-card {
+  background: var(--bg-surface, #1E293B);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-left: 3px solid #FBBF24;
+}
+
+.rs-approval-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rs-approval-title {
+  font-family: Inter, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--font-primary, #fff);
+}
+
+.rs-approval-desc {
+  margin: 0;
+  font-family: Inter, sans-serif;
+  font-size: 12px;
+  color: var(--font-secondary, #94A3B8);
+  line-height: 1.4;
+}
+
+.rs-approval-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 16px;
+}
+
+.rs-approval-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.rs-approval-item-label {
+  font-family: Inter, sans-serif;
+  font-size: 10px;
+  color: var(--font-muted, #475569);
+}
+
+.rs-approval-item-value {
+  font-family: Inter, sans-serif;
+  font-size: 12px;
+  color: var(--font-secondary, #94A3B8);
+}
+
+.rs-approval-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.rs-approval-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-default, rgba(255, 255, 255, 0.06));
+}
+
+.rs-approval-summary {
+  margin: 8px 12px 0;
+  font-family: Inter, sans-serif;
+  font-size: 12px;
+  color: var(--font-tertiary, #64748B);
+  text-align: center;
+}
+
+/* ── Protocol Card ── */
+.rs-protocol-card {
+  background: var(--bg-surface, #1E293B);
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: auto;
+}
+
+.rs-protocol-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.rs-protocol-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #34D399;
+  flex-shrink: 0;
+}
+
+.rs-protocol-title strong {
+  font-family: Inter, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--font-primary, #fff);
+}
+
+.rs-protocol-card p {
+  margin: 0;
+  font-family: Inter, sans-serif;
+  font-size: 12px;
+  color: var(--font-tertiary, #64748B);
+  line-height: 1.4;
+}

@@ -1,0 +1,200 @@
+/* Header styles */
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.header-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.header-brand-name {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--font-primary, #fff);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.header-brand-subtitle {
+  font-family: "Inter", sans-serif;
+  font-size: 11px;
+  color: var(--font-tertiary, #64748b);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+/* Connection status */
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--font-tertiary, #64748b);
+  white-space: nowrap;
+}
+
+.connection-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.connection-dot.connected {
+  background: #34d399;
+  box-shadow: 0 0 4px #34d39980;
+}
+
+.connection-dot.disconnected {
+  background: #f87171;
+  box-shadow: 0 0 4px #f8717180;
+}
+
+.connection-dot.none {
+  background: var(--font-muted, #475569);
+}
+
+/* Assistant badge button */
+.assistant-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: var(--bg-surface, #1e293b);
+  border: 1px solid var(--border-default, #1e293b);
+  color: var(--accent, #22d3ee);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.2s;
+  white-space: nowrap;
+}
+
+.assistant-badge:hover {
+  border-color: var(--border-secondary, #334155);
+}
+
+/* Identity button */
+.identity-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+
+.identity-button:hover {
+  background: var(--bg-surface, #1e293b);
+}
+
+.identity-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent-dim, #0e7490);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.identity-avatar-text {
+  color: var(--font-primary, #fff);
+  font-size: 14px;
+  font-weight: 600;
+  font-family: "Inter", sans-serif;
+}
+
+.identity-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.identity-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--font-secondary, #94a3b8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.identity-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.identity-action {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--font-muted, #475569);
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.identity-action:hover {
+  color: var(--font-secondary, #94a3b8);
+}
+
+.identity-action.logout:hover {
+  color: #f87171;
+}
+
+/* Login button (not authenticated) */
+.login-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: var(--accent, #22d3ee);
+  color: var(--bg-base, #0a0f1c);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  white-space: nowrap;
+  transition: opacity 0.2s;
+}
+
+.login-button:hover {
+  opacity: 0.85;
+}
+
+/* Responsive */
+@media (max-width: 767px) {
+  .connection-status,
+  .header-brand-subtitle {
+    display: none;
+  }
+
+  .identity-info {
+    display: none;
+  }
+}

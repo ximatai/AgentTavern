@@ -6,6 +6,7 @@
     "dev": "pnpm --parallel --filter @agent-tavern/server --filter @agent-tavern/web dev",
     "dev:server": "pnpm --filter @agent-tavern/server dev",
     "dev:web": "pnpm --filter @agent-tavern/web dev",
+    "dev:ui": "pnpm --filter @agent-tavern/ui dev",
     "dev:bridge": "pnpm --filter @agent-tavern/bridge dev",
     "build": "pnpm -r build",
     "test:server": "pnpm --filter @agent-tavern/server test",
@@ -22,8 +23,5 @@
       "better-sqlite3",
       "esbuild"
     ]
-  },
-  "devDependencies": {
-    "@playwright/test": "^1.58.2"
   }
 }
