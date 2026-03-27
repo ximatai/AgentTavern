@@ -19,6 +19,39 @@ const TASK_ASSIGNMENT_LEASE_MS = Number(
   process.env.AGENT_TAVERN_BRIDGE_TASK_LEASE_MS ?? 15_000,
 );
 
+function resolveBindingForAgentMember(agentMemberId: string) {
+  const agentMember = db
+    .select({
+      principalId: members.principalId,
+      sourcePrivateAssistantId: members.sourcePrivateAssistantId,
+    })
+    .from(members)
+    .where(eq(members.id, agentMemberId))
+    .get();
+
+  if (!agentMember) {
+    return null;
+  }
+
+  if (agentMember.sourcePrivateAssistantId) {
+    return db
+      .select()
+      .from(agentBindings)
+      .where(eq(agentBindings.privateAssistantId, agentMember.sourcePrivateAssistantId))
+      .get();
+  }
+
+  if (agentMember.principalId) {
+    return db
+      .select()
+      .from(agentBindings)
+      .where(eq(agentBindings.principalId, agentMember.principalId))
+      .get();
+  }
+
+  return null;
+}
+
 function loadAuthorizedBridge(
   bridgeId: string,
   bridgeToken: string,
@@ -316,19 +349,7 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
     .run();
 
   if (backendThreadId) {
-    const binding = db
-      .select()
-      .from(agentBindings)
-      .where(
-        eq(
-          agentBindings.principalId,
-          db
-            .select({ principalId: members.principalId })
-            .from(members)
-            .where(eq(members.id, task.agentMemberId)),
-        ),
-      )
-      .get();
+    const binding = resolveBindingForAgentMember(task.agentMemberId);
 
     if (binding && binding.backendThreadId !== backendThreadId) {
       db

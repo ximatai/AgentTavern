@@ -3577,6 +3577,187 @@ test("attached codex binding can be pulled and completed through bridge task end
   );
 });
 
+test("attached claude assistant binding persists refreshed backendThreadId on completion", async () => {
+  const roomId = "room_claude_assistant_bridge_task";
+  const createdAt = new Date("2026-03-25T07:30:00.000Z").toISOString();
+
+  seedRoom({
+    roomId,
+    name: "Claude Assistant Bridge Task Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(localBridges).values({
+    id: "brg_claude_task",
+    bridgeName: "Claude Bridge",
+    bridgeToken: "bridge_claude_task_token",
+    currentInstanceId: "binst_claude_task",
+    status: "online",
+    platform: "macOS",
+    version: "0.1.0",
+    metadata: null,
+    lastSeenAt: createdAt,
+    createdAt,
+    updatedAt: createdAt,
+  }).run();
+
+  db.insert(principals).values({
+    id: "prn_owner_claude_task",
+    kind: "human",
+    loginKey: "owner-claude-task@example.com",
+    globalDisplayName: "OwnerClaudeTask",
+    backendType: null,
+    backendThreadId: null,
+    status: "online",
+    createdAt,
+  }).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_owner_claude_task",
+      roomId,
+      principalId: "prn_owner_claude_task",
+      type: "human",
+      roleKind: "none",
+      displayName: "OwnerClaudeTask",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_requester_claude_task",
+      roomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "RequesterClaudeTask",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(assistantInvites).values({
+    id: "ainv_claude_task",
+    roomId,
+    ownerMemberId: "mem_owner_claude_task",
+    presetDisplayName: "ClaudeHelper",
+    backendType: "claude_code",
+    inviteToken: "invite_claude_task_token",
+    status: "pending",
+    acceptedMemberId: null,
+    acceptedPrivateAssistantId: null,
+    createdAt,
+    expiresAt: null,
+    acceptedAt: null,
+  }).run();
+
+  const acceptResponse = await app.request(
+    "http://localhost/api/assistant-invites/invite_claude_task_token/accept",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        backendThreadId: "thread_claude_task_initial",
+      }),
+    },
+  );
+
+  assert.equal(acceptResponse.status, 201);
+  const accepted = await acceptResponse.json();
+  assert.ok(accepted.privateAssistantId);
+
+  const attachResponse = await app.request(
+    "http://localhost/api/bridges/brg_claude_task/agents/attach",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_claude_task_token",
+        privateAssistantId: accepted.privateAssistantId,
+        cwd: "/tmp/claude-assistant-task",
+      }),
+    },
+  );
+
+  assert.equal(attachResponse.status, 200);
+
+  const requesterToken = issueWsToken("mem_owner_claude_task", roomId);
+  const messageResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_owner_claude_task",
+      wsToken: requesterToken,
+      content: "@ClaudeHelper please help",
+    }),
+  });
+
+  assert.equal(messageResponse.status, 201);
+
+  const pullResponse = await app.request("http://localhost/api/bridges/brg_claude_task/tasks/pull", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      bridgeToken: "bridge_claude_task_token",
+      bridgeInstanceId: "binst_claude_task",
+    }),
+  });
+
+  assert.equal(pullResponse.status, 200);
+  const pulled = await pullResponse.json();
+  assert.equal(pulled.task.backendThreadId, "thread_claude_task_initial");
+
+  const acceptTaskResponse = await app.request(
+    `http://localhost/api/bridges/brg_claude_task/tasks/${pulled.task.id}/accept`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_claude_task_token",
+        bridgeInstanceId: "binst_claude_task",
+      }),
+    },
+  );
+
+  assert.equal(acceptTaskResponse.status, 200);
+
+  const completeResponse = await app.request(
+    `http://localhost/api/bridges/brg_claude_task/tasks/${pulled.task.id}/complete`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_claude_task_token",
+        bridgeInstanceId: "binst_claude_task",
+        finalText: "final claude assistant output",
+        backendThreadId: "11111111-2222-3333-4444-555555555555",
+      }),
+    },
+  );
+
+  assert.equal(completeResponse.status, 200);
+
+  const binding = db
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.privateAssistantId, accepted.privateAssistantId))
+    .get();
+
+  assert.equal(binding?.backendThreadId, "11111111-2222-3333-4444-555555555555");
+
+  const storedAssistant = db
+    .select()
+    .from(privateAssistants)
+    .where(eq(privateAssistants.id, accepted.privateAssistantId))
+    .get();
+
+  assert.equal(storedAssistant?.backendThreadId, "thread_claude_task_initial");
+});
+
 test("attached codex binding emits a waiting notice when its bridge heartbeat is stale", async () => {
   const roomId = "room_codex_bridge_waiting";
   const staleSeenAt = new Date(Date.now() - 60_000).toISOString();
