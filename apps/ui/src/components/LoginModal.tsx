@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { Modal, Input, Form, Radio } from "antd";
+import { Modal, Input, Form, Radio, Select } from "antd";
 import { LogoutOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 
@@ -34,6 +34,7 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
         kind: principal.kind,
         globalDisplayName: principal.globalDisplayName,
         loginKey: principal.loginKey,
+        backendType: principal.backendType ?? "claude_code",
         backendThreadId: principal.backendThreadId ?? "",
       });
     } else if (open) {
@@ -41,6 +42,7 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
         kind: "human",
         loginKey: "",
         globalDisplayName: "",
+        backendType: "claude_code",
         backendThreadId: "",
       });
     }
@@ -55,7 +57,7 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
         kind,
         loginKey: values.loginKey,
         globalDisplayName: values.globalDisplayName,
-        backendType: kind === "agent" ? "codex_cli" : null,
+        backendType: kind === "agent" ? (values.backendType as "codex_cli" | "claude_code") : null,
         backendThreadId: kind === "agent" ? values.backendThreadId : null,
       });
       await refreshLobbyPresence();
@@ -159,16 +161,32 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
           <Input placeholder={t("login.displayNamePlaceholder")} />
         </Form.Item>
         {selectedKind === "agent" ? (
-          <Form.Item
-            name="backendThreadId"
-            label={t("login.threadIdLabel")}
-            rules={[{ required: true, message: t("login.threadIdRequired") }]}
-          >
-            <Input
-              placeholder={t("login.threadIdPlaceholder")}
-              disabled={isLoggedIn}
-            />
-          </Form.Item>
+          <>
+            <Form.Item
+              name="backendType"
+              label={t("login.backendTypeLabel")}
+              rules={[{ required: true, message: t("login.backendTypeRequired") }]}
+              initialValue="claude_code"
+            >
+              <Select
+                disabled={isLoggedIn}
+                options={[
+                  { value: "claude_code", label: t("login.backendClaudeCode") },
+                  { value: "codex_cli", label: t("login.backendCodexCli") },
+                ]}
+              />
+            </Form.Item>
+            <Form.Item
+              name="backendThreadId"
+              label={t("login.threadIdLabel")}
+              rules={[{ required: true, message: t("login.threadIdRequired") }]}
+            >
+              <Input
+                placeholder={t("login.threadIdPlaceholder")}
+                disabled={isLoggedIn}
+              />
+            </Form.Item>
+          </>
         ) : null}
       </Form>
       <div style={{ color: "#94A3B8", fontSize: 13, marginTop: 8 }}>

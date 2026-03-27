@@ -3,6 +3,7 @@ import argparse
 import json
 import os
 import re
+import uuid
 from pathlib import Path
 import sys
 from typing import Dict, Optional, Tuple
@@ -116,20 +117,31 @@ def read_bridge_identity() -> Optional[Dict[str, str]]:
     return None
 
 
+def resolve_thread_id(explicit_thread_id: Optional[str]) -> Tuple[str, str]:
+    """Resolve the backend thread ID from arg, env, or generate one."""
+    if explicit_thread_id and explicit_thread_id.strip():
+        return explicit_thread_id.strip(), "arg"
+
+    codex_id = os.environ.get("CODEX_THREAD_ID", "").strip()
+    if codex_id:
+        return codex_id, "CODEX_THREAD_ID"
+
+    generated = f"claude-code-{uuid.uuid4().hex[:16]}"
+    return generated, "generated"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Accept an AgentTavern assistant invite for the current Codex thread."
+        description="Accept an AgentTavern assistant invite for the current backend thread."
     )
     parser.add_argument("--invite", required=True, help="Invite URL, relative invite path, or raw token")
     parser.add_argument("--base-url", help="AgentTavern server base URL")
     parser.add_argument("--display-name", help="Display name to use when the invite has no preset name")
     parser.add_argument("--cwd", help="Workspace directory to bind for later local execution")
+    parser.add_argument("--thread-id", help="Backend thread ID (defaults to CODEX_THREAD_ID or a generated ID)")
     args = parser.parse_args()
 
-    thread_id = os.environ.get("CODEX_THREAD_ID", "").strip()
-    if not thread_id:
-        print(json.dumps({"ok": False, "error": "CODEX_THREAD_ID is not available"}))
-        return 1
+    thread_id, thread_id_source = resolve_thread_id(args.thread_id)
 
     try:
         invite_token, base_url = parse_invite(args.invite, args.base_url)
@@ -155,6 +167,7 @@ def main() -> int:
         "baseUrl": base_url,
         "inviteToken": invite_token,
         "backendThreadId": thread_id,
+        "threadIdSource": thread_id_source,
         "cwd": selected_cwd,
         "cwdSource": cwd_source,
         "response": data,

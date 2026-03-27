@@ -73,7 +73,7 @@ function ensurePrivateAssistantBinding(
     backendType: assistant.backendType,
     backendThreadId: assistant.backendThreadId,
     cwd,
-    status: assistant.backendType === "codex_cli" ? "pending_bridge" : "active",
+    status: assistant.backendType !== "local_process" ? "pending_bridge" : "active",
     attachedAt: now(),
     detachedAt: null,
   }).run();
@@ -319,7 +319,7 @@ assistantInviteRoutes.post("/api/assistant-invites/:inviteToken/accept", async (
           name: displayName,
           backendType: inviteBackendType,
           backendThreadId,
-          status: inviteBackendType === "codex_cli" ? "pending_bridge" : "active",
+          status: inviteBackendType !== "local_process" ? "pending_bridge" : "active",
           createdAt: now(),
         };
 

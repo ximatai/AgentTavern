@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import type { AgentSession } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
-import { agentSessions, bridgeTasks, localBridges } from "../db/schema";
+import { agentBindings, agentSessions, bridgeTasks, localBridges, members } from "../db/schema";
 import {
   commitSessionMessage,
   createStreamDeltaEvent,
@@ -265,6 +265,8 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
   const bridgeInstanceId =
     typeof body?.bridgeInstanceId === "string" ? body.bridgeInstanceId.trim() : "";
   const finalText = typeof body?.finalText === "string" ? body.finalText.trim() : "";
+  const backendThreadId =
+    typeof body?.backendThreadId === "string" ? body.backendThreadId.trim() : "";
 
   if (!bridgeToken || !bridgeInstanceId || !finalText) {
     return c.json({ error: "bridgeToken, bridgeInstanceId, and finalText are required" }, 400);
@@ -312,6 +314,30 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
     })
     .where(eq(bridgeTasks.id, taskId))
     .run();
+
+  if (backendThreadId) {
+    const binding = db
+      .select()
+      .from(agentBindings)
+      .where(
+        eq(
+          agentBindings.principalId,
+          db
+            .select({ principalId: members.principalId })
+            .from(members)
+            .where(eq(members.id, task.agentMemberId)),
+        ),
+      )
+      .get();
+
+    if (binding && binding.backendThreadId !== backendThreadId) {
+      db
+        .update(agentBindings)
+        .set({ backendThreadId })
+        .where(eq(agentBindings.id, binding.id))
+        .run();
+    }
+  }
 
   commitSessionMessage({
     session: toAgentSession(session),

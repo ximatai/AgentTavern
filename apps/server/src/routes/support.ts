@@ -38,7 +38,7 @@ export function isValidDisplayName(displayName: string): boolean {
 }
 
 export function isSupportedAgentBackendType(value: unknown): value is AgentBackendType {
-  return value === "local_process" || value === "codex_cli";
+  return value === "local_process" || value === "codex_cli" || value === "claude_code";
 }
 
 export function isApprovalGrantDuration(value: unknown): value is ApprovalGrantDuration {

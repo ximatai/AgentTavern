@@ -376,7 +376,7 @@ async function runAgentSession(sessionId: string): Promise<void> {
     contextMessages,
   };
 
-  if (typedBinding?.backendType === "codex_cli") {
+  if (typedBinding?.backendType && typedBinding.backendType !== "local_process") {
     if (!typedBinding.bridgeId || typedBinding.status !== "active") {
       failSession(
         typedSession,

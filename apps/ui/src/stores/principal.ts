@@ -17,7 +17,7 @@ interface PrincipalActions {
     kind: "human" | "agent";
     loginKey: string;
     globalDisplayName: string;
-    backendType: "codex_cli" | "local_process" | null;
+    backendType: "codex_cli" | "claude_code" | "local_process" | null;
     backendThreadId: string | null;
   }) => Promise<PrincipalSession>;
   logout: () => void;
