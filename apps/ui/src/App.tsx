@@ -97,14 +97,16 @@ function App() {
               <section className="chat-shell">
                 <Header />
                 <div className="chat-layout">
-                  <section className="message-panel">
-                    {room ? <MessageList /> : <HomeStage />}
+                  <section className="message-column">
+                    <section className="message-panel">
+                      {room ? <MessageList /> : <HomeStage />}
+                    </section>
+                    {room ? <InputBar /> : null}
                   </section>
                   <aside className="member-sidebar">
                     {room ? <RoomSidebar /> : <HomeSidebar />}
                   </aside>
                 </div>
-                {room ? <InputBar /> : null}
               </section>
               <OnlineMembersPanel />
             </div>

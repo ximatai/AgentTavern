@@ -146,77 +146,89 @@ export function ApprovalCard({
   const badgeColor = status === "success" ? "#34D399" : status === "error" ? "#F87171" : "#FBBF24";
 
   return (
-    <div style={{ background: "var(--bg-surface, #1E293B)", borderRadius: 8, padding: 14, borderLeft: `3px solid ${borderColor}` }}>
-      {/* Header row */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-        <span style={{ fontSize: 11, fontWeight: 500, padding: "1px 8px", borderRadius: 6, background: badgeBg, color: badgeColor }}>
+    <div
+      className="approval-card"
+      style={{ borderLeftColor: borderColor }}
+    >
+      <div className="approval-card-header">
+        <span
+          className="approval-card-badge"
+          style={{ background: badgeBg, color: badgeColor }}
+        >
           {badge}
         </span>
         {grant && (
-          <span style={{ fontSize: 11, color: "var(--font-tertiary, #64748B)" }}>{grant}</span>
+          <span className="approval-card-grant">{grant}</span>
         )}
       </div>
 
-      {/* Title + detail */}
       {sysData.title && (
-        <strong style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--font-secondary, #94A3B8)", marginBottom: 4 }}>
+        <strong className="approval-card-title">
           {sysData.title}
         </strong>
       )}
       {sysData.detail && (
-        <p style={{ margin: "0 0 8px", fontSize: 13, color: "var(--font-secondary, #94A3B8)", lineHeight: 1.4 }}>
+        <p className="approval-card-detail">
           {sysData.detail}
         </p>
       )}
 
-      {/* Summary grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 16px", marginBottom: 10 }}>
+      <div className="approval-card-grid">
         {items.map((item) => (
-          <div key={item.label} style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-            <span style={{ fontSize: 10, color: "var(--font-muted, #475569)" }}>{item.label}</span>
-            <strong style={{ fontSize: 12, color: "var(--font-secondary, #94A3B8)" }}>{item.value}</strong>
+          <div key={item.label} className="approval-card-item">
+            <span className="approval-card-item-label">{item.label}</span>
+            <strong className="approval-card-item-value">{item.value}</strong>
           </div>
         ))}
       </div>
 
-      {/* Links / controls */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      <div className="approval-card-actions">
         {replyToMessageId && (
-          <button
-            type="button"
-            className="chat-action-button"
-            onClick={() => onFocusMessage(replyToMessageId)}
-          >
-            {t("chat.viewOriginal")}
-          </button>
+          <div className="approval-card-links">
+            <button
+              type="button"
+              className="chat-action-button"
+              onClick={() => onFocusMessage(replyToMessageId)}
+            >
+              {t("chat.viewOriginal")}
+            </button>
+          </div>
         )}
         {linkedPending && canResolve && (
-          <>
-            <Select
-              size="small"
-              value={selectedGrant}
-              onChange={handleGrantChange}
-              disabled={busyId === linkedPending.id}
-              style={{ width: 110 }}
-              options={GRANT_OPTIONS.map((o) => ({ value: o.value, label: t(o.label) }))}
-            />
-            <Button
-              size="small"
-              type="primary"
-              loading={busyId === linkedPending.id}
-              onClick={handleApprove}
-            >
-              {t("approval.approve")}
-            </Button>
-            <Button
-              size="small"
-              danger
-              loading={busyId === linkedPending.id}
-              onClick={handleReject}
-            >
-              {t("approval.reject")}
-            </Button>
-          </>
+          <div className="approval-card-controls">
+            <div className="approval-card-select-wrap">
+              <span className="approval-card-select-label">{t("approval.grantLabel")}</span>
+              <Select
+                size="small"
+                value={selectedGrant}
+                onChange={handleGrantChange}
+                disabled={busyId === linkedPending.id}
+                className="approval-card-select"
+                placement="topLeft"
+                popupMatchSelectWidth={false}
+                getPopupContainer={(trigger) => trigger.parentElement ?? document.body}
+                options={GRANT_OPTIONS.map((o) => ({ value: o.value, label: t(o.label) }))}
+              />
+            </div>
+            <div className="approval-card-buttons">
+              <Button
+                size="small"
+                type="primary"
+                loading={busyId === linkedPending.id}
+                onClick={handleApprove}
+              >
+                {t("approval.approve")}
+              </Button>
+              <Button
+                size="small"
+                danger
+                loading={busyId === linkedPending.id}
+                onClick={handleReject}
+              >
+                {t("approval.reject")}
+              </Button>
+            </div>
+          </div>
         )}
       </div>
     </div>

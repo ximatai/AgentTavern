@@ -249,6 +249,155 @@
   border-left: none;
 }
 
+.chat-row-approval .chat-row-content {
+  max-width: min(760px, 100%);
+}
+
+.approval-card {
+  position: relative;
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.96), rgba(22, 32, 49, 0.96));
+  border-radius: 14px;
+  padding: 16px 18px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-left: 4px solid #fbbf24;
+  box-shadow: 0 12px 28px rgba(2, 6, 23, 0.22);
+}
+
+.approval-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.approval-card-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.approval-card-grant {
+  font-size: 11px;
+  color: var(--font-tertiary, #64748b);
+}
+
+.approval-card-title {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--font-primary, #fff);
+}
+
+.approval-card-detail {
+  margin: 0 0 14px;
+  max-width: 60ch;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--font-secondary, #94a3b8);
+}
+
+.approval-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 18px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.42);
+  border: 1px solid rgba(148, 163, 184, 0.08);
+}
+
+.approval-card-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.approval-card-item-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--font-muted, #475569);
+}
+
+.approval-card-item-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--font-secondary, #cbd5e1);
+  word-break: break-word;
+}
+
+.approval-card-actions {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.approval-card-links {
+  display: flex;
+  align-items: center;
+}
+
+.approval-card-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.approval-card-select-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.approval-card-select-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--font-muted, #475569);
+}
+
+.approval-card-select {
+  min-width: 156px;
+}
+
+.approval-card-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.approval-card .ant-select-selector {
+  border-radius: 10px !important;
+}
+
+@media (max-width: 720px) {
+  .approval-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .approval-card-actions,
+  .approval-card-controls,
+  .approval-card-buttons {
+    width: 100%;
+  }
+
+  .approval-card-buttons .ant-btn {
+    flex: 1;
+  }
+}
+
 /* ── Own Messages (right-aligned) ── */
 .own-wrap {
   display: flex;

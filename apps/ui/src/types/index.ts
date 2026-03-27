@@ -19,4 +19,6 @@ export type RecentRoomRecord = {
   name: string;
   inviteToken: string;
   visitedAt: string;
+  lastReadAt?: string | null;
+  lastMessageAt?: string | null;
 };

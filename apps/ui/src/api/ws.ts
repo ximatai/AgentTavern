@@ -1,8 +1,24 @@
 import type { RealtimeEvent } from "@agent-tavern/shared";
 
-function buildWsUrl(params: string): string {
+function resolveWsBaseUrl(): string {
+  const explicitBase = import.meta.env.VITE_WS_BASE_URL as string | undefined;
+  if (explicitBase) {
+    return explicitBase.replace(/\/$/, "");
+  }
+
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${window.location.host}/ws?${params}`;
+
+  // Safari can drop proxied WS connections through the Vite dev server.
+  // In local dev, connect to the backend WS endpoint directly instead.
+  if (import.meta.env.DEV) {
+    return `${protocol}//${window.location.hostname}:8787`;
+  }
+
+  return `${protocol}//${window.location.host}`;
+}
+
+function buildWsUrl(params: string): string {
+  return `${resolveWsBaseUrl()}/ws?${params}`;
 }
 
 function createRoomSocket(roomId: string, memberId: string, wsToken: string): WebSocket {

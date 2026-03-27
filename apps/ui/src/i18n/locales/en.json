@@ -191,7 +191,7 @@
     "statusNotRegistered": "Please register your identity first"
   },
   "sidebar": {
-    "subtitle": "LAN Collaboration Chat",
+    "subtitle": "Human-Agent Collaboration Center",
     "myRooms": "My Rooms",
     "noRooms": "No rooms yet",
     "createRoom": "Create Room"

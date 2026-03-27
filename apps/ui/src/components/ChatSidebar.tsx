@@ -32,6 +32,13 @@ function RoomItem({
   isActive: boolean;
   onClick: () => void;
 }) {
+  const hasUnread =
+    !isActive &&
+    Boolean(
+      record.lastMessageAt &&
+        (!record.lastReadAt || record.lastMessageAt > record.lastReadAt),
+    );
+
   return (
     <button
       type="button"
@@ -40,6 +47,7 @@ function RoomItem({
     >
       <span className="room-item-hash">#</span>
       <span className="room-item-name">{record.name}</span>
+      {hasUnread ? <span className="room-item-unread-dot" aria-label="Unread messages" /> : null}
       <span className="room-item-time">{formatRelativeTime(record.visitedAt)}</span>
     </button>
   );

@@ -113,10 +113,12 @@
 .input-bar {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px 24px 16px;
-  border-top: 1px solid var(--ant-color-border, #1e293b);
-  background: var(--ant-color-bg-container, #0a0f1c);
+  gap: 10px;
+  padding: 14px 18px 18px;
+  border-top: 1px solid var(--border-default, #1e293b);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-inset, #111827) 82%, transparent), var(--bg-inset, #111827));
+  backdrop-filter: blur(8px);
 }
 
 /* Hidden file input */
@@ -214,19 +216,26 @@
   display: flex;
   align-items: flex-end;
   gap: 12px;
+  padding: 14px;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--bg-inset, #111827) 84%, var(--bg-base, #0a0f1c));
+  border: 1px solid color-mix(in srgb, var(--border-default, #1e293b) 78%, transparent);
+  box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.02) inset;
 }
 
 .input-bar-textarea {
   flex: 1;
   min-width: 0;
-  background: var(--ant-color-bg-input, #1a2332) !important;
-  border: 1px solid var(--ant-color-border-secondary, #334155) !important;
-  border-radius: 8px !important;
+  min-height: 84px !important;
+  background: color-mix(in srgb, var(--bg-base, #0a0f1c) 72%, var(--bg-surface, #1e293b)) !important;
+  border: 1px solid color-mix(in srgb, var(--border-secondary, #334155) 76%, transparent) !important;
+  border-radius: 14px !important;
   color: var(--ant-color-text, #fff) !important;
   font-size: 14px;
   font-family: "Inter", sans-serif;
   resize: none;
-  padding: 8px 12px !important;
+  padding: 14px 16px !important;
+  box-shadow: none !important;
 }
 
 .input-bar-textarea:disabled {
@@ -241,19 +250,20 @@
 .input-bar-side-actions {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
+  margin-bottom: 2px;
 }
 
 .input-bar-mini-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 28px;
-  height: 24px;
-  padding: 0 8px;
-  border-radius: 6px;
+  min-width: 34px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 10px;
   background: var(--ant-color-bg-elevated, #1e293b);
-  border: 1px solid var(--ant-color-border, #1e293b);
+  border: 1px solid color-mix(in srgb, var(--border-default, #1e293b) 72%, transparent);
   color: var(--ant-color-text-tertiary, #64748b);
   font-size: 13px;
   font-weight: 500;
@@ -274,18 +284,19 @@
 /* Send button */
 .input-bar-send-btn {
   flex-shrink: 0;
-  width: 40px;
-  height: 40px;
-  border-radius: 8px !important;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px !important;
   display: flex;
   align-items: center;
   justify-content: center;
+  align-self: flex-end;
 }
 
 /* Footnote */
 .input-bar-footnote {
   margin: 0;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--ant-color-text-quaternary, #475569);
   text-align: center;
 }

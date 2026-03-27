@@ -99,6 +99,15 @@
   color: var(--font-primary, #fff);
 }
 
+.room-item-unread-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #fb7185;
+  box-shadow: 0 0 0 3px rgb(251 113 133 / 0.16);
+}
+
 .room-item-time {
   flex-shrink: 0;
   font-family: "Inter", sans-serif;

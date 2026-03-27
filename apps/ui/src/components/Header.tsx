@@ -114,7 +114,6 @@ export function Header() {
       <ConnectionNotifications />
       <div className="header-left">
         <div className="header-brand">
-          <span className="header-brand-name">AgentTavern</span>
           {room ? (
             <div className="header-room-line">
               <span className="header-room-name">{room.name}</span>
@@ -125,9 +124,12 @@ export function Header() {
               ) : null}
             </div>
           ) : (
-            <span className="header-brand-subtitle">
-              {t("header.subtitle")}
-            </span>
+            <>
+              <span className="header-brand-name">AgentTavern</span>
+              <span className="header-brand-subtitle">
+                {t("header.subtitle")}
+              </span>
+            </>
           )}
         </div>
       </div>

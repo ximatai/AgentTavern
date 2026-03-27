@@ -13,14 +13,19 @@ import { useRoomStore } from "../stores/room";
  */
 export function usePollingSync() {
   const room = useRoomStore((s) => s.room);
+  const principal = usePrincipalStore((s) => s.principal);
 
   useEffect(() => {
-    if (!room) return;
+    if (!principal) return;
 
     const id = window.setInterval(() => {
-      void useRoomStore.getState().refreshMembers();
+      const roomStore = useRoomStore.getState();
+      if (roomStore.room) {
+        void roomStore.refreshMembers();
+      }
+      void roomStore.syncUnreadMarks();
     }, 10_000);
 
     return () => window.clearInterval(id);
-  }, [room]);
+  }, [principal, room]);
 }

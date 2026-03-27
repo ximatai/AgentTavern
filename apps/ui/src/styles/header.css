@@ -10,7 +10,7 @@
 .header-brand {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 3px;
   min-width: 0;
 }
 
@@ -36,23 +36,28 @@
 .header-room-line {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
+  flex-wrap: wrap;
 }
 
 .header-room-name {
   font-family: "Inter", sans-serif;
-  font-size: 11px;
-  color: var(--font-tertiary, #64748b);
+  font-size: 22px;
+  line-height: 1.1;
+  font-weight: 700;
+  color: var(--font-primary, #fff);
+  letter-spacing: -0.03em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: min(56vw, 720px);
 }
 
 .header-room-status {
   display: inline-flex;
   align-items: center;
-  padding: 1px 6px;
+  padding: 3px 8px;
   border-radius: 999px;
   font-size: 10px;
   font-weight: 600;
@@ -191,8 +196,13 @@
 /* Responsive */
 @media (max-width: 767px) {
   .header-brand-subtitle,
-  .header-room-line {
+  .header-room-status {
     display: none;
+  }
+
+  .header-room-name {
+    font-size: 18px;
+    max-width: 42vw;
   }
 
   .identity-info {

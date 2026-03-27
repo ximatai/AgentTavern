@@ -30,8 +30,13 @@ function mergeRecentRoom(
   items: RecentRoomRecord[],
   next: Pick<RecentRoomRecord, "roomId" | "name" | "inviteToken">,
 ): RecentRoomRecord[] {
+  const existing = items.find((item) => item.roomId === next.roomId);
   const filtered = items.filter((item) => item.roomId !== next.roomId);
-  filtered.unshift({ ...next, visitedAt: new Date().toISOString() });
+  filtered.unshift({
+    ...existing,
+    ...next,
+    visitedAt: new Date().toISOString(),
+  });
   return sortRecentRooms(filtered).slice(0, MAX_RECENT_ROOMS);
 }
 
@@ -67,6 +72,8 @@ interface RoomActions {
   removeMember: (memberId: string) => void;
   refreshLobbyPresence: () => Promise<void>;
   refreshJoinedRooms: () => Promise<void>;
+  syncUnreadMarks: () => Promise<void>;
+  markRoomRead: (roomId: string, readAt?: string) => void;
   restoreRecentRooms: () => void;
   persistRecentRooms: () => void;
   reset: () => void;
@@ -101,6 +108,8 @@ function mergeJoinedRooms(
       name: room.name,
       inviteToken: room.inviteToken,
       visitedAt: room.createdAt,
+      lastReadAt: null,
+      lastMessageAt: null,
     });
   }
   return sortRecentRooms(next).slice(0, MAX_RECENT_ROOMS);
@@ -121,6 +130,7 @@ export const useRoomStore = create<RoomStore>()((set, get) => ({
     ]);
     set({ room: roomData, members: membersData });
     useMessageStore.getState().setMessages(messagesData);
+    get().markRoomRead(roomId, messagesData.at(-1)?.createdAt ?? new Date().toISOString());
     useSessionStore.getState().reset();
   },
 
@@ -278,6 +288,63 @@ export const useRoomStore = create<RoomStore>()((set, get) => ({
     }
   },
 
+  syncUnreadMarks: async () => {
+    const { recentRooms, room } = get();
+    if (recentRooms.length === 0) {
+      return;
+    }
+
+    try {
+      const snapshots = await Promise.all(
+        recentRooms.map(async (item) => {
+          const messages = await getRoomMessages(item.roomId);
+          return {
+            roomId: item.roomId,
+            lastMessageAt: messages.at(-1)?.createdAt ?? null,
+          };
+        }),
+      );
+
+      const latestByRoomId = new Map(
+        snapshots.map((item) => [item.roomId, item.lastMessageAt]),
+      );
+
+      set((state) => ({
+        recentRooms: state.recentRooms.map((item) => {
+          const lastMessageAt = latestByRoomId.get(item.roomId) ?? item.lastMessageAt ?? null;
+          if (item.roomId === room?.id) {
+            return {
+              ...item,
+              lastMessageAt,
+              lastReadAt: lastMessageAt ?? item.lastReadAt ?? new Date().toISOString(),
+            };
+          }
+          return {
+            ...item,
+            lastMessageAt,
+          };
+        }),
+      }));
+      get().persistRecentRooms();
+    } catch {
+      // Ignore transient failures.
+    }
+  },
+
+  markRoomRead: (roomId: string, readAt?: string) => {
+    set((state) => ({
+      recentRooms: state.recentRooms.map((item) =>
+        item.roomId === roomId
+          ? {
+              ...item,
+              lastReadAt: readAt ?? item.lastMessageAt ?? new Date().toISOString(),
+            }
+          : item,
+      ),
+    }));
+    get().persistRecentRooms();
+  },
+
   restoreRecentRooms: () => {
     const principal = usePrincipalStore.getState().principal;
     if (!principal) {
@@ -294,7 +361,15 @@ export const useRoomStore = create<RoomStore>()((set, get) => ({
 
     try {
       const parsed = JSON.parse(cached) as RecentRoomRecord[];
-      set({ recentRooms: sortRecentRooms(parsed) });
+      set({
+        recentRooms: sortRecentRooms(
+          parsed.map((item) => ({
+            ...item,
+            lastReadAt: item.lastReadAt ?? null,
+            lastMessageAt: item.lastMessageAt ?? null,
+          })),
+        ),
+      });
     } catch {
       localStorage.removeItem(storageKey);
       set({ recentRooms: [] });
