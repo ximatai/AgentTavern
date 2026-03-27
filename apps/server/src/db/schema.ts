@@ -263,12 +263,18 @@ export const assistantInvites = sqliteTable("assistant_invites", {
   inviteToken: text("invite_token").notNull(),
   status: text("status").notNull(),
   acceptedMemberId: text("accepted_member_id").references(() => members.id),
+  acceptedPrivateAssistantId: text("accepted_private_assistant_id").references(
+    () => privateAssistants.id,
+  ),
   createdAt: text("created_at").notNull(),
   expiresAt: text("expires_at"),
   acceptedAt: text("accepted_at"),
 }, (table) => ({
   roomIdIdx: index("assistant_invites_room_id_idx").on(table.roomId),
   ownerMemberIdIdx: index("assistant_invites_owner_member_id_idx").on(table.ownerMemberId),
+  acceptedPrivateAssistantIdIdx: index("assistant_invites_accepted_private_assistant_id_idx").on(
+    table.acceptedPrivateAssistantId,
+  ),
   statusIdx: index("assistant_invites_status_idx").on(table.status),
   inviteTokenUniqueIdx: uniqueIndex("assistant_invites_invite_token_unique_idx").on(
     table.inviteToken,
@@ -295,9 +301,8 @@ export const localBridges = sqliteTable("local_bridges", {
 
 export const agentBindings = sqliteTable("agent_bindings", {
   id: text("id").primaryKey(),
-  memberId: text("member_id")
-    .notNull()
-    .references(() => members.id),
+  principalId: text("principal_id").references(() => principals.id),
+  privateAssistantId: text("private_assistant_id").references(() => privateAssistants.id),
   bridgeId: text("bridge_id").references(() => localBridges.id),
   backendType: text("backend_type").notNull(),
   backendThreadId: text("backend_thread_id").notNull(),
@@ -306,7 +311,10 @@ export const agentBindings = sqliteTable("agent_bindings", {
   attachedAt: text("attached_at").notNull(),
   detachedAt: text("detached_at"),
 }, (table) => ({
-  memberIdUniqueIdx: uniqueIndex("agent_bindings_member_id_unique_idx").on(table.memberId),
+  principalIdUniqueIdx: uniqueIndex("agent_bindings_principal_id_unique_idx").on(table.principalId),
+  privateAssistantIdUniqueIdx: uniqueIndex(
+    "agent_bindings_private_assistant_id_unique_idx",
+  ).on(table.privateAssistantId),
   backendThreadIdUniqueIdx: uniqueIndex(
     "agent_bindings_backend_thread_id_unique_idx",
   ).on(table.backendThreadId),

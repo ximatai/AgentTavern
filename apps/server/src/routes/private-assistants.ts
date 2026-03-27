@@ -24,6 +24,54 @@ import {
 
 const privateAssistantRoutes = new Hono();
 
+function ensurePrivateAssistantBinding(assistant: PrivateAssistant): void {
+  if (!assistant.backendThreadId) {
+    return;
+  }
+
+  const existingByAsset = db
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.privateAssistantId, assistant.id))
+    .get() as AgentBinding | undefined;
+
+  const existingByThread = db
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.backendThreadId, assistant.backendThreadId))
+    .get() as AgentBinding | undefined;
+
+  if (existingByThread && existingByThread.privateAssistantId !== assistant.id) {
+    throw new Error("backendThreadId already bound");
+  }
+
+  if (existingByAsset) {
+    db
+      .update(agentBindings)
+      .set({
+        backendType: assistant.backendType,
+        backendThreadId: assistant.backendThreadId,
+        status: existingByAsset.bridgeId ? existingByAsset.status : "pending_bridge",
+      })
+      .where(eq(agentBindings.id, existingByAsset.id))
+      .run();
+    return;
+  }
+
+  db.insert(agentBindings).values({
+    id: createId("agb"),
+    principalId: null,
+    privateAssistantId: assistant.id,
+    bridgeId: null,
+    backendType: assistant.backendType,
+    backendThreadId: assistant.backendThreadId,
+    cwd: null,
+    status: "pending_bridge",
+    attachedAt: now(),
+    detachedAt: null,
+  }).run();
+}
+
 privateAssistantRoutes.get("/api/me/assistants", (c) => {
   const principalId = c.req.query("principalId")?.trim() ?? "";
   const principalToken = c.req.query("principalToken")?.trim() ?? "";
@@ -257,6 +305,17 @@ privateAssistantRoutes.post("/api/private-assistant-invites/:inviteToken/accept"
     throw error;
   }
 
+  try {
+    ensurePrivateAssistantBinding(assistant);
+  } catch (error) {
+    if (error instanceof Error && error.message === "backendThreadId already bound") {
+      db.delete(privateAssistants).where(eq(privateAssistants.id, assistant.id)).run();
+      return c.json({ error: "backendThreadId already bound" }, 409);
+    }
+
+    throw error;
+  }
+
   db
     .update(privateAssistantInvites)
     .set({
@@ -350,7 +409,6 @@ privateAssistantRoutes.delete("/api/me/assistants/:assistantId", (c) => {
     .all() as Member[];
 
   for (const projection of projections) {
-    db.delete(agentBindings).where(eq(agentBindings.memberId, projection.id)).run();
     db
       .update(members)
       .set({ presenceStatus: "offline" })
@@ -376,6 +434,7 @@ privateAssistantRoutes.delete("/api/me/assistants/:assistantId", (c) => {
     )
     .run();
 
+  db.delete(agentBindings).where(eq(agentBindings.privateAssistantId, assistant.id)).run();
   db.delete(privateAssistants).where(eq(privateAssistants.id, assistantId)).run();
 
   broadcastToPrincipal(principalId, {
@@ -472,36 +531,6 @@ privateAssistantRoutes.post("/api/rooms/:roomId/assistants/adopt", async (c) => 
       .where(eq(members.id, existingProjection.id))
       .get() as Member;
 
-    if (assistant.backendThreadId) {
-      const existingBinding = db
-        .select()
-        .from(agentBindings)
-        .where(eq(agentBindings.backendThreadId, assistant.backendThreadId))
-        .get();
-
-      const memberBinding = db
-        .select()
-        .from(agentBindings)
-        .where(eq(agentBindings.memberId, reusedMember.id))
-        .get();
-
-      if (!existingBinding && !memberBinding) {
-        const binding: AgentBinding = {
-          id: createId("agb"),
-          memberId: reusedMember.id,
-          bridgeId: null,
-          backendType: assistant.backendType,
-          backendThreadId: assistant.backendThreadId,
-          cwd: null,
-          status: "pending_bridge",
-          attachedAt: now(),
-          detachedAt: null,
-        };
-
-        db.insert(agentBindings).values(binding).run();
-      }
-    }
-
     const event: RealtimeEvent = {
       type: "member.joined",
       roomId,
@@ -545,36 +574,6 @@ privateAssistantRoutes.post("/api/rooms/:roomId/assistants/adopt", async (c) => 
       .where(eq(members.id, dormantProjection.id))
       .get() as Member;
 
-    if (assistant.backendThreadId) {
-      const existingBinding = db
-        .select()
-        .from(agentBindings)
-        .where(eq(agentBindings.backendThreadId, assistant.backendThreadId))
-        .get();
-
-      const memberBinding = db
-        .select()
-        .from(agentBindings)
-        .where(eq(agentBindings.memberId, reusedMember.id))
-        .get();
-
-      if (!existingBinding && !memberBinding) {
-        const binding: AgentBinding = {
-          id: createId("agb"),
-          memberId: reusedMember.id,
-          bridgeId: null,
-          backendType: assistant.backendType,
-          backendThreadId: assistant.backendThreadId,
-          cwd: null,
-          status: "pending_bridge",
-          attachedAt: now(),
-          detachedAt: null,
-        };
-
-        db.insert(agentBindings).values(binding).run();
-      }
-    }
-
     const event: RealtimeEvent = {
       type: "member.joined",
       roomId,
@@ -613,30 +612,6 @@ privateAssistantRoutes.post("/api/rooms/:roomId/assistants/adopt", async (c) => 
   };
 
   db.insert(members).values(member).run();
-
-  if (assistant.backendThreadId) {
-    const existingBinding = db
-      .select()
-      .from(agentBindings)
-      .where(eq(agentBindings.backendThreadId, assistant.backendThreadId))
-      .get();
-
-    if (!existingBinding) {
-      const binding: AgentBinding = {
-        id: createId("agb"),
-        memberId: member.id,
-        bridgeId: null,
-        backendType: assistant.backendType,
-        backendThreadId: assistant.backendThreadId,
-        cwd: null,
-        status: "pending_bridge",
-        attachedAt: now(),
-        detachedAt: null,
-      };
-
-      db.insert(agentBindings).values(binding).run();
-    }
-  }
 
   const event: RealtimeEvent = {
     type: "member.joined",
@@ -700,7 +675,6 @@ privateAssistantRoutes.post("/api/rooms/:roomId/assistants/:assistantMemberId/of
     return c.json({ error: "only your private assistant projections can be taken offline" }, 403);
   }
 
-  db.delete(agentBindings).where(eq(agentBindings.memberId, assistantMember.id)).run();
   db
     .update(members)
     .set({ presenceStatus: "offline" })

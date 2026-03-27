@@ -3,64 +3,44 @@ import { eq } from "drizzle-orm";
 import type { AgentBinding, Member } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
-import { agentBindings, members } from "../db/schema";
+import { agentBindings } from "../db/schema";
+
+export function resolveBindingForPrincipal(principalId: string | null): AgentBinding | null {
+  if (!principalId) {
+    return null;
+  }
+
+  const binding = db
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.principalId, principalId))
+    .get();
+
+  return binding as AgentBinding | null;
+}
+
+export function resolveBindingForPrivateAssistant(
+  privateAssistantId: string | null,
+): AgentBinding | null {
+  if (!privateAssistantId) {
+    return null;
+  }
+
+  const binding = db
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.privateAssistantId, privateAssistantId))
+    .get();
+
+  return binding as AgentBinding | null;
+}
 
 export function resolveBindingForMember(
   member: Pick<Member, "id" | "principalId" | "sourcePrivateAssistantId">,
 ): AgentBinding | null {
-  const direct = db
-    .select()
-    .from(agentBindings)
-    .where(eq(agentBindings.memberId, member.id))
-    .get();
-
-  if (direct) {
-    return direct as AgentBinding;
-  }
-
   if (member.sourcePrivateAssistantId) {
-    const siblingProjection = db
-      .select()
-      .from(members)
-      .where(eq(members.sourcePrivateAssistantId, member.sourcePrivateAssistantId))
-      .all()
-      .filter((item) => item.id !== member.id);
-
-    for (const sibling of siblingProjection) {
-      const siblingBinding = db
-        .select()
-        .from(agentBindings)
-        .where(eq(agentBindings.memberId, sibling.id))
-        .get();
-
-      if (siblingBinding) {
-        return siblingBinding as AgentBinding;
-      }
-    }
+    return resolveBindingForPrivateAssistant(member.sourcePrivateAssistantId);
   }
 
-  if (!member.principalId) {
-    return null;
-  }
-
-  const siblingPrincipals = db
-    .select()
-    .from(members)
-    .where(eq(members.principalId, member.principalId))
-    .all()
-    .filter((item) => item.id !== member.id && item.type === "agent");
-
-  for (const sibling of siblingPrincipals) {
-    const siblingBinding = db
-      .select()
-      .from(agentBindings)
-      .where(eq(agentBindings.memberId, sibling.id))
-      .get();
-
-    if (siblingBinding) {
-      return siblingBinding as AgentBinding;
-    }
-  }
-
-  return null;
+  return resolveBindingForPrincipal(member.principalId);
 }

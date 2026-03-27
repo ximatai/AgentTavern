@@ -174,9 +174,11 @@ def main() -> int:
 
     attach_payload = {
         "bridgeToken": bridge_identity["bridgeToken"],
-        "memberId": data.get("memberId", ""),
+        "privateAssistantId": data.get("privateAssistantId", ""),
         "cwd": selected_cwd,
     }
+    if not attach_payload["privateAssistantId"]:
+        attach_payload["memberId"] = data.get("memberId", "")
     attach_status, attach_data = post_json(
         f"{base_url}/api/bridges/{bridge_identity['bridgeId']}/agents/attach",
         attach_payload,

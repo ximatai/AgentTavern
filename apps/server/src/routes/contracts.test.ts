@@ -466,9 +466,147 @@ test("agent principal bootstrap exposes runtime-capable lobby presence and creat
     .from(agentBindings)
     .where(eq(agentBindings.backendThreadId, "thread_agent_principal_finance"))
     .get();
-  assert.equal(binding?.memberId, agentMember?.id);
+  assert.equal(binding?.principalId, agent.principalId);
 
   disconnectAgent();
+});
+
+test("agent principal bootstrap rejects a bound backendThreadId without leaving a principal record", async () => {
+  const createdAt = new Date("2026-03-25T00:30:00.000Z").toISOString();
+
+  db.insert(principals).values({
+    id: "prn_existing_bound_agent",
+    kind: "agent",
+    loginKey: "agent:existing-bound",
+    globalDisplayName: "ExistingBound",
+    backendType: "codex_cli",
+    backendThreadId: "thread_bound_conflict",
+    status: "offline",
+    createdAt,
+  }).run();
+
+  db.insert(agentBindings).values({
+    id: "agb_existing_bound_agent",
+    principalId: "prn_existing_bound_agent",
+    privateAssistantId: null,
+    bridgeId: null,
+    backendType: "codex_cli",
+    backendThreadId: "thread_bound_conflict",
+    cwd: null,
+    status: "pending_bridge",
+    attachedAt: createdAt,
+    detachedAt: null,
+  }).run();
+
+  const response = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "agent",
+      loginKey: "agent:new-conflict",
+      globalDisplayName: "NewConflict",
+      backendType: "codex_cli",
+      backendThreadId: "thread_bound_conflict",
+    }),
+  });
+
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), {
+    error: "backendThreadId already bound",
+  });
+
+  const leakedPrincipal = db
+    .select()
+    .from(principals)
+    .where(eq(principals.loginKey, "agent:new-conflict"))
+    .get();
+  assert.equal(leakedPrincipal, undefined);
+});
+
+test("agent principal bootstrap keeps an existing principal unchanged when backendThreadId is already bound elsewhere", async () => {
+  const createdAt = new Date("2026-03-25T00:40:00.000Z").toISOString();
+
+  db.insert(principals).values([
+    {
+      id: "prn_existing_update_agent",
+      kind: "agent",
+      loginKey: "agent:update-target",
+      globalDisplayName: "BeforeUpdate",
+      backendType: "codex_cli",
+      backendThreadId: "thread_update_original",
+      status: "offline",
+      createdAt,
+    },
+    {
+      id: "prn_existing_conflict_agent",
+      kind: "agent",
+      loginKey: "agent:update-conflict-owner",
+      globalDisplayName: "ConflictOwner",
+      backendType: "codex_cli",
+      backendThreadId: "thread_update_conflict",
+      status: "offline",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(agentBindings).values([
+    {
+      id: "agb_existing_update_agent",
+      principalId: "prn_existing_update_agent",
+      privateAssistantId: null,
+      bridgeId: null,
+      backendType: "codex_cli",
+      backendThreadId: "thread_update_original",
+      cwd: null,
+      status: "pending_bridge",
+      attachedAt: createdAt,
+      detachedAt: null,
+    },
+    {
+      id: "agb_existing_conflict_agent",
+      principalId: "prn_existing_conflict_agent",
+      privateAssistantId: null,
+      bridgeId: null,
+      backendType: "codex_cli",
+      backendThreadId: "thread_update_conflict",
+      cwd: null,
+      status: "pending_bridge",
+      attachedAt: createdAt,
+      detachedAt: null,
+    },
+  ]).run();
+
+  const response = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "agent",
+      loginKey: "agent:update-target",
+      globalDisplayName: "AfterAttempt",
+      backendType: "codex_cli",
+      backendThreadId: "thread_update_conflict",
+    }),
+  });
+
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), {
+    error: "backendThreadId already bound",
+  });
+
+  const principalAfter = db
+    .select()
+    .from(principals)
+    .where(eq(principals.id, "prn_existing_update_agent"))
+    .get();
+  const bindingAfter = db
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.id, "agb_existing_update_agent"))
+    .get();
+
+  assert.equal(principalAfter?.globalDisplayName, "BeforeUpdate");
+  assert.equal(principalAfter?.backendThreadId, "thread_update_original");
+  assert.equal(bindingAfter?.backendThreadId, "thread_update_original");
 });
 
 test("principal can invite a private codex assistant, accept it, and adopt it into a room", async () => {
@@ -585,7 +723,7 @@ test("principal can invite a private codex assistant, accept it, and adopt it in
   const binding = db
     .select()
     .from(agentBindings)
-    .where(eq(agentBindings.memberId, adoptedMember.id))
+    .where(eq(agentBindings.privateAssistantId, privateAssistant.id))
     .get();
   assert.equal(binding?.backendThreadId, "thread_private_codex_1");
 
@@ -2051,6 +2189,145 @@ test("mentioning an independent agent triggers execution and commits a reply", a
   );
 });
 
+test("private assistant projections reject concurrent runs across rooms for the same asset", async () => {
+  const createdAt = new Date("2026-03-25T04:50:00.000Z").toISOString();
+
+  db.insert(rooms).values([
+    {
+      id: "room_private_concurrent_a",
+      name: "Private Concurrent A",
+      inviteToken: createInviteToken(),
+      status: "active",
+      createdAt,
+    },
+    {
+      id: "room_private_concurrent_b",
+      name: "Private Concurrent B",
+      inviteToken: createInviteToken(),
+      status: "active",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_private_requester_a",
+      roomId: "room_private_concurrent_a",
+      type: "human",
+      roleKind: "none",
+      displayName: "RequesterA",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_private_requester_b",
+      roomId: "room_private_concurrent_b",
+      type: "human",
+      roleKind: "none",
+      displayName: "RequesterB",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_private_assistant_a",
+      roomId: "room_private_concurrent_a",
+      principalId: null,
+      type: "agent",
+      roleKind: "assistant",
+      displayName: "SharedPrivateAgent",
+      ownerMemberId: "mem_private_requester_a",
+      sourcePrivateAssistantId: "pa_private_concurrent",
+      adapterType: "codex_cli",
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_private_assistant_b",
+      roomId: "room_private_concurrent_b",
+      principalId: null,
+      type: "agent",
+      roleKind: "assistant",
+      displayName: "SharedPrivateAgent",
+      ownerMemberId: "mem_private_requester_b",
+      sourcePrivateAssistantId: "pa_private_concurrent",
+      adapterType: "codex_cli",
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(messages).values({
+    id: "msg_private_trigger_a",
+    roomId: "room_private_concurrent_a",
+    senderMemberId: "mem_private_requester_a",
+    messageType: "user_text",
+    content: "@SharedPrivateAgent first task",
+    systemData: null,
+    replyToMessageId: null,
+    createdAt,
+  }).run();
+
+  db.insert(agentSessions).values({
+    id: "ags_private_concurrent_existing",
+    roomId: "room_private_concurrent_a",
+    agentMemberId: "mem_private_assistant_a",
+    triggerMessageId: "msg_private_trigger_a",
+    requesterMemberId: "mem_private_requester_a",
+    approvalId: null,
+    approvalRequired: false,
+    status: "running",
+    startedAt: createdAt,
+    endedAt: null,
+  }).run();
+
+  const requesterToken = issueWsToken("mem_private_requester_b", "room_private_concurrent_b");
+  const response = await app.request("http://localhost/api/rooms/room_private_concurrent_b/messages", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_private_requester_b",
+      wsToken: requesterToken,
+      content: "@SharedPrivateAgent second task",
+    }),
+  });
+
+  assert.equal(response.status, 201);
+
+  const rejectedSession = await waitFor(
+    () =>
+      db
+        .select()
+        .from(agentSessions)
+        .where(eq(agentSessions.roomId, "room_private_concurrent_b"))
+        .get(),
+    (value) => value?.status === "failed",
+  );
+
+  assert.equal(rejectedSession?.status, "failed");
+
+  const roomMessages = db
+    .select()
+    .from(messages)
+    .where(eq(messages.roomId, "room_private_concurrent_b"))
+    .all();
+
+  assert.ok(
+    roomMessages.some(
+      (message) =>
+        message.messageType === "system_notice" &&
+        message.content === "SharedPrivateAgent is already handling another request in a different room.",
+    ),
+  );
+});
+
 test("bridge register creates a reusable bridge identity and heartbeat refreshes it", async () => {
   const registerResponse = await app.request("http://localhost/api/bridges/register", {
     method: "POST",
@@ -2215,11 +2492,23 @@ test("bridge can attach an existing agent binding by backendThreadId", async () 
     createdAt: originalAttachedAt,
   }).run();
 
+  db.insert(principals).values({
+    id: "prn_attach_agent",
+    kind: "agent",
+    loginKey: "agent:attach",
+    globalDisplayName: "AttachAgent",
+    backendType: "codex_cli",
+    backendThreadId: "thread_attach",
+    status: "offline",
+    createdAt: originalAttachedAt,
+  }).run();
+
   db.insert(members).values({
     id: "mem_attach_agent",
     roomId: "room_attach_binding",
+    principalId: "prn_attach_agent",
     type: "agent",
-    roleKind: "assistant",
+    roleKind: "independent",
     displayName: "AttachAgent",
     ownerMemberId: null,
     adapterType: "codex_cli",
@@ -2230,7 +2519,8 @@ test("bridge can attach an existing agent binding by backendThreadId", async () 
 
   db.insert(agentBindings).values({
     id: "agb_attach",
-    memberId: "mem_attach_agent",
+    principalId: "prn_attach_agent",
+    privateAssistantId: null,
     bridgeId: null,
     backendType: "codex_cli",
     backendThreadId: "thread_attach",
@@ -2302,11 +2592,23 @@ test("bridge attach returns 409 when the binding is already owned by another bri
     createdAt,
   }).run();
 
+  db.insert(principals).values({
+    id: "prn_attach_owner_conflict",
+    kind: "agent",
+    loginKey: "agent:attach-owner-conflict",
+    globalDisplayName: "AttachOwnerConflict",
+    backendType: "codex_cli",
+    backendThreadId: "thread_attach_owner_conflict",
+    status: "offline",
+    createdAt,
+  }).run();
+
   db.insert(members).values({
     id: "mem_attach_owner_conflict",
     roomId: "room_attach_owner_conflict",
+    principalId: "prn_attach_owner_conflict",
     type: "agent",
-    roleKind: "assistant",
+    roleKind: "independent",
     displayName: "AttachOwnerConflict",
     ownerMemberId: null,
     adapterType: "codex_cli",
@@ -2317,7 +2619,8 @@ test("bridge attach returns 409 when the binding is already owned by another bri
 
   db.insert(agentBindings).values({
     id: "agb_attach_owner_conflict",
-    memberId: "mem_attach_owner_conflict",
+    principalId: "prn_attach_owner_conflict",
+    privateAssistantId: null,
     bridgeId: "brg_attach_owner_a",
     backendType: "codex_cli",
     backendThreadId: "thread_attach_owner_conflict",
@@ -2345,7 +2648,7 @@ test("bridge attach returns 409 when the binding is already owned by another bri
   });
 });
 
-test("accepted assistant invite can be attached to a bridge by memberId", async () => {
+test("accepted assistant invite can be attached to a bridge by privateAssistantId", async () => {
   const createdAt = new Date("2026-03-25T05:45:00.000Z").toISOString();
 
   db.insert(rooms).values({
@@ -2356,9 +2659,21 @@ test("accepted assistant invite can be attached to a bridge by memberId", async 
     createdAt,
   }).run();
 
+  db.insert(principals).values({
+    id: "prn_owner_invite_attach",
+    kind: "human",
+    loginKey: "owner-invite-attach@example.com",
+    globalDisplayName: "OwnerInviteAttach",
+    backendType: null,
+    backendThreadId: null,
+    status: "online",
+    createdAt,
+  }).run();
+
   db.insert(members).values({
     id: "mem_owner_invite_attach",
     roomId: "room_invite_attach",
+    principalId: "prn_owner_invite_attach",
     type: "human",
     roleKind: "none",
     displayName: "OwnerInviteAttach",
@@ -2378,6 +2693,7 @@ test("accepted assistant invite can be attached to a bridge by memberId", async 
     inviteToken: "invite_attach_token",
     status: "pending",
     acceptedMemberId: null,
+    acceptedPrivateAssistantId: null,
     createdAt,
     expiresAt: null,
     acceptedAt: null,
@@ -2409,6 +2725,22 @@ test("accepted assistant invite can be attached to a bridge by memberId", async 
 
   assert.equal(acceptResponse.status, 201);
   const accepted = await acceptResponse.json();
+  assert.ok(accepted.privateAssistantId);
+
+  const storedInvite = db
+    .select()
+    .from(assistantInvites)
+    .where(eq(assistantInvites.id, "ainv_attach"))
+    .get();
+  assert.equal(storedInvite?.acceptedPrivateAssistantId, accepted.privateAssistantId);
+
+  const storedAssistant = db
+    .select()
+    .from(privateAssistants)
+    .where(eq(privateAssistants.id, accepted.privateAssistantId))
+    .get();
+  assert.equal(storedAssistant?.ownerPrincipalId, "prn_owner_invite_attach");
+  assert.equal(storedAssistant?.backendThreadId, "thread_invite_attach");
 
   const attachResponse = await app.request(
     "http://localhost/api/bridges/brg_invite_attach/agents/attach",
@@ -2417,7 +2749,7 @@ test("accepted assistant invite can be attached to a bridge by memberId", async 
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         bridgeToken: "bridge_invite_attach_token",
-        memberId: accepted.memberId,
+        privateAssistantId: accepted.privateAssistantId,
         cwd: "/tmp/invite-attach",
       }),
     },
@@ -2428,12 +2760,395 @@ test("accepted assistant invite can be attached to a bridge by memberId", async 
   const binding = db
     .select()
     .from(agentBindings)
-    .where(eq(agentBindings.memberId, accepted.memberId))
+    .where(eq(agentBindings.privateAssistantId, accepted.privateAssistantId))
     .get();
 
   assert.equal(binding?.bridgeId, "brg_invite_attach");
   assert.equal(binding?.status, "active");
   assert.equal(binding?.cwd, "/tmp/invite-attach");
+});
+
+test("assistant invite accept reuses the same private assistant asset for the same owner and thread", async () => {
+  const createdAt = new Date("2026-03-25T05:55:00.000Z").toISOString();
+
+  db.insert(principals).values({
+    id: "prn_owner_reuse",
+    kind: "human",
+    loginKey: "owner-reuse@example.com",
+    globalDisplayName: "OwnerReuse",
+    backendType: null,
+    backendThreadId: null,
+    status: "online",
+    createdAt,
+  }).run();
+
+  db.insert(rooms).values([
+    {
+      id: "room_owner_reuse_a",
+      name: "Owner Reuse A",
+      inviteToken: createInviteToken(),
+      status: "active",
+      createdAt,
+    },
+    {
+      id: "room_owner_reuse_b",
+      name: "Owner Reuse B",
+      inviteToken: createInviteToken(),
+      status: "active",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_owner_reuse_a",
+      roomId: "room_owner_reuse_a",
+      principalId: "prn_owner_reuse",
+      type: "human",
+      roleKind: "none",
+      displayName: "OwnerReuseA",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_owner_reuse_b",
+      roomId: "room_owner_reuse_b",
+      principalId: "prn_owner_reuse",
+      type: "human",
+      roleKind: "none",
+      displayName: "OwnerReuseB",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(assistantInvites).values([
+    {
+      id: "ainv_reuse_a",
+      roomId: "room_owner_reuse_a",
+      ownerMemberId: "mem_owner_reuse_a",
+      presetDisplayName: "账本助理",
+      backendType: "codex_cli",
+      inviteToken: "invite_reuse_a",
+      status: "pending",
+      acceptedMemberId: null,
+      acceptedPrivateAssistantId: null,
+      createdAt,
+      expiresAt: null,
+      acceptedAt: null,
+    },
+    {
+      id: "ainv_reuse_b",
+      roomId: "room_owner_reuse_b",
+      ownerMemberId: "mem_owner_reuse_b",
+      presetDisplayName: "另一个名字",
+      backendType: "codex_cli",
+      inviteToken: "invite_reuse_b",
+      status: "pending",
+      acceptedMemberId: null,
+      acceptedPrivateAssistantId: null,
+      createdAt,
+      expiresAt: null,
+      acceptedAt: null,
+    },
+  ]).run();
+
+  const firstAcceptResponse = await app.request(
+    "http://localhost/api/assistant-invites/invite_reuse_a/accept",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        backendThreadId: "thread_owner_reuse",
+      }),
+    },
+  );
+
+  assert.equal(firstAcceptResponse.status, 201);
+  const firstAccepted = await firstAcceptResponse.json();
+
+  const secondAcceptResponse = await app.request(
+    "http://localhost/api/assistant-invites/invite_reuse_b/accept",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        backendThreadId: "thread_owner_reuse",
+      }),
+    },
+  );
+
+  assert.equal(secondAcceptResponse.status, 201);
+  const secondAccepted = await secondAcceptResponse.json();
+
+  assert.equal(secondAccepted.privateAssistantId, firstAccepted.privateAssistantId);
+
+  const storedAssistants = db
+    .select()
+    .from(privateAssistants)
+    .where(eq(privateAssistants.ownerPrincipalId, "prn_owner_reuse"))
+    .all();
+  assert.equal(storedAssistants.length, 1);
+  assert.equal(storedAssistants[0]?.name, "账本助理");
+  assert.equal(storedAssistants[0]?.backendThreadId, "thread_owner_reuse");
+
+  const secondProjection = db
+    .select()
+    .from(members)
+    .where(eq(members.id, secondAccepted.memberId))
+    .get();
+  assert.equal(secondProjection?.sourcePrivateAssistantId, firstAccepted.privateAssistantId);
+  assert.equal(secondProjection?.displayName, "账本助理");
+
+  const firstInvite = db
+    .select()
+    .from(assistantInvites)
+    .where(eq(assistantInvites.id, "ainv_reuse_a"))
+    .get();
+  const secondInvite = db
+    .select()
+    .from(assistantInvites)
+    .where(eq(assistantInvites.id, "ainv_reuse_b"))
+    .get();
+  assert.equal(firstInvite?.acceptedPrivateAssistantId, firstAccepted.privateAssistantId);
+  assert.equal(secondInvite?.acceptedPrivateAssistantId, firstAccepted.privateAssistantId);
+});
+
+test("assistant invite accept does not leak a private assistant asset when room displayName conflicts", async () => {
+  const createdAt = new Date("2026-03-25T05:56:00.000Z").toISOString();
+
+  db.insert(principals).values({
+    id: "prn_owner_display_conflict",
+    kind: "human",
+    loginKey: "owner-display-conflict@example.com",
+    globalDisplayName: "OwnerDisplayConflict",
+    backendType: null,
+    backendThreadId: null,
+    status: "online",
+    createdAt,
+  }).run();
+
+  db.insert(rooms).values({
+    id: "room_owner_display_conflict",
+    name: "Owner Display Conflict",
+    inviteToken: createInviteToken(),
+    status: "active",
+    createdAt,
+  }).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_owner_display_conflict",
+      roomId: "room_owner_display_conflict",
+      principalId: "prn_owner_display_conflict",
+      type: "human",
+      roleKind: "none",
+      displayName: "OwnerDisplayConflict",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_conflicting_name",
+      roomId: "room_owner_display_conflict",
+      principalId: null,
+      type: "human",
+      roleKind: "none",
+      displayName: "冲突助理",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(assistantInvites).values({
+    id: "ainv_display_conflict",
+    roomId: "room_owner_display_conflict",
+    ownerMemberId: "mem_owner_display_conflict",
+    presetDisplayName: "冲突助理",
+    backendType: "codex_cli",
+    inviteToken: "invite_display_conflict",
+    status: "pending",
+    acceptedMemberId: null,
+    acceptedPrivateAssistantId: null,
+    createdAt,
+    expiresAt: null,
+    acceptedAt: null,
+  }).run();
+
+  const response = await app.request(
+    "http://localhost/api/assistant-invites/invite_display_conflict/accept",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        backendThreadId: "thread_display_conflict",
+      }),
+    },
+  );
+
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), {
+    error: "displayName already exists in room",
+  });
+
+  const leakedAssistant = db
+    .select()
+    .from(privateAssistants)
+    .where(eq(privateAssistants.backendThreadId, "thread_display_conflict"))
+    .get();
+  const inviteAfter = db
+    .select()
+    .from(assistantInvites)
+    .where(eq(assistantInvites.id, "ainv_display_conflict"))
+    .get();
+
+  assert.equal(leakedAssistant, undefined);
+  assert.equal(inviteAfter?.status, "pending");
+  assert.equal(inviteAfter?.acceptedPrivateAssistantId, null);
+});
+
+test("assistant invite accept rejects reusing a private assistant thread across different owners", async () => {
+  const createdAt = new Date("2026-03-25T05:58:00.000Z").toISOString();
+
+  db.insert(principals).values([
+    {
+      id: "prn_owner_conflict_a",
+      kind: "human",
+      loginKey: "owner-conflict-a@example.com",
+      globalDisplayName: "OwnerConflictA",
+      backendType: null,
+      backendThreadId: null,
+      status: "online",
+      createdAt,
+    },
+    {
+      id: "prn_owner_conflict_b",
+      kind: "human",
+      loginKey: "owner-conflict-b@example.com",
+      globalDisplayName: "OwnerConflictB",
+      backendType: null,
+      backendThreadId: null,
+      status: "online",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(rooms).values([
+    {
+      id: "room_owner_conflict_a",
+      name: "Owner Conflict A",
+      inviteToken: createInviteToken(),
+      status: "active",
+      createdAt,
+    },
+    {
+      id: "room_owner_conflict_b",
+      name: "Owner Conflict B",
+      inviteToken: createInviteToken(),
+      status: "active",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_owner_conflict_a",
+      roomId: "room_owner_conflict_a",
+      principalId: "prn_owner_conflict_a",
+      type: "human",
+      roleKind: "none",
+      displayName: "OwnerConflictA",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_owner_conflict_b",
+      roomId: "room_owner_conflict_b",
+      principalId: "prn_owner_conflict_b",
+      type: "human",
+      roleKind: "none",
+      displayName: "OwnerConflictB",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(assistantInvites).values([
+    {
+      id: "ainv_conflict_a",
+      roomId: "room_owner_conflict_a",
+      ownerMemberId: "mem_owner_conflict_a",
+      presetDisplayName: "共享助理",
+      backendType: "codex_cli",
+      inviteToken: "invite_conflict_a",
+      status: "pending",
+      acceptedMemberId: null,
+      acceptedPrivateAssistantId: null,
+      createdAt,
+      expiresAt: null,
+      acceptedAt: null,
+    },
+    {
+      id: "ainv_conflict_b",
+      roomId: "room_owner_conflict_b",
+      ownerMemberId: "mem_owner_conflict_b",
+      presetDisplayName: "共享助理",
+      backendType: "codex_cli",
+      inviteToken: "invite_conflict_b",
+      status: "pending",
+      acceptedMemberId: null,
+      acceptedPrivateAssistantId: null,
+      createdAt,
+      expiresAt: null,
+      acceptedAt: null,
+    },
+  ]).run();
+
+  const firstAcceptResponse = await app.request(
+    "http://localhost/api/assistant-invites/invite_conflict_a/accept",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        backendThreadId: "thread_owner_conflict",
+      }),
+    },
+  );
+
+  assert.equal(firstAcceptResponse.status, 201);
+
+  const secondAcceptResponse = await app.request(
+    "http://localhost/api/assistant-invites/invite_conflict_b/accept",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        backendThreadId: "thread_owner_conflict",
+      }),
+    },
+  );
+
+  assert.equal(secondAcceptResponse.status, 409);
+  assert.deepEqual(await secondAcceptResponse.json(), {
+    error: "backendThreadId already bound",
+  });
 });
 
 test("unattached codex binding fails with a local bridge requirement message", async () => {
@@ -2445,6 +3160,17 @@ test("unattached codex binding fails with a local bridge requirement message", a
     name: "Codex Bridge Room",
     inviteToken: createInviteToken(),
   });
+
+  db.insert(principals).values({
+    id: "prn_codex_agent",
+    kind: "agent",
+    loginKey: "agent:codex-pending",
+    globalDisplayName: "CodexAgent",
+    backendType: "codex_cli",
+    backendThreadId: "thread_codex_pending_bridge",
+    status: "offline",
+    createdAt,
+  }).run();
 
   db.insert(members).values([
     {
@@ -2462,6 +3188,7 @@ test("unattached codex binding fails with a local bridge requirement message", a
     {
       id: "mem_codex_agent",
       roomId,
+      principalId: "prn_codex_agent",
       type: "agent",
       roleKind: "independent",
       displayName: "CodexAgent",
@@ -2475,7 +3202,8 @@ test("unattached codex binding fails with a local bridge requirement message", a
 
   db.insert(agentBindings).values({
     id: "agb_codex_pending_bridge",
-    memberId: "mem_codex_agent",
+    principalId: "prn_codex_agent",
+    privateAssistantId: null,
     bridgeId: null,
     backendType: "codex_cli",
     backendThreadId: "thread_codex_pending_bridge",
@@ -2547,6 +3275,17 @@ test("attached codex binding can be pulled and completed through bridge task end
     updatedAt: createdAt,
   }).run();
 
+  db.insert(principals).values({
+    id: "prn_codex_bridge_task",
+    kind: "agent",
+    loginKey: "agent:bridge-task",
+    globalDisplayName: "BridgeCodex",
+    backendType: "codex_cli",
+    backendThreadId: "thread_codex_bridge_task",
+    status: "offline",
+    createdAt,
+  }).run();
+
   db.insert(members).values([
     {
       id: "mem_requester_bridge_task",
@@ -2563,6 +3302,7 @@ test("attached codex binding can be pulled and completed through bridge task end
     {
       id: "mem_codex_bridge_task",
       roomId,
+      principalId: "prn_codex_bridge_task",
       type: "agent",
       roleKind: "independent",
       displayName: "BridgeCodex",
@@ -2576,7 +3316,8 @@ test("attached codex binding can be pulled and completed through bridge task end
 
   db.insert(agentBindings).values({
     id: "agb_codex_bridge_task",
-    memberId: "mem_codex_bridge_task",
+    principalId: "prn_codex_bridge_task",
+    privateAssistantId: null,
     bridgeId: "brg_codex_task",
     backendType: "codex_cli",
     backendThreadId: "thread_codex_bridge_task",
@@ -2754,6 +3495,17 @@ test("attached codex binding emits a waiting notice when its bridge heartbeat is
     updatedAt: staleSeenAt,
   }).run();
 
+  db.insert(principals).values({
+    id: "prn_codex_waiting",
+    kind: "agent",
+    loginKey: "agent:waiting",
+    globalDisplayName: "WaitingCodex",
+    backendType: "codex_cli",
+    backendThreadId: "thread_codex_waiting",
+    status: "offline",
+    createdAt: staleSeenAt,
+  }).run();
+
   db.insert(members).values([
     {
       id: "mem_requester_codex_waiting",
@@ -2770,6 +3522,7 @@ test("attached codex binding emits a waiting notice when its bridge heartbeat is
     {
       id: "mem_codex_waiting",
       roomId,
+      principalId: "prn_codex_waiting",
       type: "agent",
       roleKind: "independent",
       displayName: "WaitingCodex",
@@ -2783,7 +3536,8 @@ test("attached codex binding emits a waiting notice when its bridge heartbeat is
 
   db.insert(agentBindings).values({
     id: "agb_codex_waiting",
-    memberId: "mem_codex_waiting",
+    principalId: "prn_codex_waiting",
+    privateAssistantId: null,
     bridgeId: "brg_codex_waiting",
     backendType: "codex_cli",
     backendThreadId: "thread_codex_waiting",

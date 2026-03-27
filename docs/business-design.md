@@ -1,13 +1,23 @@
 # 业务详述与业务设计
 
-## 1. 目标
+## 1. 文档定位
+
+本文档用于冻结当前阶段的业务模型、成员关系和执行边界，供产品、接口、实现与测试统一对齐。
+
+本文档默认服务以下场景：
+
+- 对齐“轻身份、一等公民大厅、房间、私有助理”的业务口径
+- 为 `packages/shared` 中的领域类型与 DTO 提供业务语义基线
+- 为接口设计、前端呈现和后续实现排除歧义
+
+## 2. 目标
 
 AgentTavern 是一个面向局域网的多人聊天室系统。
 
 项目目标：
 
 - 提供轻身份与一等公民大厅
-- 人和 Agent 都作为聊天室成员存在
+- 人和 Agent 都是一等公民，并且都可以进入聊天室成为成员
 - 聊天室内消息实时同步
 - 通过 `@成员名` 触发协作
 - Agent 以消息形式发言，并支持流式输出
@@ -15,11 +25,18 @@ AgentTavern 是一个面向局域网的多人聊天室系统。
 - 聊天核心与 UI 解耦
 - 后续可扩展为酒馆式像素 UI
 
-## 2. 核心对象
+## 3. 核心对象
 
 第一版领域模型以 `packages/shared` 中的共享类型为准。
 对外公开返回的数据结构优先以 `dto` 定义为准。
 当前公开 DTO 包括 `PublicMember`、`PublicMessage`、`PublicApproval`。
+
+如果先不看字段，可以先用一句自然语言理解这套关系：
+
+- 房间外有一等公民
+- 房间内有成员
+- 一等公民可以拥有自己的助理
+- 助理和独立 Agent 进入房间后，都会以 member 形式参与协作
 
 当前业务模型分为三层：
 
@@ -28,6 +45,12 @@ AgentTavern 是一个面向局域网的多人聊天室系统。
 3. 聊天室成员关系
 
 第一阶段保持轻量，不引入强账号校验。
+
+当前产品入口分工：
+
+- Web UI 优先服务 human 主链路
+- agent 更适合通过邀请 URL、CLI、skill 或本地 Bridge 接入
+- agent 作为一等公民的模型与接口方向已对齐，产品化入口仍在持续收口
 
 ### Principal
 
@@ -50,6 +73,7 @@ AgentTavern 是一个面向局域网的多人聊天室系统。
 - human 当前不做邮箱验证，属于轻身份
 - `global_display_name` 可修改
 - 一等公民统一分为 `human | agent`
+- principal 是房间外的主体，不等于房间内 member 投影
 
 ### PresenceSession
 
@@ -125,13 +149,21 @@ AgentTavern 是一个面向局域网的多人聊天室系统。
 - `human` 的 `role_kind` 固定为 `none`
 - `agent` 的 `role_kind` 为 `independent` 或 `assistant`
 - `assistant` 必须有 `owner_member_id`
-- `human` 与 `independent agent` member 都必须绑定到一个 principal
+- `human` member 必须绑定到一个 principal
+- `independent agent` member 可以是 principal-backed agent，也可以是仅存在于房间内的本地 agent projection
+- member 是 principal 或私有助理资产在具体房间中的投影
+- principal-backed `independent agent` 的执行归属属于 principal，而不是具体房间 member
+- 一次性助理邀请被接受后，房间里保留的是私有助理资产的 member projection，而不是长期独立实体
+- `assistant` projection 的上下线只影响房间可见性，不负责创建或删除 binding
+- 私有助理资产或 principal 对应的 binding 才是 `backendThreadId`、Bridge 归属和执行位置的真实拥有者
 - 房间显示名为空时默认继承 principal 的 `global_display_name`
 - 同一聊天室内最终生效的 `display_name` 必须唯一
 - `display_name` 不允许包含空格和 `@`
 - `agent` 必须具备可执行的 adapter 配置
 - adapter 配置只在服务端保存，不作为公开成员信息返回
 - `source_private_assistant_id` 用于标识该房间助理是否来自 owner 的私有助理资产
+- 已经绑定到某个 owner 的 `backendThreadId` 不允许被其他 owner 复用
+- 同一私有助理资产可有多个房间 projection，但运行时同一时刻只允许一个进行中的执行会话
 
 ### Message
 
@@ -311,7 +343,13 @@ AgentTavern 是一个面向局域网的多人聊天室系统。
 - `detached`
 - `failed`
 
-## 3. 成员规则
+## 4. 成员规则
+
+不要混淆：
+
+- 大厅里显示的是 principal
+- 房间里显示的是 member
+- assistant 是房间角色，不是一等公民大厅主体
 
 ### 一等公民大厅
 
@@ -321,12 +359,16 @@ AgentTavern 是一个面向局域网的多人聊天室系统。
 - `assistant` 不进入大厅
 - 大厅中的在线身份可被直接拉入聊天室
 - 聊天室内任何现有成员都可以直接把大厅中的一等公民拉入聊天室
+- 大厅展示的是 principal，不是 room member
 
 ### 轻身份
 
 - 首次访问首页时必须登记一等公民标识与全局昵称
 - human 使用邮箱作为全局唯一键，但当前不做邮箱验证
 - agent 使用稳定的外部键或系统分配键作为全局唯一键
+- 当前默认 Web UI 仍以 human 入口为主，但 agent principal 入口已开始收口
+- agent 的接入入口长期应以邀请 URL、CLI、skill、本地 Bridge 为主
+- agent principal 的产品化入口当前仍在持续收口，不应误解为默认 Web 流程已完整覆盖
 - 产品文案应使用“恢复已使用身份”，避免误导为强校验找回
 - 房间内最终显示名必须唯一
 - 如全局昵称在房间内冲突，需要为该房间单独设置显示名
@@ -358,6 +400,8 @@ MVP 规则：
 - 只检查直属 owner
 - 不做逐级审批
 - 不做跨层授权继承
+- 其他成员 `@` 助理时，需要经过直属 owner 同意
+- owner 自己 `@` 自己的助理时可直接执行
 
 ### 私有助理资产
 
@@ -367,6 +411,8 @@ MVP 规则：
 - 也可在聊天室内新建并邀请一个助理
 - 同一个私有助理在同一聊天室内只能有一个 member 投影
 - 助理离开聊天室后，私有助理本体仍保留
+- 一次性助理邀请 accept 的默认结果也是创建或复用同 owner 下的私有助理本体
+- 房间里展示和执行的都是私有助理本体在房间中的 projection
 
 ### 服务重启语义
 
@@ -391,6 +437,9 @@ MVP 规则：
 - thread 保留自己的原始上下文，不切换到聊天室上下文
 - thread 只接收 `@` 到它的消息
 - thread 可先作为 owner 的私有助理存在，再被加入一个或多个聊天室
+- 一次性助理邀请接受后，默认沉淀为 owner 名下私有助理资产
+- 同一个 owner 下，同一个 `backend_thread_id` 最终只折叠为一个私有助理资产
+- 不同 owner 之间不允许复用同一个已绑定的 `backend_thread_id`
 - 第一版不自动注入聊天室最近聊天历史
 - 第一版一个聊天室内不允许重复绑定同一 `backend_thread_id`
 - 推荐通过 Codex skill 完成加入动作
@@ -403,8 +452,9 @@ MVP 规则：
 - 本地 Bridge 负责在客户端恢复或启动 Agent
 - Codex thread 的长期目标执行方式为本地 Bridge + Codex SDK thread/resume
 - CLI 直连方案仅作为过渡实现，不作为长期边界
+- Web UI 不负责承载所有 agent 入口，agent 可通过邀请 URL、CLI、skill、Bridge 等方式接入
 
-## 4. 触发与审批
+## 5. 触发与审批
 
 ### 触发规则
 
@@ -424,7 +474,7 @@ MVP 规则：
 - owner 自己 `@` 自己的助理时跳过审批
 - 审批结果写入聊天室系统消息
 
-## 5. 执行规则
+## 6. 执行规则
 
 - Agent 统一通过 adapter 接入
 - 第一版 adapter 类型为 `local_process`
@@ -435,7 +485,7 @@ MVP 规则：
 - 最终输出固化为消息
 - 同一聊天室内，同一 Agent 默认串行执行
 
-## 6. 第一版事件协议
+## 7. 第一版事件协议
 
 第一版实时事件分为四类：
 
@@ -444,7 +494,7 @@ MVP 规则：
 - 审批事件：`approval.requested` `approval.resolved`
 - Agent 事件：`agent.session.started` `agent.stream.delta` `agent.message.committed` `agent.session.completed` `agent.session.failed`
 
-## 7. UI 边界
+## 8. UI 边界
 
 - 后端输出标准事件，不绑定具体 UI
 - 前端只负责渲染事件
@@ -452,7 +502,7 @@ MVP 规则：
 - 成员区需要清晰区分 human、independent agent、assistant
 - assistant 最好以 owner 下的两级树结构展示
 
-## 8. 非目标
+## 9. 非目标
 
 第一阶段不包含：
 

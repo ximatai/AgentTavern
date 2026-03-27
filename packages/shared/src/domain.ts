@@ -231,6 +231,7 @@ export type AssistantInvite = {
   inviteToken: string;
   status: AssistantInviteStatus;
   acceptedMemberId: string | null;
+  acceptedPrivateAssistantId: string | null;
   createdAt: string;
   expiresAt: string | null;
   acceptedAt: string | null;
@@ -238,7 +239,8 @@ export type AssistantInvite = {
 
 export type AgentBinding = {
   id: string;
-  memberId: string;
+  principalId: string | null;
+  privateAssistantId: string | null;
   bridgeId: string | null;
   backendType: AgentBackendType;
   backendThreadId: string;

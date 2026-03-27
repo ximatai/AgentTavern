@@ -1,4 +1,4 @@
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, or } from "drizzle-orm";
 
 import {
   createLocalProcessAdapter,
@@ -100,7 +100,8 @@ function parseLocalProcessConfig(raw: string | null): LocalProcessAdapterConfig 
 
 function toAgentBinding(row: {
   id: string;
-  memberId: string;
+  principalId: string | null;
+  privateAssistantId: string | null;
   bridgeId: string | null;
   backendType: string;
   backendThreadId: string;
@@ -125,10 +126,12 @@ function toRoom(row: {
 function toMember(row: {
   id: string;
   roomId: string;
+  principalId: string | null;
   type: string;
   roleKind: string;
   displayName: string;
   ownerMemberId: string | null;
+  sourcePrivateAssistantId: string | null;
   adapterType: string | null;
   adapterConfig: string | null;
   presenceStatus: string;
@@ -286,6 +289,44 @@ async function runAgentSession(sessionId: string): Promise<void> {
   const typedAgent = toMember(agent);
   const typedRequester = toMember(requester);
   const typedTriggerMessage = toDomainMessage(triggerMessage);
+
+  if (typedAgent.sourcePrivateAssistantId) {
+    const competingSessions = db
+      .select()
+      .from(agentSessions)
+      .where(
+        and(
+          ne(agentSessions.id, session.id),
+          or(
+            eq(agentSessions.status, "pending"),
+            eq(agentSessions.status, "waiting_approval"),
+            eq(agentSessions.status, "running"),
+          ),
+        ),
+      )
+      .all();
+
+    if (competingSessions.length > 0) {
+      const competingMembers = db
+        .select()
+        .from(members)
+        .where(inArray(members.id, competingSessions.map((item) => item.agentMemberId)))
+        .all();
+
+      const hasSameAssistantRunning = competingMembers.some(
+        (member) => member.sourcePrivateAssistantId === typedAgent.sourcePrivateAssistantId,
+      );
+
+      if (hasSameAssistantRunning) {
+        failSession(
+          typedSession,
+          `${typedAgent.displayName} is already handling another request in a different room.`,
+        );
+        return;
+      }
+    }
+  }
+
   const bindingRow = resolveBindingForMember(typedAgent);
   const typedBinding = bindingRow ? toAgentBinding(bindingRow) : null;
 

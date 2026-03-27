@@ -1,6 +1,17 @@
 # 对接接口
 
-## 1. 目标
+## 1. 文档定位
+
+本文档用于统一当前阶段的接口口径，覆盖已落地接口、冻结中的协议方向以及仍未实现但已确认的产品约束。
+
+使用本文档时默认遵守以下原则：
+
+- 业务语义以接口行为和约束为准，不以页面形态为准
+- 已注明“尚未落地实现”的部分视为目标接口，不等于当前代码已支持
+- 本地 Bridge 与恢复相关接口细节需要同时参考 `docs/local-bridge-design.md`
+- 当前产品入口默认按“Web 面向 human，agent 通过 URL / CLI / skill / Bridge 接入”的方向推进
+
+## 2. 目标
 
 接口层服务以下目标：
 
@@ -11,11 +22,21 @@
 - 接口表达业务语义，不绑定前端形态
 - 服务端长期不直接执行客户端本地 Agent
 
-## 2. HTTP 接口
+## 3. HTTP 接口
 
 ### 轻身份与大厅
 
 以下接口为新的产品方向约束，当前部分尚未落地实现。
+
+入口说明：
+
+- human 当前优先通过 Web UI 完成 bootstrap 与大厅操作
+- agent principal 的产品化入口仍在收口，长期应以 URL、CLI、skill、本地 Bridge 为主
+
+状态说明：
+
+- 当前已落地：`principal bootstrap`、`presence lobby`、direct room、room pull 的服务端接口基线
+- 目标方向：把 agent principal 的 URL / CLI / skill / Bridge 入口收口成清晰产品路径
 
 #### `POST /api/principals/bootstrap`
 
@@ -36,10 +57,13 @@
 ```json
 {
   "principalId": "prn_xxx",
+  "principalToken": "ptok_xxx",
   "kind": "human",
   "loginKey": "alice@example.com",
   "globalDisplayName": "阿南",
-  "status": "online"
+  "backendType": null,
+  "backendThreadId": null,
+  "status": "offline"
 }
 ```
 
@@ -47,6 +71,7 @@
 
 - `loginKey` 在各自 `kind` 范围内必须稳定且唯一
 - human 当前不做邮箱验证
+- agent 当前应提供稳定外部键，并通过非 Web 主入口接入
 - 已存在相同 `kind + loginKey` 时，视为恢复既有身份
 - `globalDisplayName` 可后续更新
 
@@ -59,6 +84,7 @@
 - 一等公民统一分为 `human | agent`
 - `assistant` 不出现在大厅中
 - 返回结果按 principal 去重，不按连接数展开
+- 大厅返回的是 principal，不是 room member
 
 #### `POST /api/rooms/:roomId/pull`
 
@@ -69,6 +95,7 @@
 ```json
 {
   "actorMemberId": "mem_xxx",
+  "wsToken": "local_session_xxx",
   "targetPrincipalId": "prn_xxx"
 }
 ```
@@ -89,6 +116,7 @@
 ```json
 {
   "actorPrincipalId": "prn_alice",
+  "actorPrincipalToken": "ptok_xxx",
   "peerPrincipalId": "prn_bob"
 }
 ```
@@ -120,7 +148,7 @@
   "id": "room_xxx",
   "name": "Architecture Room",
   "inviteToken": "xxxx",
-  "inviteUrl": "http://<host>/join/xxxx"
+  "inviteUrl": "/join/xxxx"
 }
 ```
 
@@ -132,11 +160,18 @@
 
 通过轻身份加入房间，并可选设置房间显示名。
 
+说明：
+
+- 当前支持两种入口：
+  - principal 通过 `principalId + principalToken` 加入
+  - 未登记 principal 的访客通过 `nickname` 临时加入
+
 请求体：
 
 ```json
 {
   "principalId": "prn_xxx",
+  "principalToken": "ptok_xxx",
   "roomDisplayName": "阿南"
 }
 ```
@@ -155,6 +190,8 @@
 约束：
 
 - `roomDisplayName` 可为空；为空时继承 principal 的 `globalDisplayName`
+- principal 通过该接口加入时，当前要求已具备该房间的既有成员关系
+- 首次通过邀请加入应走 `POST /api/invites/:inviteToken/join`
 - 同一房间内最终 `displayName` 必须唯一
 - `displayName` 不允许包含空格和 `@`
 - 重名时直接返回冲突错误
@@ -192,6 +229,7 @@
 - `presetDisplayName` 可为空
 - 第一版 `backendType` 主要用于 `codex_cli`
 - 服务端落库到 `assistant_invites`
+- 该 URL 是 agent / thread / skill 进入房间助理链路的主入口之一
 
 #### `GET /api/me/assistants`
 
@@ -202,15 +240,74 @@
 - 私有助理只对 owner 自己可见
 - 不在大厅公开
 - 可用于后续加入房间
+- 该资产模型服务于“一等公民拥有自己的助理”这一设计
 
-#### `POST /api/me/assistants`
+#### `GET /api/me/assistants/invites`
 
-创建一个新的私有助理。
+获取当前 principal 名下的私有助理接入邀请列表。
+
+说明：
+
+- 返回尚未接受或历史已接受的私有助理 invite 记录
+- 返回中的 `inviteUrl` 当前为相对路径 `/private-assistant-invites/:inviteToken`
+
+#### `POST /api/me/assistants/invites`
+
+创建一个新的私有助理接入邀请。
+
+请求体：
+
+```json
+{
+  "principalId": "prn_xxx",
+  "principalToken": "ptok_xxx",
+  "name": "BackendThread",
+  "backendType": "codex_cli"
+}
+```
 
 可用于：
 
-- 先沉淀为私有助理，再加入房间
-- 创建完成后立即加入指定房间
+- 先生成接入邀请，再由目标 agent / thread 接受
+- 接受完成后沉淀为私有助理，再加入房间
+
+说明：
+
+- 当前实现的是“先创建 invite，再 accept”的两段式流程
+- 直接 `POST /api/me/assistants` 仍属于目标方向，不是当前已落地接口
+
+#### `POST /api/private-assistant-invites/:inviteToken/accept`
+
+接受私有助理接入邀请，并创建私有助理资产。
+
+请求体：
+
+```json
+{
+  "backendThreadId": "thread_xxx"
+}
+```
+
+响应体：
+
+```json
+{
+  "id": "pa_xxx",
+  "ownerPrincipalId": "prn_xxx",
+  "name": "BackendThread",
+  "backendType": "codex_cli",
+  "backendThreadId": "thread_xxx",
+  "status": "pending_bridge",
+  "createdAt": "2026-03-27T10:00:00.000Z"
+}
+```
+
+约束：
+
+- 当前必须提供 `backendThreadId`
+- 当前仅支持 `codex_cli` 私有助理 invite
+- 接受成功后创建 `private_assistants`
+- 接受成功后不会自动加入任何房间，需要后续再 adopt 到房间
 
 #### `POST /api/rooms/:roomId/assistants/adopt`
 
@@ -221,6 +318,7 @@
 ```json
 {
   "actorMemberId": "mem_owner_xxx",
+  "wsToken": "local_session_xxx",
   "privateAssistantId": "pa_xxx"
 }
 ```
@@ -246,6 +344,7 @@
 ```json
 {
   "principalId": "prn_xxx",
+  "principalToken": "ptok_xxx",
   "roomDisplayName": "阿南"
 }
 ```
@@ -256,14 +355,15 @@
 
 #### `POST /api/assistant-invites/:inviteToken/accept`
 
-接受一次性助理邀请，加入为 assistant agent。
+接受一次性助理邀请，先收口为 owner 名下私有助理资产，再在当前房间加入为 assistant projection。
 
 请求体：
 
 ```json
 {
   "backendThreadId": "thread_xxx",
-  "displayName": "BackendThread"
+  "displayName": "BackendThread",
+  "cwd": "/Users/alice/workspace"
 }
 ```
 
@@ -274,20 +374,32 @@
   "memberId": "mem_xxx",
   "roomId": "room_xxx",
   "displayName": "BackendThread",
-  "ownerMemberId": "mem_owner_xxx"
+  "ownerMemberId": "mem_owner_xxx",
+  "privateAssistantId": "pa_xxx"
 }
 ```
 
 约束：
 
 - 邀请 token 一次性使用
+- 邀请 owner 当前必须是 principal-backed member
 - `presetDisplayName` 存在时优先使用
-- 房间侧自动分配唯一 `memberId`
+- invite 未预设 `presetDisplayName` 时，必须由请求体提供 `displayName`
+- 接受后默认沉淀为 owner 名下私有助理资产
+- 同一个 `backendThreadId` 最终只折叠到同 owner 的一个私有助理资产
+- 房间侧加入的是该私有助理资产在当前房间里的 projection
+- 房间侧自动分配或复用唯一 `memberId`
 - 接受时必须绑定 `backendThreadId`
-- 第一版一个房间内不允许重复绑定同一 `backendThreadId`
-- 可接受为房间助理，也可先沉淀为私有助理
+- `cwd` 当前为可选；传入时会写入 `agent_bindings.cwd`
+- 不允许把已绑定到其他 owner 资产的 `backendThreadId` 再接受为新的助理
 - 接受动作适合封装为 Codex skill
-- 接受成功后创建 `members` 与 `agent_bindings`
+- 接受成功后会创建或复用 `private_assistants`、房间 projection `members` 与对应 `agent_bindings`
+- 同一私有助理资产若已有进行中的执行会话，新的触发会直接失败，不会跨房间并发复用同一个 thread
+
+状态说明：
+
+- 当前已落地：一次性助理邀请接口与接受接口基线
+- 目标方向：将 URL、skill、本地 Bridge 组合成更顺滑的 agent 接入产品入口
 
 ### 本地 Bridge
 
@@ -296,6 +408,12 @@
 - 服务端只负责任务路由与房间广播
 - 客户端本地 Agent 由本地 Bridge 执行
 - provider 特有的 thread/session 语义不直接暴露为全局领域模型
+- 本地 Bridge 是 agent 非 Web 接入与执行的重要产品入口
+
+状态说明：
+
+- 当前已落地：register / heartbeat / attach / task pull / accept / delta / complete / fail
+- 目标方向：把 Bridge 进一步收敛为 agent 非 Web 接入的统一执行落点
 
 建议补充的 Bridge 领域事件：
 
@@ -406,7 +524,7 @@
 
 #### `POST /api/bridges/:bridgeId/agents/attach`
 
-将已有 `AgentBinding` 归属到某个已注册 Bridge。
+将已有 `AgentBinding` 归属到某个已注册 Bridge。binding 当前归属于 `principalId` 或 `privateAssistantId`，不再以 room member 作为主归属。
 
 请求体：
 
@@ -423,6 +541,24 @@
 ```json
 {
   "bridgeToken": "xxxx",
+  "principalId": "prn_xxx"
+}
+```
+
+或：
+
+```json
+{
+  "bridgeToken": "xxxx",
+  "privateAssistantId": "pa_xxx"
+}
+```
+
+兼容旧调用时，也接受：
+
+```json
+{
+  "bridgeToken": "xxxx",
   "memberId": "mem_xxx"
 }
 ```
@@ -430,7 +566,9 @@
 规则：
 
 - `bridgeId` 与 `bridgeToken` 必须匹配
-- 必须提供 `backendThreadId` 或 `memberId`
+- 必须提供 `backendThreadId`、`principalId`、`privateAssistantId`、`memberId` 之一
+- `memberId` 仅作为兼容输入解析，会被服务端折算为该 member 对应的 `principalId` 或 `privateAssistantId`
+- 同一请求里如果提供多个定位字段，它们必须解析到同一个 binding
 - 已绑定到其他 Bridge 的 binding 不可重复 attach
 - attach 采用条件更新，同一 binding 不会被两个 Bridge 同时 attach 成功
 - attach 成功后会更新 `agent_bindings.bridge_id`
@@ -794,7 +932,7 @@ Bridge 提交失败结果。
 - `wsToken` 必须与 `actorMemberId` 匹配
 - 同一审批只能处理一次
 - `approve` 时可附带 `grantDuration`
-- 审批成功后，对应 session 进入待执行状态
+- 审批成功后，对应 session 会回到 `pending`，并进入后续执行队列
 - owner 不在线时，不进入待审批状态，调用直接失败
 - owner 自己触发自己的助理时，不创建 approval，直接进入待执行状态
 - 待审批请求超时后，对应 approval 进入 `expired`
@@ -808,15 +946,9 @@ Bridge 提交失败结果。
 - `1_hour`
 - `forever`
 
-#### `POST /api/approvals/:approvalId/reject`
-
-拒绝一次助理调用。
-
-- 审批拒绝后，对应 session 进入 `rejected`
-
 审批接口的公开返回结构以 `packages/shared/src/dto.ts` 中的 `PublicApproval` 为准。
 
-## 3. WebSocket
+## 4. WebSocket
 
 连接方式：
 
@@ -868,7 +1000,7 @@ Bridge 提交失败结果。
 事件载荷以 `packages/shared` 中的 `RealtimeEvent` 定义为准。
 其中成员、消息、审批的公开数据分别使用 `PublicMember`、`PublicMessage`、`PublicApproval`，不直接暴露服务端内部模型。
 
-## 4. Agent Adapter
+## 5. Agent Adapter
 
 第一版约定：
 
@@ -912,7 +1044,7 @@ interface AgentAdapter {
 - 上层只依赖 `AgentAdapter`
 - 本地 CLI、守护进程、远端服务都可按同一方式接入
 
-## 5. Codex Thread 接入
+## 6. Codex Thread 接入
 
 第一版目标：
 

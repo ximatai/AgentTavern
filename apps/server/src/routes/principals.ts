@@ -4,17 +4,69 @@ import { Hono } from "hono";
 import type { Principal, PrincipalKind } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
-import { localBridges, members, principals } from "../db/schema";
-import { resolveBindingForMember } from "../lib/agent-binding-resolution";
+import { agentBindings, localBridges, principals } from "../db/schema";
+import { resolveBindingForPrincipal } from "../lib/agent-binding-resolution";
 import { createId } from "../lib/id";
 import { resolveMemberRuntimeStatus } from "../lib/member-runtime";
 import { issuePrincipalToken } from "../realtime";
 import { now } from "./support";
 
 const principalRoutes = new Hono();
+type DbExecutor = Pick<typeof db, "select" | "insert" | "update" | "delete">;
 
 function isPrincipalKind(value: unknown): value is PrincipalKind {
   return value === "human" || value === "agent";
+}
+
+function ensureAgentPrincipalBinding(principal: Principal, database: DbExecutor = db): void {
+  if (principal.kind !== "agent" || !principal.backendThreadId) {
+    return;
+  }
+
+  const existingByOwner = database
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.principalId, principal.id))
+    .get();
+
+  const existingByThread = database
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.backendThreadId, principal.backendThreadId))
+    .get();
+
+  if (existingByThread && existingByThread.principalId !== principal.id) {
+    throw new Error("backendThreadId already bound");
+  }
+
+  const timestamp = now();
+
+  if (existingByOwner) {
+    database
+      .update(agentBindings)
+      .set({
+        backendType: principal.backendType ?? "codex_cli",
+        backendThreadId: principal.backendThreadId,
+        status: existingByOwner.bridgeId ? existingByOwner.status : "pending_bridge",
+        detachedAt: existingByOwner.detachedAt,
+      })
+      .where(eq(agentBindings.id, existingByOwner.id))
+      .run();
+    return;
+  }
+
+  database.insert(agentBindings).values({
+    id: createId("agb"),
+    principalId: principal.id,
+    privateAssistantId: null,
+    bridgeId: null,
+    backendType: principal.backendType ?? "codex_cli",
+    backendThreadId: principal.backendThreadId,
+    cwd: null,
+    status: "pending_bridge",
+    attachedAt: timestamp,
+    detachedAt: null,
+  }).run();
 }
 
 principalRoutes.post("/api/principals/bootstrap", async (c) => {
@@ -46,38 +98,63 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
     .get() as Principal | undefined;
 
   if (existing) {
-    if (
-      existing.globalDisplayName !== globalDisplayName ||
-      existing.backendType !== (kind === "agent" ? backendType : null) ||
-      existing.backendThreadId !== (kind === "agent" ? backendThreadId : null)
-    ) {
-      db
-        .update(principals)
-        .set({
-          globalDisplayName,
-          backendType: kind === "agent" ? backendType : null,
-          backendThreadId: kind === "agent" ? backendThreadId : null,
-        })
-        .where(eq(principals.id, existing.id))
-        .run();
+    try {
+      const updated = db.transaction((tx) => {
+        if (kind === "agent") {
+          const conflictingBinding = tx
+            .select()
+            .from(agentBindings)
+            .where(eq(agentBindings.backendThreadId, backendThreadId))
+            .get();
+
+          if (conflictingBinding && conflictingBinding.principalId !== existing.id) {
+            throw new Error("backendThreadId already bound");
+          }
+        }
+
+        if (
+          existing.globalDisplayName !== globalDisplayName ||
+          existing.backendType !== (kind === "agent" ? backendType : null) ||
+          existing.backendThreadId !== (kind === "agent" ? backendThreadId : null)
+        ) {
+          tx
+            .update(principals)
+            .set({
+              globalDisplayName,
+              backendType: kind === "agent" ? backendType : null,
+              backendThreadId: kind === "agent" ? backendThreadId : null,
+            })
+            .where(eq(principals.id, existing.id))
+            .run();
+        }
+
+        const refreshed = tx
+          .select()
+          .from(principals)
+          .where(eq(principals.id, existing.id))
+          .get() as Principal;
+
+        ensureAgentPrincipalBinding(refreshed, tx);
+        return refreshed;
+      });
+
+      return c.json({
+        principalId: updated.id,
+        principalToken: issuePrincipalToken(updated.id),
+        kind: updated.kind,
+        loginKey: updated.loginKey,
+        globalDisplayName: updated.globalDisplayName,
+        backendType: updated.backendType ?? null,
+        backendThreadId: updated.backendThreadId ?? null,
+        status: updated.status,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === "backendThreadId already bound") {
+        return c.json({ error: "backendThreadId already bound" }, 409);
+      }
+
+      throw error;
     }
-
-    const updated = db
-      .select()
-      .from(principals)
-      .where(eq(principals.id, existing.id))
-      .get() as Principal;
-
-    return c.json({
-      principalId: updated.id,
-      principalToken: issuePrincipalToken(updated.id),
-      kind: updated.kind,
-      loginKey: updated.loginKey,
-      globalDisplayName: updated.globalDisplayName,
-      backendType: updated.backendType ?? null,
-      backendThreadId: updated.backendThreadId ?? null,
-      status: updated.status,
-    });
   }
 
   const principal: Principal = {
@@ -91,7 +168,30 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
     createdAt: now(),
   };
 
-  db.insert(principals).values(principal).run();
+  try {
+    db.transaction((tx) => {
+      if (kind === "agent") {
+        const conflictingBinding = tx
+          .select()
+          .from(agentBindings)
+          .where(eq(agentBindings.backendThreadId, backendThreadId))
+          .get();
+
+        if (conflictingBinding) {
+          throw new Error("backendThreadId already bound");
+        }
+      }
+
+      tx.insert(principals).values(principal).run();
+      ensureAgentPrincipalBinding(principal, tx);
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "backendThreadId already bound") {
+      return c.json({ error: "backendThreadId already bound" }, 409);
+    }
+
+    throw error;
+  }
 
   return c.json({
     principalId: principal.id,
@@ -121,19 +221,7 @@ principalRoutes.get("/api/presence/lobby", (c) => {
                 return "ready";
               }
 
-              const agentProjection = db
-                .select()
-                .from(members)
-                .where(eq(members.principalId, principal.id))
-                .all()
-                .find((member) => member.type === "agent");
-              const binding = agentProjection
-                ? resolveBindingForMember({
-                    id: agentProjection.id,
-                    principalId: agentProjection.principalId,
-                    sourcePrivateAssistantId: agentProjection.sourcePrivateAssistantId,
-                  })
-                : null;
+              const binding = resolveBindingForPrincipal(principal.id);
               const bridge = binding?.bridgeId
                 ? db.select().from(localBridges).where(eq(localBridges.id, binding.bridgeId)).get() ?? null
                 : null;

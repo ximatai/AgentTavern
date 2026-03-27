@@ -4,45 +4,15 @@ import { Hono } from "hono";
 import type { AgentBinding, Member, Principal, Room } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
-import { agentBindings, members, principals, rooms } from "../db/schema";
+import { members, principals, rooms } from "../db/schema";
 import { createId, createInviteToken } from "../lib/id";
+import { resolveBindingForPrincipal } from "../lib/agent-binding-resolution";
 import { resolveMemberRuntimeStatus } from "../lib/member-runtime";
 import { toPublicMember } from "../lib/public";
 import { broadcastToRoom, issueWsToken, verifyPrincipalToken, verifyWsToken } from "../realtime";
 import { isUniqueConstraintError, isValidDisplayName, now } from "./support";
 
 const roomRoutes = new Hono();
-
-function ensurePrincipalAgentBinding(member: Member, principal: Principal | null): AgentBinding | null {
-  if (!principal || principal.kind !== "agent" || !principal.backendThreadId) {
-    return null;
-  }
-
-  const existingBinding = db
-    .select()
-    .from(agentBindings)
-    .where(eq(agentBindings.backendThreadId, principal.backendThreadId))
-    .get() as AgentBinding | undefined;
-
-  if (existingBinding) {
-    return existingBinding;
-  }
-
-  const binding: AgentBinding = {
-    id: createId("agb"),
-    memberId: member.id,
-    bridgeId: null,
-    backendType: principal.backendType ?? "codex_cli",
-    backendThreadId: principal.backendThreadId,
-    cwd: null,
-    status: "pending_bridge",
-    attachedAt: now(),
-    detachedAt: null,
-  };
-
-  db.insert(agentBindings).values(binding).run();
-  return binding;
-}
 
 function buildDirectRoomName(actor: Principal, peer: Principal): string {
   return `${actor.globalDisplayName} · ${peer.globalDisplayName}`;
@@ -118,7 +88,9 @@ function joinRoom(params: {
   }
 
   const wsToken = issueWsToken(member.id, params.roomId);
-  const binding = ensurePrincipalAgentBinding(member, params.principal);
+  const binding = params.principal?.kind === "agent"
+    ? resolveBindingForPrincipal(params.principal.id)
+    : null;
   const runtimeStatus = resolveMemberRuntimeStatus(member, binding, null);
   broadcastToRoom(params.roomId, {
     type: "member.joined",
@@ -300,8 +272,6 @@ roomRoutes.post("/api/direct-rooms", async (c) => {
   };
 
   db.insert(members).values([actorMember, peerMember]).run();
-  ensurePrincipalAgentBinding(actorMember, actor);
-  ensurePrincipalAgentBinding(peerMember, peer);
 
   const wsToken = issueWsToken(actorMember.id, room.id);
 

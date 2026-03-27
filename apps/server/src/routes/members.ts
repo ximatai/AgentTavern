@@ -22,20 +22,17 @@ memberRoutes.get("/api/rooms/:roomId/members", (c) => {
     .where(eq(members.roomId, roomId))
     .all()
     .filter((member) => !(member.sourcePrivateAssistantId && member.presenceStatus === "offline"));
-  const memberIds = roomMembers.map((member) => member.id);
-  const bindings = memberIds.length
-    ? db.select().from(agentBindings).where(inArray(agentBindings.memberId, memberIds)).all()
-    : [];
-  const bindingByMemberId = new Map(bindings.map((binding) => [binding.memberId, binding as typeof bindings[number]]));
-  const bridgeIds = [...new Set(bindings.map((binding) => binding.bridgeId).filter(Boolean))] as string[];
+  const bindings = roomMembers
+    .map((member) => resolveBindingForMember(member as Member))
+    .filter(Boolean) as Array<typeof agentBindings.$inferSelect>;
+  const uniqueBindings = [...new Map(bindings.map((binding) => [binding.id, binding])).values()];
+  const bridgeIds = [...new Set(uniqueBindings.map((binding) => binding.bridgeId).filter(Boolean))] as string[];
   const bridges = bridgeIds.length
     ? db.select().from(localBridges).where(inArray(localBridges.id, bridgeIds)).all()
     : [];
   const bridgeById = new Map(bridges.map((bridge) => [bridge.id, bridge]));
   const publicMembers = roomMembers.map((member) => {
-    const binding =
-      bindingByMemberId.get(member.id) ??
-      resolveBindingForMember(member as Member);
+    const binding = resolveBindingForMember(member as Member);
     const bridge = binding?.bridgeId ? bridgeById.get(binding.bridgeId) ?? null : null;
 
     return toPublicMember(

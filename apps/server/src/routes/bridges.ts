@@ -2,7 +2,7 @@ import { and, eq, isNull, or } from "drizzle-orm";
 import { Hono } from "hono";
 
 import { db } from "../db/client";
-import { agentBindings, localBridges } from "../db/schema";
+import { agentBindings, localBridges, members } from "../db/schema";
 import { createId, createInviteToken } from "../lib/id";
 import { now } from "./support";
 
@@ -179,14 +179,20 @@ bridgeRoutes.post("/api/bridges/:bridgeId/agents/attach", async (c) => {
   const backendThreadId =
     typeof body?.backendThreadId === "string" ? body.backendThreadId.trim() : "";
   const memberId = typeof body?.memberId === "string" ? body.memberId.trim() : "";
+  const principalId = typeof body?.principalId === "string" ? body.principalId.trim() : "";
+  const privateAssistantId =
+    typeof body?.privateAssistantId === "string" ? body.privateAssistantId.trim() : "";
   const cwd = normalizeOptionalString(body?.cwd);
 
   if (!bridgeToken) {
     return c.json({ error: "bridgeToken is required" }, 400);
   }
 
-  if (!backendThreadId && !memberId) {
-    return c.json({ error: "backendThreadId or memberId is required" }, 400);
+  if (!backendThreadId && !memberId && !principalId && !privateAssistantId) {
+    return c.json(
+      { error: "backendThreadId, memberId, principalId or privateAssistantId is required" },
+      400,
+    );
   }
 
   const bridge = db
@@ -203,6 +209,13 @@ bridgeRoutes.post("/api/bridges/:bridgeId/agents/attach", async (c) => {
     return c.json({ error: "invalid bridge credentials" }, 403);
   }
 
+  const resolvedMember = memberId
+    ? db.select().from(members).where(eq(members.id, memberId)).get() ?? null
+    : null;
+  const resolvedPrincipalId = principalId || resolvedMember?.principalId || "";
+  const resolvedPrivateAssistantId =
+    privateAssistantId || resolvedMember?.sourcePrivateAssistantId || "";
+
   const bindingByThread = backendThreadId
     ? db
         .select()
@@ -210,23 +223,31 @@ bridgeRoutes.post("/api/bridges/:bridgeId/agents/attach", async (c) => {
         .where(eq(agentBindings.backendThreadId, backendThreadId))
         .get()
     : null;
-  const bindingByMember = memberId
+  const bindingByPrincipal = resolvedPrincipalId
     ? db
         .select()
         .from(agentBindings)
-        .where(eq(agentBindings.memberId, memberId))
+        .where(eq(agentBindings.principalId, resolvedPrincipalId))
+        .get()
+    : null;
+  const bindingByPrivateAssistant = resolvedPrivateAssistantId
+    ? db
+        .select()
+        .from(agentBindings)
+        .where(eq(agentBindings.privateAssistantId, resolvedPrivateAssistantId))
         .get()
     : null;
 
-  if (
-    bindingByThread &&
-    bindingByMember &&
-    bindingByThread.id !== bindingByMember.id
-  ) {
-    return c.json({ error: "backendThreadId and memberId do not match the same binding" }, 400);
+  const resolvedBindings = [bindingByThread, bindingByPrincipal, bindingByPrivateAssistant].filter(
+    Boolean,
+  );
+  const uniqueBindingIds = new Set(resolvedBindings.map((binding) => binding!.id));
+
+  if (uniqueBindingIds.size > 1) {
+    return c.json({ error: "attach targets do not match the same binding" }, 400);
   }
 
-  const binding = bindingByThread ?? bindingByMember;
+  const binding = bindingByThread ?? bindingByPrincipal ?? bindingByPrivateAssistant;
 
   if (!binding) {
     return c.json({ error: "agent binding not found" }, 404);
@@ -250,9 +271,7 @@ bridgeRoutes.post("/api/bridges/:bridgeId/agents/attach", async (c) => {
     .where(
       and(
         eq(agentBindings.id, binding.id),
-        backendThreadId
-          ? eq(agentBindings.backendThreadId, binding.backendThreadId)
-          : eq(agentBindings.memberId, binding.memberId),
+        backendThreadId ? eq(agentBindings.backendThreadId, binding.backendThreadId) : eq(agentBindings.id, binding.id),
         or(isNull(agentBindings.bridgeId), eq(agentBindings.bridgeId, bridgeId)),
       ),
     )
@@ -274,7 +293,8 @@ bridgeRoutes.post("/api/bridges/:bridgeId/agents/attach", async (c) => {
 
   return c.json({
     bindingId: binding.id,
-    memberId: binding.memberId,
+    principalId: binding.principalId,
+    privateAssistantId: binding.privateAssistantId,
     bridgeId,
     backendThreadId: binding.backendThreadId,
     status: "active",
