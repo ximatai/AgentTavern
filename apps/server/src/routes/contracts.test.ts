@@ -471,6 +471,80 @@ test("agent principal bootstrap exposes runtime-capable lobby presence and creat
   disconnectAgent();
 });
 
+test("claude agent principal bootstrap exposes runtime-capable lobby presence and creates an independent agent projection", async () => {
+  const agentResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "agent",
+      loginKey: "agent:claude-helper",
+      globalDisplayName: "ClaudeHelper",
+      backendType: "claude_code",
+      backendThreadId: "thread_agent_principal_claude",
+    }),
+  });
+  const humanResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "human-claude-peer@example.com",
+      globalDisplayName: "小李",
+    }),
+  });
+
+  assert.equal(agentResponse.status, 200);
+  const agent = await agentResponse.json();
+  const human = await humanResponse.json();
+  assert.equal(agent.status, "offline");
+  assert.equal(agent.backendType, "claude_code");
+  assert.equal(agent.backendThreadId, "thread_agent_principal_claude");
+  assert.equal(human.status, "offline");
+
+  const disconnectAgent = markPrincipalOnline(agent.principalId, agent.principalToken);
+
+  const lobbyResponse = await app.request("http://localhost/api/presence/lobby");
+  assert.equal(lobbyResponse.status, 200);
+  const lobby = await lobbyResponse.json();
+  const lobbyAgent = lobby.principals.find((item: { id: string }) => item.id === agent.principalId);
+  assert.ok(lobbyAgent);
+  assert.equal(lobbyAgent.backendType, "claude_code");
+  assert.equal(lobbyAgent.runtimeStatus, "pending_bridge");
+
+  const directRoomResponse = await app.request("http://localhost/api/direct-rooms", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      actorPrincipalId: agent.principalId,
+      actorPrincipalToken: agent.principalToken,
+      peerPrincipalId: human.principalId,
+    }),
+  });
+
+  assert.equal(directRoomResponse.status, 200);
+  const directRoom = await directRoomResponse.json();
+  const agentMember = db
+    .select()
+    .from(members)
+    .where(eq(members.id, directRoom.join.memberId))
+    .get();
+  assert.equal(agentMember?.type, "agent");
+  assert.equal(agentMember?.roleKind, "independent");
+  assert.equal(agentMember?.principalId, agent.principalId);
+  assert.equal(agentMember?.adapterType, "claude_code");
+
+  const binding = db
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.backendThreadId, "thread_agent_principal_claude"))
+    .get();
+  assert.equal(binding?.principalId, agent.principalId);
+  assert.equal(binding?.backendType, "claude_code");
+  assert.equal(binding?.status, "pending_bridge");
+
+  disconnectAgent();
+});
+
 test("agent principal bootstrap rejects a bound backendThreadId without leaving a principal record", async () => {
   const createdAt = new Date("2026-03-25T00:30:00.000Z").toISOString();
 
