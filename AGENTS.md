@@ -28,9 +28,9 @@ tools/skills/ # join-agent-tavern Codex skill
 
 ```bash
 pnpm install                    # 安装依赖
-pnpm dev                        # 同时启动 server + web
+pnpm dev                        # 同时启动 server + ui
 pnpm dev:server                 # 仅启动后端 (:8787)
-pnpm dev:web                    # 仅启动前端 (:5173)
+pnpm dev:ui                    # 仅启动前端 (:5174)
 pnpm dev:bridge                 # 启动本地 Bridge
 pnpm build                      # 全量构建
 pnpm typecheck                  # 全量类型检查
