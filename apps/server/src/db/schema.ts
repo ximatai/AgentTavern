@@ -113,6 +113,9 @@ export const messages = sqliteTable("messages", {
   senderMemberId: text("sender_member_id")
     .notNull()
     .references(() => members.id),
+  senderDisplayName: text("sender_display_name"),
+  senderType: text("sender_type"),
+  senderRoleKind: text("sender_role_kind"),
   messageType: text("message_type").notNull(),
   content: text("content").notNull(),
   systemData: text("system_data"),

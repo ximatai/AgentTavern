@@ -99,6 +99,13 @@
       "when": 1774515600000,
       "tag": "0013_fair_fantastic",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1774580400000,
+      "tag": "0014_soft_penance",
+      "breakpoints": true
     }
   ]
 }

@@ -119,6 +119,10 @@ type MentionSuggestion = {
 const MAX_ATTACHMENT_SIZE_BYTES = 5 * 1024 * 1024;
 const MAX_ATTACHMENT_COUNT = 8;
 const MAX_RECENT_ROOMS = 6;
+const PRINCIPAL_STORAGE_KEY = "agent-tavern-principal";
+const PRINCIPAL_REFRESH_EVENT = "agent-tavern-principal-refreshed";
+
+let principalRefreshPromise: Promise<PrincipalSession | null> | null = null;
 
 const demoAgentArgs = [
   "--input-type=module",
@@ -150,10 +154,123 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       payload && typeof payload === "object" && "error" in payload && payload.error
         ? payload.error
         : `请求失败：${response.status}`;
+
+    if (
+      typeof window !== "undefined" &&
+      response.status === 403 &&
+      message === "invalid principal token" &&
+      path !== "/api/principals/bootstrap"
+    ) {
+      const refreshedPrincipal = await refreshPrincipalSessionFromStorage();
+
+      if (refreshedPrincipal) {
+        const retried = rewritePrincipalAuth(path, init, refreshedPrincipal);
+        return request<T>(retried.path, retried.init);
+      }
+    }
+
     throw new Error(message);
   }
 
   return payload as T;
+}
+
+function rewritePrincipalAuth(
+  path: string,
+  init: RequestInit | undefined,
+  principal: PrincipalSession,
+): { path: string; init: RequestInit | undefined } {
+  const absoluteUrl = new URL(path, window.location.origin);
+
+  if (absoluteUrl.searchParams.has("principalId")) {
+    absoluteUrl.searchParams.set("principalId", principal.principalId);
+  }
+  if (absoluteUrl.searchParams.has("principalToken")) {
+    absoluteUrl.searchParams.set("principalToken", principal.principalToken);
+  }
+
+  if (!init?.body || typeof init.body !== "string") {
+    return {
+      path: absoluteUrl.pathname + absoluteUrl.search,
+      init,
+    };
+  }
+
+  try {
+    const body = JSON.parse(init.body) as Record<string, unknown>;
+
+    if ("principalId" in body) {
+      body.principalId = principal.principalId;
+    }
+    if ("principalToken" in body) {
+      body.principalToken = principal.principalToken;
+    }
+    if ("actorPrincipalId" in body) {
+      body.actorPrincipalId = principal.principalId;
+    }
+    if ("actorPrincipalToken" in body) {
+      body.actorPrincipalToken = principal.principalToken;
+    }
+
+    return {
+      path: absoluteUrl.pathname + absoluteUrl.search,
+      init: {
+        ...init,
+        body: JSON.stringify(body),
+      },
+    };
+  } catch {
+    return {
+      path: absoluteUrl.pathname + absoluteUrl.search,
+      init,
+    };
+  }
+}
+
+async function refreshPrincipalSessionFromStorage(): Promise<PrincipalSession | null> {
+  if (principalRefreshPromise) {
+    return principalRefreshPromise;
+  }
+
+  principalRefreshPromise = (async () => {
+    const cached = window.localStorage.getItem(PRINCIPAL_STORAGE_KEY);
+
+    if (!cached) {
+      return null;
+    }
+
+    try {
+      const principal = JSON.parse(cached) as PrincipalSession;
+      const response = await fetch("/api/principals/bootstrap", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          kind: principal.kind,
+          loginKey: principal.loginKey,
+          globalDisplayName: principal.globalDisplayName,
+          backendType: principal.backendType,
+          backendThreadId: principal.backendThreadId,
+        }),
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const nextPrincipal = (await response.json()) as PrincipalSession;
+      window.localStorage.setItem(PRINCIPAL_STORAGE_KEY, JSON.stringify(nextPrincipal));
+      window.dispatchEvent(new CustomEvent<PrincipalSession>(PRINCIPAL_REFRESH_EVENT, { detail: nextPrincipal }));
+      return nextPrincipal;
+    } catch {
+      return null;
+    } finally {
+      principalRefreshPromise = null;
+    }
+  })();
+
+  return principalRefreshPromise;
 }
 
 function extractInviteToken(input: string): string {
@@ -183,10 +300,11 @@ function mergeRecentRoom(
   items: RecentRoomRecord[],
   nextRoom: Pick<RecentRoomRecord, "roomId" | "name" | "inviteToken">,
 ): RecentRoomRecord[] {
+  const existing = items.find((item) => item.roomId === nextRoom.roomId);
   const nextItems = items.filter((item) => item.roomId !== nextRoom.roomId);
   nextItems.unshift({
     ...nextRoom,
-    visitedAt: new Date().toISOString(),
+    visitedAt: existing?.visitedAt ?? new Date().toISOString(),
   });
   return sortRecentRooms(nextItems).slice(0, MAX_RECENT_ROOMS);
 }
@@ -471,6 +589,10 @@ function privateAssistantInviteStatusLabel(
   }
 }
 
+function presenceNote(status: PublicMember["presenceStatus"] | null | undefined): string | null {
+  return status === "offline" ? "已下线" : null;
+}
+
 function resolveAgentTavernInviteOrigin(): string {
   const { protocol, hostname, port, origin } = window.location;
 
@@ -650,7 +772,7 @@ function App() {
   }
 
   useEffect(() => {
-    const cached = window.localStorage.getItem("agent-tavern-principal");
+    const cached = window.localStorage.getItem(PRINCIPAL_STORAGE_KEY);
 
     if (!cached) {
       return;
@@ -659,25 +781,37 @@ function App() {
     try {
       const parsed = JSON.parse(cached) as PrincipalSession;
       if (parsed.kind !== "human") {
-        window.localStorage.removeItem("agent-tavern-principal");
+        window.localStorage.removeItem(PRINCIPAL_STORAGE_KEY);
         return;
       }
       setPrincipal(parsed);
       setLoginKey(parsed.loginKey);
       setGlobalDisplayName(parsed.globalDisplayName);
     } catch {
-      window.localStorage.removeItem("agent-tavern-principal");
+      window.localStorage.removeItem(PRINCIPAL_STORAGE_KEY);
     }
   }, []);
 
   useEffect(() => {
     if (!principal) {
-      window.localStorage.removeItem("agent-tavern-principal");
+      window.localStorage.removeItem(PRINCIPAL_STORAGE_KEY);
       return;
     }
 
-    window.localStorage.setItem("agent-tavern-principal", JSON.stringify(principal));
+    window.localStorage.setItem(PRINCIPAL_STORAGE_KEY, JSON.stringify(principal));
   }, [principal]);
+
+  useEffect(() => {
+    function handlePrincipalRefresh(event: Event): void {
+      const nextPrincipal = (event as CustomEvent<PrincipalSession>).detail;
+      setPrincipal(nextPrincipal);
+      setLoginKey(nextPrincipal.loginKey);
+      setGlobalDisplayName(nextPrincipal.globalDisplayName);
+    }
+
+    window.addEventListener(PRINCIPAL_REFRESH_EVENT, handlePrincipalRefresh);
+    return () => window.removeEventListener(PRINCIPAL_REFRESH_EVENT, handlePrincipalRefresh);
+  }, []);
 
   useEffect(() => {
     if (!principal) {
@@ -703,6 +837,14 @@ function App() {
       setRecentRooms([]);
     }
   }, [principal]);
+
+  useEffect(() => {
+    if (!principal) {
+      return;
+    }
+
+    void refreshPrincipalSessionFromStorage();
+  }, [principal?.loginKey, principal?.globalDisplayName, principal?.kind]);
 
   useEffect(() => {
     if (!principal) {
@@ -1740,17 +1882,25 @@ function App() {
 
   const visibleMessages = sortByCreatedAt([
     ...messages,
-    ...Object.values(streams).map((stream) => ({
-      id: stream.messageId,
-      roomId: self?.roomId ?? "",
-      senderMemberId: stream.agentMemberId,
-      messageType: "agent_text" as const,
-      content: `${stream.content}▌`,
-      attachments: [],
-      systemData: null,
-      replyToMessageId: null,
-      createdAt: new Date().toISOString(),
-    })),
+    ...Object.values(streams).map((stream) => {
+      const streamSender = findMember(stream.agentMemberId);
+
+      return {
+        id: stream.messageId,
+        roomId: self?.roomId ?? "",
+        senderMemberId: stream.agentMemberId,
+        senderDisplayName: streamSender?.displayName ?? stream.agentMemberId,
+        senderType: streamSender?.type ?? "agent",
+        senderRoleKind: streamSender?.roleKind ?? "assistant",
+        senderPresenceStatus: streamSender?.presenceStatus ?? "online",
+        messageType: "agent_text" as const,
+        content: `${stream.content}▌`,
+        attachments: [],
+        systemData: null,
+        replyToMessageId: null,
+        createdAt: new Date().toISOString(),
+      };
+    }),
   ]);
 
   function findMessage(messageId: string | null): PublicMessage | undefined {
@@ -1937,10 +2087,7 @@ function App() {
     );
   }
 
-  const visibleLobbyPrincipals = useMemo(
-    () => lobbyPrincipals.filter((item) => item.id !== principal?.principalId),
-    [lobbyPrincipals, principal?.principalId],
-  );
+  const visibleLobbyPrincipals = useMemo(() => lobbyPrincipals, [lobbyPrincipals]);
   const roomPrincipalIds = useMemo(
     () => new Set(members.map((member) => member.principalId).filter(Boolean)),
     [members],
@@ -1954,7 +2101,7 @@ function App() {
   const principalStatusLine = principal
     ? `当前已登记为人类一等公民：${principal.globalDisplayName}`
     : "首次进入需要先登记人类身份";
-  const joinedRooms = useMemo(() => {
+  const joinedRooms = useMemo<Array<RecentRoomRecord & { isCurrent: boolean }>>(() => {
     const items = recentRooms.map((item) => ({
       ...item,
       isCurrent: room?.id === item.roomId,
@@ -1970,11 +2117,7 @@ function App() {
       });
     }
 
-    return items.sort((left, right) => {
-      if (left.isCurrent && !right.isCurrent) return -1;
-      if (!left.isCurrent && right.isCurrent) return 1;
-      return right.visitedAt.localeCompare(left.visitedAt);
-    });
+    return [...items].sort((left, right) => right.visitedAt.localeCompare(left.visitedAt));
   }, [recentRooms, room]);
 
   return (
@@ -2125,7 +2268,18 @@ function App() {
                 const replyTargetSender = replyTarget
                   ? findMember(replyTarget.senderMemberId)
                   : undefined;
-                const isAgent = sender?.type === "agent" || message.messageType === "agent_text";
+                const senderType = sender?.type ?? message.senderType;
+                const senderRoleKind = sender?.roleKind ?? message.senderRoleKind ?? "none";
+                const senderPresence = sender?.presenceStatus ?? message.senderPresenceStatus ?? null;
+                const senderForLabel = sender
+                  ? sender
+                  : senderType
+                    ? {
+                        type: senderType,
+                        roleKind: senderRoleKind,
+                      }
+                    : null;
+                const isAgent = senderType === "agent" || message.messageType === "agent_text";
                 const isSelf = message.senderMemberId === self?.memberId;
                 const isStreaming = message.id in streams;
                 const isSystemNotice = message.messageType === "system_notice";
@@ -2190,7 +2344,8 @@ function App() {
                     : isAgent
                       ? "agent"
                       : "human";
-                const authorLabel = sender?.displayName ?? message.senderMemberId;
+                const authorLabel = sender?.displayName ?? message.senderDisplayName ?? message.senderMemberId;
+                const authorPresenceNote = presenceNote(senderPresence);
 
                 return (
                   <article
@@ -2203,9 +2358,12 @@ function App() {
                     <header className="chat-meta">
                       <div className="chat-author">
                         <strong>{authorLabel}</strong>
-                        {sender ? (
-                          <span className={`role-pill role-pill-${roleTone(sender)}`}>
-                            {roleLabel(sender)}
+                        {authorPresenceNote ? (
+                          <span className="sender-status-note">{authorPresenceNote}</span>
+                        ) : null}
+                        {senderForLabel ? (
+                          <span className={`role-pill role-pill-${roleTone(senderForLabel)}`}>
+                            {roleLabel(senderForLabel)}
                           </span>
                         ) : null}
                         {isSystemNotice ? <span className="role-pill role-pill-notice">系统提示</span> : null}
@@ -3177,14 +3335,25 @@ function App() {
                 {visibleLobbyPrincipals.map((item) => (
                   <div key={item.id} className="lobby-row">
                     <div className="lobby-copy">
-                      <strong>{item.globalDisplayName}</strong>
+                      <strong>
+                        {item.globalDisplayName}
+                        {item.id === principal?.principalId ? "（你）" : ""}
+                      </strong>
                       <span>
                         {item.kind === "agent"
                           ? `智能体 · ${item.loginKey}${item.runtimeStatus ? ` · ${runtimeText(item.runtimeStatus)}` : ""}`
                           : `人类 · ${item.loginKey}`}
                       </span>
                     </div>
-                    {room && roomPrincipalIds.has(item.id) ? (
+                    {item.id === principal?.principalId ? (
+                      <button
+                        type="button"
+                        className="btn-ghost inline-action-button"
+                        disabled
+                      >
+                        自己
+                      </button>
+                    ) : room && roomPrincipalIds.has(item.id) ? (
                       <button
                         type="button"
                         className="btn-ghost inline-action-button"

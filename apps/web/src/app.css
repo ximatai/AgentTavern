@@ -952,6 +952,17 @@ textarea {
   color: #2d3a34;
 }
 
+.sender-status-note {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.12rem 0.48rem;
+  border-radius: 999px;
+  background: #f0f2f1;
+  color: #6c7670;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
 .chat-bubble {
   padding: 1rem 1.15rem;
   border-radius: 18px;

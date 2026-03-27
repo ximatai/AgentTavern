@@ -1,7 +1,11 @@
 import type { IncomingMessage } from "node:http";
 
+import { eq } from "drizzle-orm";
 import type { RealtimeEvent } from "@agent-tavern/shared";
 import { WebSocket } from "ws";
+
+import { db } from "./db/client";
+import { members, principals } from "./db/schema";
 
 type ConnectionContext = {
   memberId?: string;
@@ -14,6 +18,11 @@ const principalSockets = new Map<string, Set<WebSocket>>();
 const socketContexts = new Map<WebSocket, ConnectionContext>();
 const wsTokens = new Map<string, { memberId: string; roomId: string; active: boolean }>();
 const principalTokens = new Map<string, { principalId: string; active: boolean }>();
+
+function syncPrincipalPresence(principalId: string, status: "online" | "offline"): void {
+  db.update(principals).set({ status }).where(eq(principals.id, principalId)).run();
+  db.update(members).set({ presenceStatus: status }).where(eq(members.principalId, principalId)).run();
+}
 
 export function issueWsToken(memberId: string, roomId: string): string {
   const token = crypto.randomUUID();
@@ -92,6 +101,7 @@ export function registerSocket(socket: WebSocket, request: IncomingMessage): boo
 
     sockets.add(socket);
     socketContexts.set(socket, { principalId });
+    syncPrincipalPresence(principalId, "online");
 
     socket.on("close", () => {
       const context = socketContexts.get(socket);
@@ -105,6 +115,7 @@ export function registerSocket(socket: WebSocket, request: IncomingMessage): boo
 
       if (principalSet?.size === 0) {
         principalSockets.delete(context.principalId);
+        syncPrincipalPresence(context.principalId, "offline");
       }
 
       socketContexts.delete(socket);

@@ -1,11 +1,4 @@
-import type {
-  Approval,
-  Member,
-  Message,
-  PublicApproval,
-  PublicMember,
-  PublicMessage,
-} from "@agent-tavern/shared";
+import type { Approval, Member, Message, PublicApproval, PublicMember, PublicMessage } from "@agent-tavern/shared";
 
 export function toPublicMember(
   member: Member,
@@ -26,11 +19,18 @@ export function toPublicMember(
   };
 }
 
-export function toPublicMessage(message: Message): PublicMessage {
+export function toPublicMessage(
+  message: Message,
+  sender: Pick<Member, "displayName" | "type" | "roleKind" | "presenceStatus"> | null = null,
+): PublicMessage {
   return {
     id: message.id,
     roomId: message.roomId,
     senderMemberId: message.senderMemberId,
+    senderDisplayName: message.senderDisplayName ?? sender?.displayName ?? message.senderMemberId,
+    senderType: message.senderType ?? sender?.type ?? null,
+    senderRoleKind: message.senderRoleKind ?? sender?.roleKind ?? null,
+    senderPresenceStatus: sender?.presenceStatus ?? null,
     messageType: message.messageType,
     content: message.content,
     attachments: message.attachments,

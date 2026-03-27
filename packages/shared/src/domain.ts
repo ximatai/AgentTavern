@@ -162,6 +162,9 @@ export type Message = {
   id: string;
   roomId: string;
   senderMemberId: string;
+  senderDisplayName?: string;
+  senderType?: MemberType | null;
+  senderRoleKind?: AgentRoleKind | null;
   messageType: MessageType;
   content: string;
   attachments: MessageAttachment[];

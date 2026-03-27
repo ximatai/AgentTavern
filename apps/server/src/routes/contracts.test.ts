@@ -47,7 +47,7 @@ const {
   privateAssistants,
 } = schema;
 const { createInviteToken } = ids;
-const { issueWsToken, registerSocket } = realtime;
+const { issuePrincipalToken, issueWsToken, registerSocket } = realtime;
 
 function seedRoom(params: { roomId: string; inviteToken: string; name: string }): void {
   db.insert(rooms).values({
@@ -73,6 +73,27 @@ function markMemberOnline(memberId: string, roomId: string, wsToken: string): ()
 
   registerSocket(fakeSocket as never, {
     url: `/?roomId=${roomId}&memberId=${memberId}&wsToken=${wsToken}`,
+  } as never);
+
+  return () => {
+    listeners.get("close")?.();
+  };
+}
+
+function markPrincipalOnline(principalId: string, principalToken: string): () => void {
+  const listeners = new Map<string, () => void>();
+  const fakeSocket = {
+    readyState: WebSocket.OPEN,
+    close() {},
+    send() {},
+    on(event: string, handler: () => void) {
+      listeners.set(event, handler);
+      return this;
+    },
+  };
+
+  registerSocket(fakeSocket as never, {
+    url: `/?principalId=${principalId}&principalToken=${principalToken}`,
   } as never);
 
   return () => {
@@ -144,6 +165,7 @@ test("principal bootstrap creates or restores a human principal and room join ca
   assert.equal(bootstrapResult.kind, "human");
   assert.equal(bootstrapResult.loginKey, "alice@example.com");
   assert.equal(bootstrapResult.globalDisplayName, "阿南");
+  assert.equal(bootstrapResult.status, "offline");
 
   const restoredResponse = await app.request("http://localhost/api/principals/bootstrap", {
     method: "POST",
@@ -159,6 +181,7 @@ test("principal bootstrap creates or restores a human principal and room join ca
   const restoredResult = await restoredResponse.json();
   assert.equal(restoredResult.principalId, bootstrapResult.principalId);
   assert.equal(restoredResult.globalDisplayName, "阿南二号");
+  assert.equal(restoredResult.status, "offline");
 
   const persistedPrincipal = db
     .select()
@@ -207,6 +230,64 @@ test("principal bootstrap creates or restores a human principal and room join ca
   const insertedMember = db.select().from(members).where(eq(members.id, joinResult.memberId)).get();
   assert.equal(insertedMember?.principalId, bootstrapResult.principalId);
   assert.equal(insertedMember?.displayName, "阿南二号");
+});
+
+test("principal lobby presence follows websocket connection instead of bootstrap", async () => {
+  const bootstrapResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "presence-check@example.com",
+      globalDisplayName: "在线校验",
+    }),
+  });
+
+  assert.equal(bootstrapResponse.status, 200);
+  const principal = await bootstrapResponse.json();
+  assert.equal(principal.status, "offline");
+
+  const initialLobbyResponse = await app.request("http://localhost/api/presence/lobby");
+  assert.equal(initialLobbyResponse.status, 200);
+  const initialLobby = await initialLobbyResponse.json();
+  assert.equal(
+    initialLobby.principals.some((item: { id: string }) => item.id === principal.principalId),
+    false,
+  );
+
+  const disconnect = markPrincipalOnline(principal.principalId, principal.principalToken);
+
+  const onlinePrincipal = await waitFor(
+    () =>
+      db.select().from(principals).where(eq(principals.id, principal.principalId)).get(),
+    (value) => value?.status === "online",
+  );
+  assert.equal(onlinePrincipal?.status, "online");
+
+  const onlineLobbyResponse = await app.request("http://localhost/api/presence/lobby");
+  assert.equal(onlineLobbyResponse.status, 200);
+  const onlineLobby = await onlineLobbyResponse.json();
+  assert.equal(
+    onlineLobby.principals.some((item: { id: string }) => item.id === principal.principalId),
+    true,
+  );
+
+  disconnect();
+
+  const offlinePrincipal = await waitFor(
+    () =>
+      db.select().from(principals).where(eq(principals.id, principal.principalId)).get(),
+    (value) => value?.status === "offline",
+  );
+  assert.equal(offlinePrincipal?.status, "offline");
+
+  const offlineLobbyResponse = await app.request("http://localhost/api/presence/lobby");
+  assert.equal(offlineLobbyResponse.status, 200);
+  const offlineLobby = await offlineLobbyResponse.json();
+  assert.equal(
+    offlineLobby.principals.some((item: { id: string }) => item.id === principal.principalId),
+    false,
+  );
 });
 
 test("direct room reuses the same two-principal room and room pull adds a lobby principal into an existing room", async () => {
@@ -345,11 +426,16 @@ test("agent principal bootstrap exposes runtime-capable lobby presence and creat
   assert.equal(agentResponse.status, 200);
   const agent = await agentResponse.json();
   const human = await humanResponse.json();
+  assert.equal(agent.status, "offline");
+  assert.equal(human.status, "offline");
+
+  const disconnectAgent = markPrincipalOnline(agent.principalId, agent.principalToken);
 
   const lobbyResponse = await app.request("http://localhost/api/presence/lobby");
   assert.equal(lobbyResponse.status, 200);
   const lobby = await lobbyResponse.json();
   const lobbyAgent = lobby.principals.find((item: { id: string }) => item.id === agent.principalId);
+  assert.ok(lobbyAgent);
   assert.equal(lobbyAgent.backendType, "codex_cli");
   assert.equal(lobbyAgent.runtimeStatus, "pending_bridge");
 
@@ -381,6 +467,8 @@ test("agent principal bootstrap exposes runtime-capable lobby presence and creat
     .where(eq(agentBindings.backendThreadId, "thread_agent_principal_finance"))
     .get();
   assert.equal(binding?.memberId, agentMember?.id);
+
+  disconnectAgent();
 });
 
 test("principal can invite a private codex assistant, accept it, and adopt it into a room", async () => {
@@ -508,6 +596,17 @@ test("principal can invite a private codex assistant, accept it, and adopt it in
     .get();
   assert.equal(storedAssistant?.name, "账本助理");
 
+  db.insert(messages).values({
+    id: "msg_private_assistant_history",
+    roomId,
+    senderMemberId: adoptedMember.id,
+    messageType: "agent_text",
+    content: "账本已同步。",
+    systemData: null,
+    replyToMessageId: null,
+    createdAt: new Date("2026-03-25T00:20:00.000Z").toISOString(),
+  }).run();
+
   const secondRoomId = "room_private_assistant_second";
   seedRoom({
     roomId: secondRoomId,
@@ -627,6 +726,17 @@ test("principal can invite a private codex assistant, accept it, and adopt it in
     .where(eq(members.id, adoptedMember.id))
     .get();
   assert.equal(deletedProjection?.presenceStatus, "offline");
+
+  const projectionMessageResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`);
+  assert.equal(projectionMessageResponse.status, 200);
+  const projectionMessages = (await projectionMessageResponse.json()) as Array<{
+    senderMemberId: string;
+    senderDisplayName: string;
+    senderPresenceStatus: string | null;
+  }>;
+  const assistantHistory = projectionMessages.find((message) => message.senderMemberId === adoptedMember.id);
+  assert.equal(assistantHistory?.senderDisplayName, "账本助理");
+  assert.equal(assistantHistory?.senderPresenceStatus, "offline");
 });
 
 test("uploads draft attachments and sends an attachment-only message", async () => {

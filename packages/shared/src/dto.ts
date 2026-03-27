@@ -29,6 +29,10 @@ export type PublicMessage = {
   id: string;
   roomId: string;
   senderMemberId: string;
+  senderDisplayName: string;
+  senderType: MemberType | null;
+  senderRoleKind: AgentRoleKind | null;
+  senderPresenceStatus: PresenceStatus | null;
   messageType: MessageType;
   content: string;
   attachments: MessageAttachment[];

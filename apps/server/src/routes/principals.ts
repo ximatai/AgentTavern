@@ -46,28 +46,37 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
     .get() as Principal | undefined;
 
   if (existing) {
-    if (existing.globalDisplayName !== globalDisplayName || existing.status !== "online") {
+    if (
+      existing.globalDisplayName !== globalDisplayName ||
+      existing.backendType !== (kind === "agent" ? backendType : null) ||
+      existing.backendThreadId !== (kind === "agent" ? backendThreadId : null)
+    ) {
       db
         .update(principals)
         .set({
           globalDisplayName,
           backendType: kind === "agent" ? backendType : null,
           backendThreadId: kind === "agent" ? backendThreadId : null,
-          status: "online",
         })
         .where(eq(principals.id, existing.id))
         .run();
     }
 
+    const updated = db
+      .select()
+      .from(principals)
+      .where(eq(principals.id, existing.id))
+      .get() as Principal;
+
     return c.json({
-      principalId: existing.id,
-      principalToken: issuePrincipalToken(existing.id),
-      kind,
-      loginKey,
-      globalDisplayName,
-      backendType: kind === "agent" ? backendType : null,
-      backendThreadId: kind === "agent" ? backendThreadId : null,
-      status: "online",
+      principalId: updated.id,
+      principalToken: issuePrincipalToken(updated.id),
+      kind: updated.kind,
+      loginKey: updated.loginKey,
+      globalDisplayName: updated.globalDisplayName,
+      backendType: updated.backendType ?? null,
+      backendThreadId: updated.backendThreadId ?? null,
+      status: updated.status,
     });
   }
 
@@ -78,7 +87,7 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
     globalDisplayName,
     backendType: kind === "agent" ? backendType : null,
     backendThreadId: kind === "agent" ? backendThreadId : null,
-    status: "online",
+    status: "offline",
     createdAt: now(),
   };
 

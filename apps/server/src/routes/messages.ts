@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { Hono } from "hono";
 
 import type { Member, Message } from "@agent-tavern/shared";
@@ -27,9 +27,25 @@ messageRoutes.get("/api/rooms/:roomId/messages", (c) => {
       .orderBy(desc(messages.createdAt))
       .all()
       .reverse(),
-  ).map((message) => toPublicMessage(message));
+  );
+  const senderIds = [...new Set(roomMessages.map((message) => message.senderMemberId))];
+  const senderMap = new Map<string, Pick<Member, "displayName" | "type" | "roleKind" | "presenceStatus">>(
+    (senderIds.length > 0
+      ? db.select().from(members).where(inArray(members.id, senderIds)).all()
+      : []
+    ).map((member) => [
+      member.id,
+      {
+        displayName: member.displayName,
+        type: member.type as Member["type"],
+        roleKind: member.roleKind as Member["roleKind"],
+        presenceStatus: member.presenceStatus as Member["presenceStatus"],
+      },
+    ]),
+  );
+  const publicMessages = roomMessages.map((message) => toPublicMessage(message, senderMap.get(message.senderMemberId) ?? null));
 
-  return c.json(roomMessages);
+  return c.json(publicMessages);
 });
 
 messageRoutes.post("/api/rooms/:roomId/messages", async (c) => {
@@ -126,7 +142,7 @@ messageRoutes.post("/api/rooms/:roomId/messages", async (c) => {
     attachmentIds,
   });
 
-  return c.json(toPublicMessage(message), 201);
+  return c.json(toPublicMessage(message, typedSender), 201);
 });
 
 export { messageRoutes };
