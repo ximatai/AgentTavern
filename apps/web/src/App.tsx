@@ -471,8 +471,21 @@ function privateAssistantInviteStatusLabel(
   }
 }
 
+function resolveAgentTavernInviteOrigin(): string {
+  const { protocol, hostname, port, origin } = window.location;
+
+  if (port === "5173" || port === "5174") {
+    return `${protocol}//${hostname}:8787`;
+  }
+
+  return origin;
+}
+
 function buildPrivateAssistantInvitePrompt(invite: Pick<PrivateAssistantInviteRecord, "name" | "inviteUrl">): string {
-  const fullInviteUrl = new URL(invite.inviteUrl, window.location.origin).toString();
+  const invitePath = invite.inviteUrl?.trim();
+  const fullInviteUrl = invitePath
+    ? new URL(invitePath, resolveAgentTavernInviteOrigin()).toString()
+    : "接入链接暂不可用，请重新生成";
   return `请接受这个 AgentTavern 私有助理邀请链接，并把当前 Codex 线程接入为我的私有助理“${invite.name}”：${fullInviteUrl}`;
 }
 
@@ -1404,6 +1417,55 @@ function App() {
     }
   }
 
+  async function handleRemovePrivateAssistantInvite(inviteId: string): Promise<void> {
+    if (!principal) {
+      return;
+    }
+
+    setErrorText("");
+    setStatusText("正在移除接入记录");
+
+    try {
+      await request<{ ok: true }>(
+        `/api/me/assistants/invites/${inviteId}?principalId=${principal.principalId}&principalToken=${principal.principalToken}`,
+        {
+          method: "DELETE",
+        },
+      );
+      setPrivateAssistantInvites((current) => current.filter((invite) => invite.id !== inviteId));
+      setStatusText("接入记录已移除");
+      setFlashText("已移除这条接入记录");
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : "移除接入记录失败");
+      setStatusText("移除失败");
+    }
+  }
+
+  async function handleTakePrivateAssistantOffline(assistantMemberId: string): Promise<void> {
+    if (!self) {
+      return;
+    }
+
+    setErrorText("");
+    setStatusText("正在下线助理");
+
+    try {
+      await request<{ ok: true }>(`/api/rooms/${self.roomId}/assistants/${assistantMemberId}/offline`, {
+        method: "POST",
+        body: JSON.stringify({
+          actorMemberId: self.memberId,
+          wsToken: self.wsToken,
+        }),
+      });
+      setStatusText("助理已从聊天室下线");
+      setFlashText("已从当前聊天室下线该助理");
+      await hydrateRoomState(self.roomId);
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : "下线助理失败");
+      setStatusText("下线失败");
+    }
+  }
+
   async function handleSendMessage(): Promise<void> {
     const trimmedMessage = messageInput.trim();
 
@@ -1620,7 +1682,7 @@ function App() {
         },
       );
 
-      const fullInviteUrl = new URL(invite.inviteUrl, window.location.origin).toString();
+      const fullInviteUrl = new URL(invite.inviteUrl, resolveAgentTavernInviteOrigin()).toString();
       setAssistantInviteUrl(fullInviteUrl);
       setFlashText("助理邀请已生成");
     } catch (error) {
@@ -1822,6 +1884,14 @@ function App() {
     [members],
   );
   const assistantTree = useMemo(() => buildOwnerTree(members), [members]);
+  const pendingPrivateAssistantInvites = useMemo(
+    () => privateAssistantInvites.filter((invite) => invite.status === "pending"),
+    [privateAssistantInvites],
+  );
+  const archivedPrivateAssistantInvites = useMemo(
+    () => privateAssistantInvites.filter((invite) => invite.status !== "pending"),
+    [privateAssistantInvites],
+  );
   const myPendingApprovals = pendingApprovals.filter(
     (approval) => approval.ownerMemberId === self?.memberId,
   );
@@ -2739,6 +2809,15 @@ function App() {
                                     </div>
                                     <p>直属于 {owner.displayName}</p>
                                   </div>
+                                  {owner.id === self?.memberId && assistant.sourcePrivateAssistantId ? (
+                                    <button
+                                      type="button"
+                                      className="btn-ghost inline-link-button"
+                                      onClick={() => void handleTakePrivateAssistantOffline(assistant.id)}
+                                    >
+                                      从本房间移除
+                                    </button>
+                                  ) : null}
                                 </article>
                               ))}
                             </div>
@@ -2918,25 +2997,23 @@ function App() {
               先生成链接，再把链接发给要接入的 Codex。接入成功后，这个助理会出现在下方列表，并可加入任意聊天室。
             </div>
             {errorText ? <div className="assistant-panel-error">{errorText}</div> : null}
-            {privateAssistantInvites.length > 0 ? (
+            {pendingPrivateAssistantInvites.length > 0 ? (
               <div className="assistant-invite-section">
                 <div className="section-heading">
                   <h2>待处理接入</h2>
-                  <span>{privateAssistantInvites.length} 条</span>
+                  <span>{pendingPrivateAssistantInvites.length} 条</span>
                 </div>
                 <div className="lobby-list">
-                {privateAssistantInvites.map((invite) => (
+                {pendingPrivateAssistantInvites.map((invite) => (
                   <div key={invite.id} className="lobby-row">
                     <div className="lobby-copy assistant-invite-copy">
                       <strong>{invite.name}</strong>
                       <span>{privateAssistantInviteStatusLabel(invite.status)}</span>
-                      {invite.status === "pending" ? (
-                        <div className="assistant-invite-prompt">
-                          {buildPrivateAssistantInvitePrompt(invite)}
-                        </div>
-                      ) : null}
+                      <div className="assistant-invite-prompt">
+                        {buildPrivateAssistantInvitePrompt(invite)}
+                      </div>
                     </div>
-                    {invite.status === "pending" ? (
+                    <div className="assistant-row-actions">
                       <button
                         type="button"
                         className="btn-secondary inline-action-button"
@@ -2945,10 +3022,42 @@ function App() {
                       >
                         {isCopyingAssistantInvite ? "复制中..." : "复制接入文案"}
                       </button>
-                    ) : null}
+                      <button
+                        type="button"
+                        className="btn-ghost inline-link-button"
+                        onClick={() => void handleRemovePrivateAssistantInvite(invite.id)}
+                      >
+                        撤销接入
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
+              </div>
+            ) : null}
+            {archivedPrivateAssistantInvites.length > 0 ? (
+              <div className="assistant-invite-section">
+                <div className="section-heading">
+                  <h2>接入记录</h2>
+                  <span>{archivedPrivateAssistantInvites.length} 条</span>
+                </div>
+                <div className="lobby-list">
+                  {archivedPrivateAssistantInvites.map((invite) => (
+                    <div key={invite.id} className="lobby-row">
+                      <div className="lobby-copy">
+                        <strong>{invite.name}</strong>
+                        <span>{privateAssistantInviteStatusLabel(invite.status)}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn-ghost inline-link-button"
+                        onClick={() => void handleRemovePrivateAssistantInvite(invite.id)}
+                      >
+                        移除记录
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             ) : null}
             {privateAssistants.length > 0 ? (

@@ -570,6 +570,42 @@ test("principal can invite a private codex assistant, accept it, and adopt it in
     .get();
   assert.equal(secondProjection?.sourcePrivateAssistantId, privateAssistant.id);
 
+  const offlineResponse = await app.request(
+    `http://localhost/api/rooms/${roomId}/assistants/${adoptedMember.id}/offline`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        actorMemberId: join.memberId,
+        wsToken: actorToken,
+      }),
+    },
+  );
+  assert.equal(offlineResponse.status, 200);
+
+  const hiddenProjection = db
+    .select()
+    .from(members)
+    .where(eq(members.id, adoptedMember.id))
+    .get();
+  assert.equal(hiddenProjection?.presenceStatus, "offline");
+
+  const reAdoptResponse = await app.request(
+    `http://localhost/api/rooms/${roomId}/assistants/adopt`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        actorMemberId: join.memberId,
+        wsToken: actorToken,
+        privateAssistantId: privateAssistant.id,
+      }),
+    },
+  );
+  assert.equal(reAdoptResponse.status, 201);
+  const reAdoptedMember = await reAdoptResponse.json();
+  assert.equal(reAdoptedMember.id, adoptedMember.id);
+
   const deleteResponse = await app.request(
     `http://localhost/api/me/assistants/${privateAssistant.id}?principalId=${principal.principalId}&principalToken=${principal.principalToken}`,
     {
@@ -590,7 +626,7 @@ test("principal can invite a private codex assistant, accept it, and adopt it in
     .from(members)
     .where(eq(members.id, adoptedMember.id))
     .get();
-  assert.equal(deletedProjection, undefined);
+  assert.equal(deletedProjection?.presenceStatus, "offline");
 });
 
 test("uploads draft attachments and sends an attachment-only message", async () => {
@@ -781,6 +817,81 @@ test("creates a quoted reply and rejects cross-room reply targets", async () => 
   assert.deepEqual(await rejectedResponse.json(), {
     error: "reply target not found in room",
   });
+});
+
+test("replying to an agent message implicitly targets that agent when no explicit mention is present", async () => {
+  const roomId = "room_reply_agent_implicit";
+  const createdAt = new Date("2026-03-25T00:37:00.000Z").toISOString();
+
+  seedRoom({
+    roomId,
+    name: "Implicit Reply Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(members).values([
+    {
+      id: "mem_reply_human",
+      roomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "ReplyHuman",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_reply_agent",
+      roomId,
+      type: "agent",
+      roleKind: "independent",
+      displayName: "账本助理",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: "local_process",
+      adapterConfig: JSON.stringify({
+        command: "node",
+        args: ["--input-type=module", "-e", "process.stdout.write('ok')"],
+        inputFormat: "text",
+      }),
+      presenceStatus: "online",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(messages).values({
+    id: "msg_agent_reply_base",
+    roomId,
+    senderMemberId: "mem_reply_agent",
+    messageType: "agent_text",
+    content: "我在，有什么要处理？",
+    replyToMessageId: null,
+    createdAt,
+  }).run();
+
+  const wsToken = issueWsToken("mem_reply_human", roomId);
+
+  const response = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_reply_human",
+      wsToken,
+      content: "继续处理刚才那件事",
+      replyToMessageId: "msg_agent_reply_base",
+    }),
+  });
+
+  assert.equal(response.status, 201);
+
+  const mention = db
+    .select()
+    .from(mentions)
+    .where(eq(mentions.messageId, (await response.json() as { id: string }).id))
+    .get();
+  assert.equal(mention?.targetMemberId, "mem_reply_agent");
 });
 
 test("rejects oversized attachment uploads on the server", async () => {
@@ -986,7 +1097,11 @@ test("mentioning an assistant while the owner is offline expires approval flow",
     .from(agentSessions)
     .where(eq(agentSessions.roomId, roomId))
     .get();
-  const mention = db.select().from(mentions).get();
+  const mention = db
+    .select()
+    .from(mentions)
+    .where(eq(mentions.targetMemberId, "mem_assistant"))
+    .get();
   const roomMessages = db
     .select()
     .from(messages)

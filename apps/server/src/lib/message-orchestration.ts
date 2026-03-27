@@ -336,6 +336,31 @@ export function submitMessage(params: {
   broadcastToRoom(params.roomId, createMessageCreatedEvent(params.roomId, message));
 
   const mentionNames = extractMentionNames(params.content);
+  const explicitMentionNames = new Set(mentionNames);
+
+  if (explicitMentionNames.size === 0 && params.replyToMessageId) {
+    const replyTargetMessage = db
+      .select()
+      .from(messages)
+      .where(and(eq(messages.id, params.replyToMessageId), eq(messages.roomId, params.roomId)))
+      .get() as Message | undefined;
+
+    if (replyTargetMessage) {
+      const replyTargetSender = db
+        .select()
+        .from(members)
+        .where(and(eq(members.id, replyTargetMessage.senderMemberId), eq(members.roomId, params.roomId)))
+        .get() as Member | undefined;
+
+      if (
+        replyTargetSender &&
+        replyTargetSender.type === "agent" &&
+        (replyTargetSender.roleKind === "assistant" || replyTargetSender.roleKind === "independent")
+      ) {
+        mentionNames.push(replyTargetSender.displayName);
+      }
+    }
+  }
 
   for (const mentionName of mentionNames) {
     const target = db

@@ -63,7 +63,12 @@ privateAssistantRoutes.get("/api/me/assistants/invites", (c) => {
     .where(eq(privateAssistantInvites.ownerPrincipalId, principalId))
     .all();
 
-  return c.json(items);
+  return c.json(
+    items.map((item) => ({
+      ...item,
+      inviteUrl: `/private-assistant-invites/${item.inviteToken}`,
+    })),
+  );
 });
 
 privateAssistantRoutes.post("/api/me/assistants/invites", async (c) => {
@@ -272,6 +277,45 @@ privateAssistantRoutes.post("/api/private-assistant-invites/:inviteToken/accept"
   return c.json(assistant, 201);
 });
 
+privateAssistantRoutes.delete("/api/me/assistants/invites/:inviteId", (c) => {
+  const inviteId = c.req.param("inviteId");
+  const principalId = c.req.query("principalId")?.trim() ?? "";
+  const principalToken = c.req.query("principalToken")?.trim() ?? "";
+
+  if (!principalId || !principalToken) {
+    return c.json({ error: "principalId and principalToken are required" }, 400);
+  }
+
+  if (!verifyPrincipalToken(principalToken, principalId)) {
+    return c.json({ error: "invalid principal token" }, 403);
+  }
+
+  const invite = db
+    .select()
+    .from(privateAssistantInvites)
+    .where(eq(privateAssistantInvites.id, inviteId))
+    .get() as PrivateAssistantInvite | undefined;
+
+  if (!invite) {
+    return c.json({ error: "private assistant invite not found" }, 404);
+  }
+
+  if (invite.ownerPrincipalId !== principalId) {
+    return c.json({ error: "private assistant invite does not belong to actor principal" }, 403);
+  }
+
+  db.delete(privateAssistantInvites).where(eq(privateAssistantInvites.id, inviteId)).run();
+
+  broadcastToPrincipal(principalId, {
+    type: "private_assistants.changed",
+    principalId,
+    timestamp: now(),
+    payload: { reason: "invite_created" },
+  });
+
+  return c.json({ ok: true });
+});
+
 privateAssistantRoutes.delete("/api/me/assistants/:assistantId", (c) => {
   const assistantId = c.req.param("assistantId");
   const principalId = c.req.query("principalId")?.trim() ?? "";
@@ -307,7 +351,11 @@ privateAssistantRoutes.delete("/api/me/assistants/:assistantId", (c) => {
 
   for (const projection of projections) {
     db.delete(agentBindings).where(eq(agentBindings.memberId, projection.id)).run();
-    db.delete(members).where(eq(members.id, projection.id)).run();
+    db
+      .update(members)
+      .set({ presenceStatus: "offline" })
+      .where(eq(members.id, projection.id))
+      .run();
 
     broadcastToRoom(projection.roomId, {
       type: "member.left",
@@ -403,7 +451,140 @@ privateAssistantRoutes.post("/api/rooms/:roomId/assistants/adopt", async (c) => 
     .get();
 
   if (existingProjection) {
-    return c.json({ error: "private assistant already joined this room" }, 409);
+    if (existingProjection.presenceStatus === "online") {
+      return c.json({ error: "private assistant already joined this room" }, 409);
+    }
+
+    db
+      .update(members)
+      .set({
+        ownerMemberId: actorMemberId,
+        sourcePrivateAssistantId: assistant.id,
+        adapterType: assistant.backendType,
+        presenceStatus: "online",
+      })
+      .where(eq(members.id, existingProjection.id))
+      .run();
+
+    const reusedMember = db
+      .select()
+      .from(members)
+      .where(eq(members.id, existingProjection.id))
+      .get() as Member;
+
+    if (assistant.backendThreadId) {
+      const existingBinding = db
+        .select()
+        .from(agentBindings)
+        .where(eq(agentBindings.backendThreadId, assistant.backendThreadId))
+        .get();
+
+      const memberBinding = db
+        .select()
+        .from(agentBindings)
+        .where(eq(agentBindings.memberId, reusedMember.id))
+        .get();
+
+      if (!existingBinding && !memberBinding) {
+        const binding: AgentBinding = {
+          id: createId("agb"),
+          memberId: reusedMember.id,
+          bridgeId: null,
+          backendType: assistant.backendType,
+          backendThreadId: assistant.backendThreadId,
+          cwd: null,
+          status: "pending_bridge",
+          attachedAt: now(),
+          detachedAt: null,
+        };
+
+        db.insert(agentBindings).values(binding).run();
+      }
+    }
+
+    const event: RealtimeEvent = {
+      type: "member.joined",
+      roomId,
+      timestamp: now(),
+      payload: { member: toPublicMember(reusedMember, "pending_bridge") },
+    };
+
+    broadcastToRoom(roomId, event);
+
+    return c.json(toPublicMember(reusedMember, "pending_bridge"), 201);
+  }
+
+  const dormantProjection = db
+    .select()
+    .from(members)
+    .where(
+      and(
+        eq(members.roomId, roomId),
+        eq(members.displayName, assistant.name),
+        eq(members.ownerMemberId, actorMemberId),
+        eq(members.roleKind, "assistant"),
+        eq(members.presenceStatus, "offline"),
+      ),
+    )
+    .get() as Member | undefined;
+
+  if (dormantProjection) {
+    db
+      .update(members)
+      .set({
+        sourcePrivateAssistantId: assistant.id,
+        adapterType: assistant.backendType,
+        presenceStatus: "online",
+      })
+      .where(eq(members.id, dormantProjection.id))
+      .run();
+
+    const reusedMember = db
+      .select()
+      .from(members)
+      .where(eq(members.id, dormantProjection.id))
+      .get() as Member;
+
+    if (assistant.backendThreadId) {
+      const existingBinding = db
+        .select()
+        .from(agentBindings)
+        .where(eq(agentBindings.backendThreadId, assistant.backendThreadId))
+        .get();
+
+      const memberBinding = db
+        .select()
+        .from(agentBindings)
+        .where(eq(agentBindings.memberId, reusedMember.id))
+        .get();
+
+      if (!existingBinding && !memberBinding) {
+        const binding: AgentBinding = {
+          id: createId("agb"),
+          memberId: reusedMember.id,
+          bridgeId: null,
+          backendType: assistant.backendType,
+          backendThreadId: assistant.backendThreadId,
+          cwd: null,
+          status: "pending_bridge",
+          attachedAt: now(),
+          detachedAt: null,
+        };
+
+        db.insert(agentBindings).values(binding).run();
+      }
+    }
+
+    const event: RealtimeEvent = {
+      type: "member.joined",
+      roomId,
+      timestamp: now(),
+      payload: { member: toPublicMember(reusedMember, "pending_bridge") },
+    };
+
+    broadcastToRoom(roomId, event);
+
+    return c.json(toPublicMember(reusedMember, "pending_bridge"), 201);
   }
 
   const displayNameConflict = db
@@ -467,6 +648,73 @@ privateAssistantRoutes.post("/api/rooms/:roomId/assistants/adopt", async (c) => 
   broadcastToRoom(roomId, event);
 
   return c.json(toPublicMember(member, "pending_bridge"), 201);
+});
+
+privateAssistantRoutes.post("/api/rooms/:roomId/assistants/:assistantMemberId/offline", async (c) => {
+  const roomId = c.req.param("roomId");
+  const assistantMemberId = c.req.param("assistantMemberId");
+  const room = db.select().from(rooms).where(eq(rooms.id, roomId)).get();
+
+  if (!room) {
+    return c.json({ error: "room not found" }, 404);
+  }
+
+  const body = await c.req.json().catch(() => null);
+  const actorMemberId =
+    typeof body?.actorMemberId === "string" ? body.actorMemberId.trim() : "";
+  const wsToken = typeof body?.wsToken === "string" ? body.wsToken.trim() : "";
+
+  if (!actorMemberId || !wsToken) {
+    return c.json({ error: "actorMemberId and wsToken are required" }, 400);
+  }
+
+  if (!verifyWsToken(wsToken, actorMemberId, roomId)) {
+    return c.json({ error: "invalid wsToken for actor" }, 403);
+  }
+
+  const actor = db
+    .select()
+    .from(members)
+    .where(and(eq(members.id, actorMemberId), eq(members.roomId, roomId)))
+    .get() as Member | undefined;
+
+  if (!actor) {
+    return c.json({ error: "actor not found in room" }, 404);
+  }
+
+  const assistantMember = db
+    .select()
+    .from(members)
+    .where(and(eq(members.id, assistantMemberId), eq(members.roomId, roomId)))
+    .get() as Member | undefined;
+
+  if (!assistantMember) {
+    return c.json({ error: "assistant member not found in room" }, 404);
+  }
+
+  if (
+    assistantMember.roleKind !== "assistant" ||
+    !assistantMember.sourcePrivateAssistantId ||
+    assistantMember.ownerMemberId !== actorMemberId
+  ) {
+    return c.json({ error: "only your private assistant projections can be taken offline" }, 403);
+  }
+
+  db.delete(agentBindings).where(eq(agentBindings.memberId, assistantMember.id)).run();
+  db
+    .update(members)
+    .set({ presenceStatus: "offline" })
+    .where(eq(members.id, assistantMember.id))
+    .run();
+
+  broadcastToRoom(roomId, {
+    type: "member.left",
+    roomId,
+    timestamp: now(),
+    payload: { memberId: assistantMember.id },
+  });
+
+  return c.json({ ok: true });
 });
 
 export { privateAssistantRoutes };

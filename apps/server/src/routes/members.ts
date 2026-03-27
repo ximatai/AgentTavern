@@ -20,7 +20,8 @@ memberRoutes.get("/api/rooms/:roomId/members", (c) => {
     .select()
     .from(members)
     .where(eq(members.roomId, roomId))
-    .all();
+    .all()
+    .filter((member) => !(member.sourcePrivateAssistantId && member.presenceStatus === "offline"));
   const memberIds = roomMembers.map((member) => member.id);
   const bindings = memberIds.length
     ? db.select().from(agentBindings).where(inArray(agentBindings.memberId, memberIds)).all()
