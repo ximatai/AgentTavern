@@ -6,7 +6,7 @@
 
 - **运行时**: Node.js LTS / TypeScript / pnpm workspace
 - **后端**: Hono / WebSocket (ws) / SQLite (Drizzle ORM)
-- **前端**: React 19 / Vite (新版 `apps/ui` 使用 Ant Design + Zustand)
+- **前端**: React 19 / Vite / Ant Design / Zustand
 - **测试**: Vitest / Playwright
 
 ## 工程结构
@@ -14,8 +14,7 @@
 ```
 apps/
   server/     # Hono HTTP API + WebSocket 广播 + SQLite 持久化
-  web/        # 旧版 Web 前端（单文件 App.tsx，逐步迁移中）
-  ui/         # 新版 Web 前端（React 19 + Ant Design + Zustand + i18n）
+  ui/         # Web 前端（React 19 + Ant Design + Zustand + i18n）
   bridge/     # 本地 Agent Bridge — 任务轮询 + Codex CLI 驱动
 packages/
   shared/     # 共享类型定义、DTO、事件协议、常量
