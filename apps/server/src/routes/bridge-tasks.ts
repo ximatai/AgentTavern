@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import type { AgentSession } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
-import { agentSessions, bridgeTasks, localBridges } from "../db/schema";
+import { agentBindings, agentSessions, bridgeTasks, localBridges, members } from "../db/schema";
 import {
   commitSessionMessage,
   createStreamDeltaEvent,
@@ -18,6 +18,39 @@ const bridgeTaskRoutes = new Hono();
 const TASK_ASSIGNMENT_LEASE_MS = Number(
   process.env.AGENT_TAVERN_BRIDGE_TASK_LEASE_MS ?? 15_000,
 );
+
+function resolveBindingForAgentMember(agentMemberId: string) {
+  const agentMember = db
+    .select({
+      principalId: members.principalId,
+      sourcePrivateAssistantId: members.sourcePrivateAssistantId,
+    })
+    .from(members)
+    .where(eq(members.id, agentMemberId))
+    .get();
+
+  if (!agentMember) {
+    return null;
+  }
+
+  if (agentMember.sourcePrivateAssistantId) {
+    return db
+      .select()
+      .from(agentBindings)
+      .where(eq(agentBindings.privateAssistantId, agentMember.sourcePrivateAssistantId))
+      .get();
+  }
+
+  if (agentMember.principalId) {
+    return db
+      .select()
+      .from(agentBindings)
+      .where(eq(agentBindings.principalId, agentMember.principalId))
+      .get();
+  }
+
+  return null;
+}
 
 function loadAuthorizedBridge(
   bridgeId: string,
@@ -265,6 +298,8 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
   const bridgeInstanceId =
     typeof body?.bridgeInstanceId === "string" ? body.bridgeInstanceId.trim() : "";
   const finalText = typeof body?.finalText === "string" ? body.finalText.trim() : "";
+  const backendThreadId =
+    typeof body?.backendThreadId === "string" ? body.backendThreadId.trim() : "";
 
   if (!bridgeToken || !bridgeInstanceId || !finalText) {
     return c.json({ error: "bridgeToken, bridgeInstanceId, and finalText are required" }, 400);
@@ -312,6 +347,18 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
     })
     .where(eq(bridgeTasks.id, taskId))
     .run();
+
+  if (backendThreadId) {
+    const binding = resolveBindingForAgentMember(task.agentMemberId);
+
+    if (binding && binding.backendThreadId !== backendThreadId) {
+      db
+        .update(agentBindings)
+        .set({ backendThreadId })
+        .where(eq(agentBindings.id, binding.id))
+        .run();
+    }
+  }
 
   commitSessionMessage({
     session: toAgentSession(session),

@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 
 import type {
+  AgentBackendType,
   AgentBinding,
   Member,
   PrivateAssistant,
@@ -139,8 +140,8 @@ privateAssistantRoutes.post("/api/me/assistants/invites", async (c) => {
     return c.json({ error: "name must not contain spaces or @" }, 400);
   }
 
-  if (backendType !== "codex_cli") {
-    return c.json({ error: "only codex_cli private assistants are supported for now" }, 400);
+  if (backendType === "local_process") {
+    return c.json({ error: "local_process backend is not supported for private assistants" }, 400);
   }
 
   const existingAssistant = db
@@ -185,7 +186,7 @@ privateAssistantRoutes.post("/api/me/assistants/invites", async (c) => {
     id: createId("pai"),
     ownerPrincipalId: principalId,
     name,
-    backendType: "codex_cli",
+    backendType: backendType as AgentBackendType,
     status: "pending",
     inviteToken: createInviteToken(),
     acceptedPrivateAssistantId: null,

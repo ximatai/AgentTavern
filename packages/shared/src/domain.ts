@@ -74,7 +74,7 @@ export type ApprovalGrantDuration =
   | "1_hour"
   | "forever";
 
-export type AgentBackendType = "local_process" | "codex_cli";
+export type AgentBackendType = "local_process" | "codex_cli" | "claude_code";
 
 export type AssistantInviteStatus =
   | "pending"

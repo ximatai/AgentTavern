@@ -471,6 +471,80 @@ test("agent principal bootstrap exposes runtime-capable lobby presence and creat
   disconnectAgent();
 });
 
+test("claude agent principal bootstrap exposes runtime-capable lobby presence and creates an independent agent projection", async () => {
+  const agentResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "agent",
+      loginKey: "agent:claude-helper",
+      globalDisplayName: "ClaudeHelper",
+      backendType: "claude_code",
+      backendThreadId: "thread_agent_principal_claude",
+    }),
+  });
+  const humanResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "human-claude-peer@example.com",
+      globalDisplayName: "小李",
+    }),
+  });
+
+  assert.equal(agentResponse.status, 200);
+  const agent = await agentResponse.json();
+  const human = await humanResponse.json();
+  assert.equal(agent.status, "offline");
+  assert.equal(agent.backendType, "claude_code");
+  assert.equal(agent.backendThreadId, "thread_agent_principal_claude");
+  assert.equal(human.status, "offline");
+
+  const disconnectAgent = markPrincipalOnline(agent.principalId, agent.principalToken);
+
+  const lobbyResponse = await app.request("http://localhost/api/presence/lobby");
+  assert.equal(lobbyResponse.status, 200);
+  const lobby = await lobbyResponse.json();
+  const lobbyAgent = lobby.principals.find((item: { id: string }) => item.id === agent.principalId);
+  assert.ok(lobbyAgent);
+  assert.equal(lobbyAgent.backendType, "claude_code");
+  assert.equal(lobbyAgent.runtimeStatus, "pending_bridge");
+
+  const directRoomResponse = await app.request("http://localhost/api/direct-rooms", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      actorPrincipalId: agent.principalId,
+      actorPrincipalToken: agent.principalToken,
+      peerPrincipalId: human.principalId,
+    }),
+  });
+
+  assert.equal(directRoomResponse.status, 200);
+  const directRoom = await directRoomResponse.json();
+  const agentMember = db
+    .select()
+    .from(members)
+    .where(eq(members.id, directRoom.join.memberId))
+    .get();
+  assert.equal(agentMember?.type, "agent");
+  assert.equal(agentMember?.roleKind, "independent");
+  assert.equal(agentMember?.principalId, agent.principalId);
+  assert.equal(agentMember?.adapterType, "claude_code");
+
+  const binding = db
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.backendThreadId, "thread_agent_principal_claude"))
+    .get();
+  assert.equal(binding?.principalId, agent.principalId);
+  assert.equal(binding?.backendType, "claude_code");
+  assert.equal(binding?.status, "pending_bridge");
+
+  disconnectAgent();
+});
+
 test("agent principal bootstrap rejects a bound backendThreadId without leaving a principal record", async () => {
   const createdAt = new Date("2026-03-25T00:30:00.000Z").toISOString();
 
@@ -3575,6 +3649,187 @@ test("attached codex binding can be pulled and completed through bridge task end
         message.content === "final bridge output",
     ),
   );
+});
+
+test("attached claude assistant binding persists refreshed backendThreadId on completion", async () => {
+  const roomId = "room_claude_assistant_bridge_task";
+  const createdAt = new Date("2026-03-25T07:30:00.000Z").toISOString();
+
+  seedRoom({
+    roomId,
+    name: "Claude Assistant Bridge Task Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(localBridges).values({
+    id: "brg_claude_task",
+    bridgeName: "Claude Bridge",
+    bridgeToken: "bridge_claude_task_token",
+    currentInstanceId: "binst_claude_task",
+    status: "online",
+    platform: "macOS",
+    version: "0.1.0",
+    metadata: null,
+    lastSeenAt: createdAt,
+    createdAt,
+    updatedAt: createdAt,
+  }).run();
+
+  db.insert(principals).values({
+    id: "prn_owner_claude_task",
+    kind: "human",
+    loginKey: "owner-claude-task@example.com",
+    globalDisplayName: "OwnerClaudeTask",
+    backendType: null,
+    backendThreadId: null,
+    status: "online",
+    createdAt,
+  }).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_owner_claude_task",
+      roomId,
+      principalId: "prn_owner_claude_task",
+      type: "human",
+      roleKind: "none",
+      displayName: "OwnerClaudeTask",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_requester_claude_task",
+      roomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "RequesterClaudeTask",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(assistantInvites).values({
+    id: "ainv_claude_task",
+    roomId,
+    ownerMemberId: "mem_owner_claude_task",
+    presetDisplayName: "ClaudeHelper",
+    backendType: "claude_code",
+    inviteToken: "invite_claude_task_token",
+    status: "pending",
+    acceptedMemberId: null,
+    acceptedPrivateAssistantId: null,
+    createdAt,
+    expiresAt: null,
+    acceptedAt: null,
+  }).run();
+
+  const acceptResponse = await app.request(
+    "http://localhost/api/assistant-invites/invite_claude_task_token/accept",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        backendThreadId: "thread_claude_task_initial",
+      }),
+    },
+  );
+
+  assert.equal(acceptResponse.status, 201);
+  const accepted = await acceptResponse.json();
+  assert.ok(accepted.privateAssistantId);
+
+  const attachResponse = await app.request(
+    "http://localhost/api/bridges/brg_claude_task/agents/attach",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_claude_task_token",
+        privateAssistantId: accepted.privateAssistantId,
+        cwd: "/tmp/claude-assistant-task",
+      }),
+    },
+  );
+
+  assert.equal(attachResponse.status, 200);
+
+  const requesterToken = issueWsToken("mem_owner_claude_task", roomId);
+  const messageResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_owner_claude_task",
+      wsToken: requesterToken,
+      content: "@ClaudeHelper please help",
+    }),
+  });
+
+  assert.equal(messageResponse.status, 201);
+
+  const pullResponse = await app.request("http://localhost/api/bridges/brg_claude_task/tasks/pull", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      bridgeToken: "bridge_claude_task_token",
+      bridgeInstanceId: "binst_claude_task",
+    }),
+  });
+
+  assert.equal(pullResponse.status, 200);
+  const pulled = await pullResponse.json();
+  assert.equal(pulled.task.backendThreadId, "thread_claude_task_initial");
+
+  const acceptTaskResponse = await app.request(
+    `http://localhost/api/bridges/brg_claude_task/tasks/${pulled.task.id}/accept`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_claude_task_token",
+        bridgeInstanceId: "binst_claude_task",
+      }),
+    },
+  );
+
+  assert.equal(acceptTaskResponse.status, 200);
+
+  const completeResponse = await app.request(
+    `http://localhost/api/bridges/brg_claude_task/tasks/${pulled.task.id}/complete`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_claude_task_token",
+        bridgeInstanceId: "binst_claude_task",
+        finalText: "final claude assistant output",
+        backendThreadId: "11111111-2222-3333-4444-555555555555",
+      }),
+    },
+  );
+
+  assert.equal(completeResponse.status, 200);
+
+  const binding = db
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.privateAssistantId, accepted.privateAssistantId))
+    .get();
+
+  assert.equal(binding?.backendThreadId, "11111111-2222-3333-4444-555555555555");
+
+  const storedAssistant = db
+    .select()
+    .from(privateAssistants)
+    .where(eq(privateAssistants.id, accepted.privateAssistantId))
+    .get();
+
+  assert.equal(storedAssistant?.backendThreadId, "thread_claude_task_initial");
 });
 
 test("attached codex binding emits a waiting notice when its bridge heartbeat is stale", async () => {

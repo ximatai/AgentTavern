@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { Modal, Input, Button, Typography, Tag } from "antd";
+import { Modal, Input, Button, Typography, Tag, Select } from "antd";
 import { RobotOutlined, CopyOutlined, PlusOutlined, DeleteOutlined, TeamOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 
@@ -21,6 +21,7 @@ import type {
   PrivateAssistantRecord,
   PrivateAssistantInviteRecord,
 } from "../api/assistants";
+import type { AgentBackendType } from "@agent-tavern/shared";
 
 import "../styles/assistant-management.css";
 
@@ -69,6 +70,8 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
   const [removingInviteId, setRemovingInviteId] = useState<string | null>(null);
   const [offliningId, setOffliningId] = useState<string | null>(null);
   const [roomInviteName, setRoomInviteName] = useState("架构助理");
+  const [inviteBackendType, setInviteBackendType] = useState<AgentBackendType>("claude_code");
+  const [roomInviteBackendType, setRoomInviteBackendType] = useState<AgentBackendType>("claude_code");
   const [creatingRoomInvite, setCreatingRoomInvite] = useState(false);
   const [copyingRoomInvite, setCopyingRoomInvite] = useState(false);
   const [roomAssistantInvite, setRoomAssistantInvite] = useState<AssistantInviteResult | null>(null);
@@ -131,7 +134,7 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
         principal.principalId,
         principal.principalToken,
         name,
-        "codex_cli",
+        inviteBackendType,
       );
       setInvites((prev) => {
         const next = prev.filter((i) => i.id !== created.id);
@@ -213,7 +216,7 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
       const created = await createRoomAssistantInvite(room.id, {
         actorMemberId: self.memberId,
         wsToken: self.wsToken,
-        backendType: "codex_cli",
+        backendType: roomInviteBackendType,
         presetDisplayName: roomInviteName.trim() || undefined,
       });
       setRoomAssistantInvite(created);
@@ -272,6 +275,7 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
 
   function backendTypeLabel(type: string): string {
     if (type === "codex_cli") return t("assistantPanel.backendCodex");
+    if (type === "claude_code") return t("assistantPanel.backendClaudeCode");
     return type;
   }
 
@@ -463,6 +467,15 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
                   onPressEnter={handleCreateRoomInvite}
                   className="am-name-input"
                 />
+                <Select
+                  value={roomInviteBackendType}
+                  onChange={setRoomInviteBackendType}
+                  style={{ width: 130 }}
+                  options={[
+                    { value: "claude_code", label: t("assistantPanel.backendClaudeCode") },
+                    { value: "codex_cli", label: t("assistantPanel.backendCodex") },
+                  ]}
+                />
                 <Button
                   type="primary"
                   loading={creatingRoomInvite}
@@ -501,6 +514,15 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
               placeholder={t("assistantPanel.namePlaceholder")}
               onPressEnter={handleCreate}
               className="am-name-input"
+            />
+            <Select
+              value={inviteBackendType}
+              onChange={setInviteBackendType}
+              style={{ width: 130 }}
+              options={[
+                { value: "claude_code", label: t("assistantPanel.backendClaudeCode") },
+                { value: "codex_cli", label: t("assistantPanel.backendCodex") },
+              ]}
             />
             <Button
               type="primary"

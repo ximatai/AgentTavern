@@ -64,11 +64,17 @@ export async function processTask(params: {
         const completedText =
           event.finalText !== undefined ? event.finalText : finalText || "(no output)";
 
-        await postJson(`/api/bridges/${bridgeId}/tasks/${task.id}/complete`, {
+        const completeBody: Record<string, unknown> = {
           bridgeToken,
           bridgeInstanceId,
           finalText: completedText,
-        });
+        };
+
+        if (event.sessionId) {
+          completeBody.backendThreadId = event.sessionId;
+        }
+
+        await postJson(`/api/bridges/${bridgeId}/tasks/${task.id}/complete`, completeBody);
         return;
       }
 

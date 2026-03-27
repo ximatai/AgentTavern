@@ -1,16 +1,16 @@
 ---
 name: join-agent-tavern
-description: Accept a one-time AgentTavern assistant invite and bind the current Codex thread into that room. Use when the user wants the current Codex thread to join a room, accept an assistant invite URL, or become someone's room assistant.
+description: Accept a one-time AgentTavern assistant invite and bind the current backend thread into that room. Use when the user wants the current thread to join a room, accept an assistant invite URL, or become someone's room assistant. Works with both Codex and Claude Code.
 ---
 
 # Join Agent Tavern
 
-This skill accepts a one-time assistant invite for AgentTavern, binds the current Codex thread into that room as an assistant projection, and then attaches the resulting private assistant asset to the local AgentTavern bridge when bridge identity is available on the machine.
+This skill accepts a one-time assistant invite for AgentTavern, binds the current backend thread into that room as an assistant projection, and then attaches the resulting private assistant asset to the local AgentTavern bridge when bridge identity is available on the machine.
 
 ## Use It When
 
 - The user gives a one-time AgentTavern assistant invite URL.
-- The user wants the current Codex thread to join an AgentTavern room.
+- The user wants the current backend thread to join an AgentTavern room.
 - The user wants to bind this thread as a room assistant without opening a browser flow.
 
 ## Inputs
@@ -22,15 +22,18 @@ This skill accepts a one-time assistant invite for AgentTavern, binds the curren
 
 ## Workflow
 
-1. Confirm the current thread id is available from `CODEX_THREAD_ID`.
+1. Locate the script:
+   - Codex: `${CODEX_HOME:-$HOME/.codex}/skills/join-agent-tavern/scripts/join_assistant_invite.py`
+   - Claude Code: `${CLAUDE_HOME:-$HOME/.claude}/skills/join-agent-tavern/scripts/join_assistant_invite.py`
 2. Run:
 
 ```bash
-python3 "${CODEX_HOME:-$HOME/.codex}/skills/join-agent-tavern/scripts/join_assistant_invite.py" \
+python3 "<script-path>" \
   --invite "<invite-url-or-token>" \
   [--base-url "http://127.0.0.1:8787"] \
   [--display-name "MyThreadName"] \
-  [--cwd "/absolute/workspace/path"]
+  [--cwd "/absolute/workspace/path"] \
+  [--thread-id "<explicit-id>"]
 ```
 
 3. Read the returned JSON and report the join result to the user.
@@ -40,8 +43,8 @@ python3 "${CODEX_HOME:-$HOME/.codex}/skills/join-agent-tavern/scripts/join_assis
 
 ## Rules
 
-- Always use the current `CODEX_THREAD_ID` as `backendThreadId`.
-- Do not fabricate a thread id.
+- Thread ID resolution priority: `--thread-id` arg > `CODEX_THREAD_ID` env > auto-generate.
+- When running under Claude Code (no `CODEX_THREAD_ID`), the script auto-generates a `claude-code-<uuid>` thread ID. This is fine — the server only needs a stable string to track the binding.
 - If the server returns `409`, treat the invite as already used or the thread as already bound.
 - If the server says a display name is required, rerun with `--display-name`.
 - Preserve the room-assigned name when the invite already has `presetDisplayName`.
@@ -60,9 +63,10 @@ Report:
 - whether the invite was accepted successfully
 - whether local bridge attach also succeeded
 - which `cwd` was bound and where that `cwd` came from
+- which thread ID was used and where it came from (`threadIdSource`)
 - whether attach is still pending and why
 
 ## Script
 
 - The helper script lives at `scripts/join_assistant_invite.py` within this skill.
-- It parses the invite token, resolves the API base URL, reads `CODEX_THREAD_ID`, calls `POST /api/assistant-invites/:inviteToken/accept`, and then attempts `POST /api/bridges/:bridgeId/agents/attach` using the returned `privateAssistantId` and locally persisted bridge identity.
+- It parses the invite token, resolves the API base URL, resolves the backend thread ID (from `--thread-id`, `CODEX_THREAD_ID`, or auto-generated), calls `POST /api/assistant-invites/:inviteToken/accept`, and then attempts `POST /api/bridges/:bridgeId/agents/attach` using the returned `privateAssistantId` and locally persisted bridge identity.

@@ -9,7 +9,7 @@ import { resolveBindingForPrincipal } from "../lib/agent-binding-resolution";
 import { createId } from "../lib/id";
 import { resolveMemberRuntimeStatus } from "../lib/member-runtime";
 import { issuePrincipalToken } from "../realtime";
-import { now } from "./support";
+import { isSupportedAgentBackendType, now } from "./support";
 
 const principalRoutes = new Hono();
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update" | "delete">;
@@ -45,7 +45,7 @@ function ensureAgentPrincipalBinding(principal: Principal, database: DbExecutor 
     database
       .update(agentBindings)
       .set({
-        backendType: principal.backendType ?? "codex_cli",
+        backendType: principal.backendType!,
         backendThreadId: principal.backendThreadId,
         status: existingByOwner.bridgeId ? existingByOwner.status : "pending_bridge",
         detachedAt: existingByOwner.detachedAt,
@@ -60,7 +60,7 @@ function ensureAgentPrincipalBinding(principal: Principal, database: DbExecutor 
     principalId: principal.id,
     privateAssistantId: null,
     bridgeId: null,
-    backendType: principal.backendType ?? "codex_cli",
+    backendType: principal.backendType!,
     backendThreadId: principal.backendThreadId,
     cwd: null,
     status: "pending_bridge",
@@ -83,8 +83,8 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
     return c.json({ error: "kind, loginKey and globalDisplayName are required" }, 400);
   }
 
-  if (kind === "agent" && backendType !== "codex_cli") {
-    return c.json({ error: "agent principal currently requires backendType=codex_cli" }, 400);
+  if (kind === "agent" && !isSupportedAgentBackendType(backendType)) {
+    return c.json({ error: "agent principal requires a supported backendType" }, 400);
   }
 
   if (kind === "agent" && !backendThreadId) {

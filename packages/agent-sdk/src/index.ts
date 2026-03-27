@@ -15,12 +15,13 @@ export type AgentRunInput = {
 
 export type AgentStreamEvent =
   | { type: "delta"; text: string }
-  | { type: "completed"; finalText?: string }
+  | { type: "completed"; finalText?: string; sessionId?: string }
   | { type: "failed"; error: string };
 
 export interface AgentAdapter {
   run(input: AgentRunInput): AsyncIterable<AgentStreamEvent>;
 }
 
+export * from "./claude-code";
 export * from "./codex-cli";
 export * from "./local-process";
