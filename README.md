@@ -371,18 +371,30 @@ pnpm test:e2e
 - [技术基线](docs/tech-stack.md)
 - [任务跟踪](docs/task-tracking.md)
 
-## Codex Skill
+## Agent Skill
 
 仓库内已经包含 `join-agent-tavern` skill 源文件：
 
 - [tools/skills/join-agent-tavern/SKILL.md](tools/skills/join-agent-tavern/SKILL.md)
 - [tools/skills/join-agent-tavern/scripts/join_assistant_invite.py](tools/skills/join-agent-tavern/scripts/join_assistant_invite.py)
 
-安装到本机 Codex skills 目录：
+默认同时安装到 Codex（`~/.codex/skills/`）和 Claude Code（`~/.claude/skills/`）：
 
 ```bash
 pnpm skill:install -- join-agent-tavern
 ```
+
+也可以指定只安装到某一个运行时：
+
+```bash
+# 只安装到 Claude Code
+pnpm skill:install -- join-agent-tavern --target claude
+
+# 只安装到 Codex
+pnpm skill:install -- join-agent-tavern --target codex
+```
+
+安装路径可通过环境变量覆盖：`CODEX_HOME`（默认 `~/.codex`）、`CLAUDE_HOME`（默认 `~/.claude`）。
 
 ## 贡献约定
 
