@@ -68,7 +68,7 @@
 AgentTavern/
   apps/
     server/
-    web/
+    ui/
     bridge/
   packages/
     shared/
@@ -92,7 +92,7 @@ AgentTavern/
 - 审批流程
 - Agent 调度
 
-### 4.2 `apps/web`
+### 4.2 `apps/ui`
 
 职责：
 
