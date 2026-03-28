@@ -14,6 +14,13 @@ def resolve_codex_home() -> Path:
     return (Path.home() / ".codex").resolve()
 
 
+def resolve_claude_home() -> Path:
+    claude_home = os.environ.get("CLAUDE_HOME", "").strip()
+    if claude_home:
+        return Path(claude_home).expanduser().resolve()
+    return (Path.home() / ".claude").resolve()
+
+
 def resolve_skill_name(value: str) -> str:
     skill_name = value.strip()
     if not skill_name or skill_name in {".", ".."} or "/" in skill_name or "\\" in skill_name:
@@ -21,9 +28,34 @@ def resolve_skill_name(value: str) -> str:
     return skill_name
 
 
+def install_skill(source_dir: Path, target_dir: Path, skill_name: str) -> None:
+    target_dir.parent.mkdir(parents=True, exist_ok=True)
+
+    with tempfile.TemporaryDirectory(prefix=f"{skill_name}-", dir=target_dir.parent) as temp_dir:
+        temp_target = Path(temp_dir) / skill_name
+        shutil.copytree(source_dir, temp_target)
+
+        backup_dir = None
+        if target_dir.exists():
+            backup_dir = Path(temp_dir) / f"{skill_name}.backup"
+            target_dir.replace(backup_dir)
+
+        temp_target.replace(target_dir)
+        if backup_dir and backup_dir.exists():
+            shutil.rmtree(backup_dir)
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Install a versioned AgentTavern skill into the local Codex skills directory.")
+    parser = argparse.ArgumentParser(
+        description="Install a versioned AgentTavern skill into the local agent skills directory."
+    )
     parser.add_argument("skill_name", help="Skill folder name under tools/skills")
+    parser.add_argument(
+        "--target",
+        choices=["codex", "claude", "all"],
+        default="all",
+        help="Which agent runtime to install into (default: all)",
+    )
     args = parser.parse_args()
 
     try:
@@ -42,23 +74,32 @@ def main() -> int:
         print(f"skill not found: {source_dir}", file=sys.stderr)
         return 1
 
-    target_dir = (resolve_codex_home() / "skills" / skill_name).resolve()
-    target_dir.parent.mkdir(parents=True, exist_ok=True)
+    targets: list[tuple[str, Path]] = []
+    if args.target in ("codex", "all"):
+        targets.append(("codex", resolve_codex_home() / "skills" / skill_name))
+    if args.target in ("claude", "all"):
+        targets.append(("claude", resolve_claude_home() / "skills" / skill_name))
 
-    with tempfile.TemporaryDirectory(prefix=f"{skill_name}-", dir=target_dir.parent) as temp_dir:
-        temp_target = Path(temp_dir) / skill_name
-        shutil.copytree(source_dir, temp_target)
+    installed: list[str] = []
+    errors: list[str] = []
+    for runtime, target_dir in targets:
+        target_dir = target_dir.resolve()
+        try:
+            install_skill(source_dir, target_dir, skill_name)
+            installed.append(str(target_dir))
+        except Exception as exc:
+            errors.append(f"{runtime}: {exc}")
 
-        backup_dir = None
-        if target_dir.exists():
-            backup_dir = Path(temp_dir) / f"{skill_name}.backup"
-            target_dir.replace(backup_dir)
+    for path in installed:
+        print(path)
 
-        temp_target.replace(target_dir)
-        if backup_dir and backup_dir.exists():
-            shutil.rmtree(backup_dir)
+    if errors:
+        for err in errors:
+            print(f"error: {err}", file=sys.stderr)
+        # Only fail if nothing was installed at all
+        if not installed:
+            return 1
 
-    print(target_dir)
     return 0
 
 
