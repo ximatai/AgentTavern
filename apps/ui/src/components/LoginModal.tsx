@@ -57,7 +57,7 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
         kind,
         loginKey: values.loginKey,
         globalDisplayName: values.globalDisplayName,
-        backendType: kind === "agent" ? (values.backendType as "codex_cli" | "claude_code") : null,
+        backendType: kind === "agent" ? (values.backendType as "codex_cli" | "claude_code" | "opencode") : null,
         backendThreadId: kind === "agent" ? values.backendThreadId : null,
       });
       await refreshLobbyPresence();
@@ -173,6 +173,7 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
                 options={[
                   { value: "claude_code", label: t("login.backendClaudeCode") },
                   { value: "codex_cli", label: t("login.backendCodexCli") },
+                  { value: "opencode", label: t("login.backendOpenCode") },
                 ]}
               />
             </Form.Item>
