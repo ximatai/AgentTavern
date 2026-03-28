@@ -1,6 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, Select } from "antd";
+import { CloseOutlined, DownOutlined, UpOutlined } from "@ant-design/icons";
 import type {
   AgentSessionStatus,
   ApprovalGrantDuration,
@@ -75,6 +77,11 @@ function getMemberColor(member: PublicMember): string {
 }
 
 type OwnerAssistantGroup = { owner: PublicMember; assistants: PublicMember[] };
+type CollabItem = {
+  id: string;
+  createdAt: string;
+  node: ReactNode;
+};
 
 function buildAssistantTree(members: PublicMember[]): OwnerAssistantGroup[] {
   const assistants = members.filter((m) => m.type === "agent" && m.roleKind === "assistant");
@@ -104,6 +111,7 @@ const GRANT_OPTIONS: Array<{ value: ApprovalGrantDuration; label: string }> = [
 
 export function RoomSidebar() {
   const { t } = useTranslation();
+  const room = useRoomStore((s) => s.room);
   const self = useRoomStore((s) => s.self);
   const members = useRoomStore((s) => s.members);
   const pendingApprovals = useApprovalStore((s) => s.pendingApprovals);
@@ -116,6 +124,30 @@ export function RoomSidebar() {
   const streams = useMessageStore((s) => s.streams);
 
   const [busyApprovalId, setBusyApprovalId] = useState<string | null>(null);
+  const [collabExpanded, setCollabExpanded] = useState(false);
+  const [dismissedCollabIds, setDismissedCollabIds] = useState<string[]>([]);
+
+  const collabDismissKey = room && self
+    ? `agent-tavern-room-sidebar-dismissed:${room.id}:${self.memberId}`
+    : null;
+
+  useEffect(() => {
+    if (!collabDismissKey) {
+      setDismissedCollabIds([]);
+      return;
+    }
+    try {
+      const raw = window.localStorage.getItem(collabDismissKey);
+      setDismissedCollabIds(raw ? JSON.parse(raw) : []);
+    } catch {
+      setDismissedCollabIds([]);
+    }
+  }, [collabDismissKey]);
+
+  useEffect(() => {
+    if (!collabDismissKey) return;
+    window.localStorage.setItem(collabDismissKey, JSON.stringify(dismissedCollabIds));
+  }, [collabDismissKey, dismissedCollabIds]);
 
   /* Derived data */
   const memberMap = useMemo(() => {
@@ -161,14 +193,6 @@ export function RoomSidebar() {
     [messages],
   );
 
-  const myPendingApprovals = useMemo(
-    () => pendingApprovals.filter((a) => a.ownerMemberId === self?.memberId),
-    [pendingApprovals, self?.memberId],
-  );
-
-  const activeItemCount =
-    pendingApprovals.length + runningSessionSummaries.length + recentIssueMessages.length;
-
   /* Actions */
   const focusMessage = (messageId: string) => {
     const el = document.querySelector(`[data-message-id="${messageId}"]`);
@@ -195,15 +219,292 @@ export function RoomSidebar() {
     }).finally(() => setBusyApprovalId(null));
   };
 
+  const collabItems = useMemo<CollabItem[]>(() => {
+    const items: CollabItem[] = [];
+
+    pendingApprovals.forEach((approval) => {
+      const agent = memberMap.get(approval.agentMemberId);
+      const requester = memberMap.get(approval.requesterMemberId);
+      const owner = memberMap.get(approval.ownerMemberId);
+      const mine = approval.ownerMemberId === self?.memberId;
+      const approvalMsg = findApprovalMessage(approval.id);
+      const selectedGrant = approvalGrants[approval.id] ?? "once";
+      const detail = mine
+        ? t("roomSidebar.waitingForYouDetail")
+        : t("roomSidebar.waitingForOwnerDetail");
+      const approvalItems = [
+        {
+          label: t("roomSidebar.requester"),
+          value: requester?.displayName ?? approval.requesterMemberId,
+        },
+        {
+          label: t("roomSidebar.agent"),
+          value: agent?.displayName ?? approval.agentMemberId,
+        },
+        {
+          label: t("roomSidebar.owner"),
+          value: owner?.displayName ?? approval.ownerMemberId,
+        },
+        {
+          label: t("approval.status"),
+          value: mine
+            ? t("roomSidebar.waitingForYou")
+            : t("roomSidebar.waitingForOwner"),
+        },
+      ];
+      items.push({
+        id: `approval:${approval.id}`,
+        createdAt: approval.createdAt,
+        node: (
+          <article className="rs-collab-card rs-collab-card-approval">
+            <div className="rs-collab-head">
+              <span className="rs-pill rs-pill-warning">{t("approval.pending")}</span>
+              <div className="rs-collab-head-side">
+                <span className="rs-collab-time">{formatTime(approval.createdAt)}</span>
+                <button
+                  type="button"
+                  className="rs-collab-dismiss"
+                  aria-label={t("roomSidebar.dismissStatus")}
+                  onClick={() =>
+                    setDismissedCollabIds((current) =>
+                      current.includes(`approval:${approval.id}`)
+                        ? current
+                        : [...current, `approval:${approval.id}`],
+                    )
+                  }
+                >
+                  <CloseOutlined />
+                </button>
+              </div>
+            </div>
+            <strong className="rs-collab-title">
+              {agent?.displayName ?? approval.agentMemberId}{" "}
+              {t("roomSidebar.waitingOwner")}
+            </strong>
+            <p className="rs-collab-desc">
+              {t("roomSidebar.requester")}:{" "}
+              {requester?.displayName ?? approval.requesterMemberId}
+            </p>
+            <p className="rs-approval-desc">{detail}</p>
+            <div className="rs-approval-grid">
+              {approvalItems.map((item) => (
+                <div key={item.label} className="rs-approval-item">
+                  <span className="rs-approval-item-label">{item.label}</span>
+                  <strong className="rs-approval-item-value">{item.value}</strong>
+                </div>
+              ))}
+            </div>
+            <div className="rs-collab-actions">
+              <button
+                type="button"
+                className="chat-action-button"
+                onClick={() => focusMessage(approval.triggerMessageId)}
+              >
+                {t("chat.viewOriginal")}
+              </button>
+              {approvalMsg && (
+                <button
+                  type="button"
+                  className="chat-action-button"
+                  onClick={() => focusMessage(approvalMsg.id)}
+                >
+                  {t("roomSidebar.viewApproval")}
+                </button>
+              )}
+            </div>
+            {mine && (
+              <div className="rs-approval-controls">
+                <Select
+                  size="small"
+                  value={selectedGrant}
+                  onChange={(value: ApprovalGrantDuration) =>
+                    setGrantDuration(approval.id, value)
+                  }
+                  disabled={busyApprovalId === approval.id}
+                  style={{ width: 110 }}
+                  options={GRANT_OPTIONS.map((o) => ({
+                    value: o.value,
+                    label: t(o.label),
+                  }))}
+                />
+                <Button
+                  size="small"
+                  type="primary"
+                  loading={busyApprovalId === approval.id}
+                  onClick={() => handleApproval(approval.id, "approve")}
+                >
+                  {t("approval.approve")}
+                </Button>
+                <Button
+                  size="small"
+                  danger
+                  loading={busyApprovalId === approval.id}
+                  onClick={() => handleApproval(approval.id, "reject")}
+                >
+                  {t("approval.reject")}
+                </Button>
+              </div>
+            )}
+          </article>
+        ),
+      });
+    });
+
+    runningSessionSummaries.forEach((session) => {
+      const agent = memberMap.get(session.agentMemberId);
+      const requester = session.requesterMemberId
+        ? memberMap.get(session.requesterMemberId)
+        : undefined;
+      const stream = Object.values(streams).find((s) => s.sessionId === session.id);
+      items.push({
+        id: `session:${session.id}`,
+        createdAt: session.startedAt ?? new Date().toISOString(),
+        node: (
+          <article className="rs-collab-card">
+            <div className="rs-collab-head">
+              <span className={`rs-pill rs-pill-${sessionTone(session.status)}`}>
+                {t(sessionStatusKey(session.status))}
+              </span>
+              <div className="rs-collab-head-side">
+                <span className="rs-collab-time">
+                  {formatTime(session.startedAt ?? new Date().toISOString())}
+                </span>
+                <button
+                  type="button"
+                  className="rs-collab-dismiss"
+                  aria-label={t("roomSidebar.dismissStatus")}
+                  onClick={() =>
+                    setDismissedCollabIds((current) =>
+                      current.includes(`session:${session.id}`)
+                        ? current
+                        : [...current, `session:${session.id}`],
+                    )
+                  }
+                >
+                  <CloseOutlined />
+                </button>
+              </div>
+            </div>
+            <strong className="rs-collab-title">
+              {agent?.displayName ?? session.agentMemberId}{" "}
+              {t("roomSidebar.processingRequest")}
+            </strong>
+            <p className="rs-collab-desc">
+              {t("roomSidebar.requester")}:{" "}
+              {requester?.displayName ?? session.requesterMemberId ?? "?"}
+            </p>
+            <p className="rs-collab-stream">
+              {stream?.content
+                ? stream.content.slice(-72)
+                : t("roomSidebar.waitingForOutput")}
+            </p>
+            <div className="rs-collab-actions">
+              <button
+                type="button"
+                className="chat-action-button"
+                onClick={() => focusMessage(session.triggerMessageId)}
+              >
+                {t("roomSidebar.viewTrigger")}
+              </button>
+            </div>
+          </article>
+        ),
+      });
+    });
+
+    recentIssueMessages.forEach((message) => {
+      items.push({
+        id: `issue:${message.id}`,
+        createdAt: message.createdAt,
+        node: (
+          <article className="rs-collab-card">
+            <div className="rs-collab-head">
+              <span className="rs-pill rs-pill-error">
+                {message.systemData?.kind === "bridge_waiting"
+                  ? t("roomSidebar.bridgeWaiting")
+                  : t("roomSidebar.recentIssue")}
+              </span>
+              <div className="rs-collab-head-side">
+                <span className="rs-collab-time">{formatTime(message.createdAt)}</span>
+                <button
+                  type="button"
+                  className="rs-collab-dismiss"
+                  aria-label={t("roomSidebar.dismissStatus")}
+                  onClick={() =>
+                    setDismissedCollabIds((current) =>
+                      current.includes(`issue:${message.id}`)
+                        ? current
+                        : [...current, `issue:${message.id}`],
+                    )
+                  }
+                >
+                  <CloseOutlined />
+                </button>
+              </div>
+            </div>
+            <strong className="rs-collab-title">
+              {message.systemData?.title ?? t("roomSidebar.systemEvent")}
+            </strong>
+            <p className="rs-collab-desc">
+              {message.systemData?.detail ?? message.content}
+            </p>
+            <div className="rs-collab-actions">
+              <button
+                type="button"
+                className="chat-action-button"
+                onClick={() => focusMessage(message.id)}
+              >
+                {t("roomSidebar.viewMessage")}
+              </button>
+            </div>
+          </article>
+        ),
+      });
+    });
+
+    return items.filter((item) => !dismissedCollabIds.includes(item.id));
+  }, [
+    approvalGrants,
+    busyApprovalId,
+    dismissedCollabIds,
+    memberMap,
+    messages,
+    pendingApprovals,
+    recentIssueMessages,
+    runningSessionSummaries,
+    self?.memberId,
+    setGrantDuration,
+    streams,
+    t,
+  ]);
+
+  const activeItemCount = collabItems.length;
+  const visibleCollabItems = collabExpanded ? collabItems : collabItems.slice(0, 1);
+  const hiddenCollabCount = Math.max(0, collabItems.length - visibleCollabItems.length);
+
   return (
     <div className="room-sidebar-content">
       {/* ── Section 1: Collaboration Status ── */}
       <section className="rs-section">
         <div className="rs-section-header">
           <h4>{t("roomSidebar.collabStatus")}</h4>
-          <span className="rs-section-badge">
-            {activeItemCount} {t("roomSidebar.activeItems")}
-          </span>
+          {activeItemCount > 1 ? (
+            <button
+              type="button"
+              className="rs-section-badge rs-section-badge-button"
+              onClick={() => setCollabExpanded((value) => !value)}
+              aria-expanded={collabExpanded}
+            >
+              <span>
+                {activeItemCount} {t("roomSidebar.activeItems")}
+              </span>
+              {collabExpanded ? <UpOutlined /> : <DownOutlined />}
+            </button>
+          ) : (
+            <span className="rs-section-badge">
+              {activeItemCount} {t("roomSidebar.activeItems")}
+            </span>
+          )}
         </div>
 
         <div className="rs-collab-list">
@@ -211,117 +512,18 @@ export function RoomSidebar() {
             <p className="rs-muted">{t("roomSidebar.noActivity")}</p>
           )}
 
-          {pendingApprovals.map((approval) => {
-            const agent = memberMap.get(approval.agentMemberId);
-            const requester = memberMap.get(approval.requesterMemberId);
-            const approvalMsg = findApprovalMessage(approval.id);
-            return (
-              <article key={`approval:${approval.id}`} className="rs-collab-card">
-                <div className="rs-collab-head">
-                  <span className="rs-pill rs-pill-warning">{t("approval.pending")}</span>
-                  <span className="rs-collab-time">{formatTime(approval.createdAt)}</span>
-                </div>
-                <strong className="rs-collab-title">
-                  {agent?.displayName ?? approval.agentMemberId}{" "}
-                  {t("roomSidebar.waitingOwner")}
-                </strong>
-                <p className="rs-collab-desc">
-                  {t("roomSidebar.requester")}:{" "}
-                  {requester?.displayName ?? approval.requesterMemberId}
-                </p>
-                <div className="rs-collab-actions">
-                  <button
-                    type="button"
-                    className="chat-action-button"
-                    onClick={() => focusMessage(approval.triggerMessageId)}
-                  >
-                    {t("chat.viewOriginal")}
-                  </button>
-                  {approvalMsg && (
-                    <button
-                      type="button"
-                      className="chat-action-button"
-                      onClick={() => focusMessage(approvalMsg.id)}
-                    >
-                      {t("roomSidebar.viewApproval")}
-                    </button>
-                  )}
-                </div>
-              </article>
-            );
-          })}
-
-          {runningSessionSummaries.map((session) => {
-            const agent = memberMap.get(session.agentMemberId);
-            const requester = session.requesterMemberId
-              ? memberMap.get(session.requesterMemberId)
-              : undefined;
-            const stream = Object.values(streams).find(
-              (s) => s.sessionId === session.id,
-            );
-            return (
-              <article key={`session:${session.id}`} className="rs-collab-card">
-                <div className="rs-collab-head">
-                  <span className={`rs-pill rs-pill-${sessionTone(session.status)}`}>
-                    {t(sessionStatusKey(session.status))}
-                  </span>
-                  <span className="rs-collab-time">
-                    {formatTime(session.startedAt ?? new Date().toISOString())}
-                  </span>
-                </div>
-                <strong className="rs-collab-title">
-                  {agent?.displayName ?? session.agentMemberId}{" "}
-                  {t("roomSidebar.processingRequest")}
-                </strong>
-                <p className="rs-collab-desc">
-                  {t("roomSidebar.requester")}:{" "}
-                  {requester?.displayName ?? session.requesterMemberId ?? "?"}
-                </p>
-                <p className="rs-collab-stream">
-                  {stream?.content
-                    ? stream.content.slice(-72)
-                    : t("roomSidebar.waitingForOutput")}
-                </p>
-                <div className="rs-collab-actions">
-                  <button
-                    type="button"
-                    className="chat-action-button"
-                    onClick={() => focusMessage(session.triggerMessageId)}
-                  >
-                    {t("roomSidebar.viewTrigger")}
-                  </button>
-                </div>
-              </article>
-            );
-          })}
-
-          {recentIssueMessages.map((message) => (
-            <article key={`issue:${message.id}`} className="rs-collab-card">
-              <div className="rs-collab-head">
-                <span className="rs-pill rs-pill-error">
-                  {message.systemData?.kind === "bridge_waiting"
-                    ? t("roomSidebar.bridgeWaiting")
-                    : t("roomSidebar.recentIssue")}
-                </span>
-                <span className="rs-collab-time">{formatTime(message.createdAt)}</span>
-              </div>
-              <strong className="rs-collab-title">
-                {message.systemData?.title ?? t("roomSidebar.systemEvent")}
-              </strong>
-              <p className="rs-collab-desc">
-                {message.systemData?.detail ?? message.content}
-              </p>
-              <div className="rs-collab-actions">
-                <button
-                  type="button"
-                  className="chat-action-button"
-                  onClick={() => focusMessage(message.id)}
-                >
-                  {t("roomSidebar.viewMessage")}
-                </button>
-              </div>
-            </article>
+          {visibleCollabItems.map((item, index) => (
+            <div
+              key={item.id}
+              className={[
+                "rs-collab-stack",
+                !collabExpanded && index === 0 && hiddenCollabCount > 0 ? "has-more" : "",
+              ].filter(Boolean).join(" ")}
+            >
+              {item.node}
+            </div>
           ))}
+
         </div>
       </section>
 
@@ -332,247 +534,93 @@ export function RoomSidebar() {
           <span className="rs-section-badge">{members.length}</span>
         </div>
 
-        {/* Humans + Assistants */}
-        <div className="rs-member-section">
-          <h5 className="rs-member-section-title">{t("roomSidebar.humans")}</h5>
-          <div className="rs-member-list">
-            {humansWithAssistants.map(({ human, assistants }) => (
-              <div key={human.id} className="rs-human-group">
-                <div className="rs-member-row">
-                  <div
-                    className="rs-member-avatar"
-                    style={{ background: getMemberColor(human) }}
-                  >
-                    {human.displayName.charAt(0)}
-                  </div>
-                  <div className="rs-member-info">
-                    <div className="rs-member-title">
-                      <strong>
-                        {human.displayName}
-                        {human.id === self?.memberId && (
-                          <span className="rs-self-marker">({t("roomSidebar.you")})</span>
-                        )}
-                      </strong>
-                      <span className="rs-role-badge rs-role-badge-human">
-                        {t("chat.roleHuman")}
-                      </span>
-                    </div>
-                    <p>{t("roomSidebar.inRoom")}</p>
-                  </div>
+        <div className="rs-member-list">
+          {humansWithAssistants.map(({ human, assistants }) => (
+            <div key={human.id} className="rs-human-group">
+              <div className="rs-member-row">
+                <div
+                  className="rs-member-avatar"
+                  style={{ background: getMemberColor(human) }}
+                >
+                  {human.displayName.charAt(0)}
                 </div>
-                {assistants.length > 0 && (
-                  <div className="rs-assistant-children">
-                    {assistants.map((assistant) => (
-                      <div key={assistant.id} className="rs-member-row rs-member-row-child">
-                        <div
-                          className="rs-member-avatar"
-                          style={{ background: getMemberColor(assistant) }}
-                        >
-                          {assistant.displayName.charAt(0)}
-                        </div>
-                        <div className="rs-member-info">
-                          <div className="rs-member-title">
-                            <strong>{assistant.displayName}</strong>
-                            <span className="rs-role-badge rs-role-badge-assistant">
-                              {t("chat.roleAssistant")}
-                            </span>
-                            {getRuntimeLabel(assistant, t) && (
-                              <span
-                                className={`rs-runtime-pill rs-runtime-pill-${assistant.runtimeStatus}`}
-                              >
-                                {getRuntimeLabel(assistant, t)}
-                              </span>
-                            )}
-                          </div>
-                          <p>
-                            {t("roomSidebar.directReport", {
-                              name: human.displayName,
-                            })}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Independent Agents */}
-        <div className="rs-member-section">
-          <h5 className="rs-member-section-title">
-            {t("roomSidebar.independentAgents")}
-          </h5>
-          <div className="rs-member-list">
-            {independentAgents.length === 0 ? (
-              <p className="rs-muted">{t("roomSidebar.noIndependentAgents")}</p>
-            ) : (
-              independentAgents.map((member) => (
-                <div key={member.id} className="rs-member-row">
-                  <div
-                    className="rs-member-avatar"
-                    style={{ background: getMemberColor(member) }}
-                  >
-                    {member.displayName.charAt(0)}
-                  </div>
-                  <div className="rs-member-info">
-                    <div className="rs-member-title">
-                      <strong>{member.displayName}</strong>
-                      <span className="rs-role-badge rs-role-badge-independent">
-                        {t("chat.roleAgent")}
-                      </span>
-                      {getRuntimeLabel(member, t) && (
-                        <span
-                          className={`rs-runtime-pill rs-runtime-pill-${member.runtimeStatus}`}
-                        >
-                          {getRuntimeLabel(member, t)}
-                        </span>
+                <div className="rs-member-info">
+                  <div className="rs-member-title">
+                    <strong>
+                      {human.displayName}
+                      {human.id === self?.memberId && (
+                        <span className="rs-self-marker">({t("roomSidebar.you")})</span>
                       )}
-                    </div>
-                    <p>{t("roomSidebar.canBeMentioned")}</p>
+                    </strong>
                   </div>
+                  <p>{t("roomSidebar.inRoom")}</p>
                 </div>
-              ))
-            )}
-          </div>
-        </div>
-
-      </section>
-
-      {/* ── Section 3: Pending Approvals (mine only) ── */}
-      <section className="rs-section">
-        <div className="rs-section-header">
-          <h4>{t("roomSidebar.pendingApprovals")}</h4>
-          <span className="rs-section-badge">
-            {myPendingApprovals.length} {t("roomSidebar.items")}
-          </span>
-        </div>
-        <div className="rs-approval-list">
-          {myPendingApprovals.length === 0 ? (
-            <p className="rs-muted">{t("roomSidebar.noApprovals")}</p>
-          ) : (
-            myPendingApprovals.map((approval) => {
-              const agent = memberMap.get(approval.agentMemberId);
-              const requester = memberMap.get(approval.requesterMemberId);
-              const owner = memberMap.get(approval.ownerMemberId);
-              const mine = approval.ownerMemberId === self?.memberId;
-              const approvalMessage = findApprovalMessage(approval.id);
-              const selectedGrant = approvalGrants[approval.id] ?? "once";
-              const items = [
-                {
-                  label: t("roomSidebar.requester"),
-                  value: requester?.displayName ?? approval.requesterMemberId,
-                },
-                {
-                  label: t("roomSidebar.agent"),
-                  value: agent?.displayName ?? approval.agentMemberId,
-                },
-                {
-                  label: t("roomSidebar.owner"),
-                  value: owner?.displayName ?? approval.ownerMemberId,
-                },
-                {
-                  label: t("approval.status"),
-                  value: mine
-                    ? t("roomSidebar.waitingForYou")
-                    : t("roomSidebar.waitingForOwner"),
-                },
-              ];
-              const detail = mine
-                ? t("roomSidebar.waitingForYouDetail")
-                : t("roomSidebar.waitingForOwnerDetail");
-
-              return (
-                <article key={approval.id} className="rs-approval-card">
-                  <div className="rs-approval-header">
-                    <span className="rs-pill rs-pill-warning">
-                      {t("approval.pending")}
-                    </span>
-                  </div>
-                  <strong className="rs-approval-title">
-                    {requester?.displayName ?? approval.requesterMemberId}{" "}
-                    {t("roomSidebar.requestingCall")}
-                  </strong>
-                  <p className="rs-approval-desc">{detail}</p>
-                  <div className="rs-approval-grid">
-                    {items.map((item) => (
-                      <div key={item.label} className="rs-approval-item">
-                        <span className="rs-approval-item-label">{item.label}</span>
-                        <strong className="rs-approval-item-value">{item.value}</strong>
+              </div>
+              {assistants.length > 0 && (
+                <div className="rs-assistant-children">
+                  {assistants.map((assistant) => (
+                    <div key={assistant.id} className="rs-member-row rs-member-row-child">
+                      <div
+                        className="rs-member-avatar"
+                        style={{ background: getMemberColor(assistant) }}
+                      >
+                        {assistant.displayName.charAt(0)}
                       </div>
-                    ))}
-                  </div>
-                  <div className="rs-approval-actions">
-                    <button
-                      type="button"
-                      className="chat-action-button"
-                      onClick={() => focusMessage(approval.triggerMessageId)}
-                    >
-                      {t("chat.viewOriginal")}
-                    </button>
-                    {approvalMessage && (
-                      <button
-                        type="button"
-                        className="chat-action-button"
-                        onClick={() => focusMessage(approvalMessage.id)}
-                      >
-                        {t("roomSidebar.viewApproval")}
-                      </button>
-                    )}
-                  </div>
-                  {mine && (
-                    <div className="rs-approval-controls">
-                      <Select
-                        size="small"
-                        value={selectedGrant}
-                        onChange={(value: ApprovalGrantDuration) =>
-                          setGrantDuration(approval.id, value)
-                        }
-                        disabled={busyApprovalId === approval.id}
-                        style={{ width: 110 }}
-                        options={GRANT_OPTIONS.map((o) => ({
-                          value: o.value,
-                          label: t(o.label),
-                        }))}
-                      />
-                      <Button
-                        size="small"
-                        type="primary"
-                        loading={busyApprovalId === approval.id}
-                        onClick={() => handleApproval(approval.id, "approve")}
-                      >
-                        {t("approval.approve")}
-                      </Button>
-                      <Button
-                        size="small"
-                        danger
-                        loading={busyApprovalId === approval.id}
-                        onClick={() => handleApproval(approval.id, "reject")}
-                      >
-                        {t("approval.reject")}
-                      </Button>
+                      <div className="rs-member-info">
+                        <div className="rs-member-title">
+                          <strong>{assistant.displayName}</strong>
+                          <span className="rs-role-badge rs-role-badge-agent">
+                            Agent
+                          </span>
+                          {getRuntimeLabel(assistant, t) && (
+                            <span
+                              className={`rs-runtime-pill rs-runtime-pill-${assistant.runtimeStatus}`}
+                            >
+                              {getRuntimeLabel(assistant, t)}
+                            </span>
+                          )}
+                        </div>
+                        <p>
+                          {t("roomSidebar.directReport", {
+                            name: human.displayName,
+                          })}
+                        </p>
+                      </div>
                     </div>
-                  )}
-                </article>
-              );
-            })
-          )}
-        </div>
-        {myPendingApprovals.length > 0 && (
-          <p className="rs-approval-summary">
-            {t("roomSidebar.youHaveApprovals", { count: myPendingApprovals.length })}
-          </p>
-        )}
-      </section>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
 
-      {/* ── Room Protocol Card ── */}
-      <section className="rs-protocol-card">
-        <div className="rs-protocol-title">
-          <span className="rs-protocol-dot" />
-          <strong>{t("roomSidebar.protocolEnabled")}</strong>
+          {independentAgents.map((member) => (
+            <div key={member.id} className="rs-member-row">
+              <div
+                className="rs-member-avatar"
+                style={{ background: getMemberColor(member) }}
+              >
+                {member.displayName.charAt(0)}
+              </div>
+              <div className="rs-member-info">
+                <div className="rs-member-title">
+                  <strong>{member.displayName}</strong>
+                  <span className="rs-role-badge rs-role-badge-agent">
+                    Agent
+                  </span>
+                  {getRuntimeLabel(member, t) && (
+                    <span
+                      className={`rs-runtime-pill rs-runtime-pill-${member.runtimeStatus}`}
+                    >
+                      {getRuntimeLabel(member, t)}
+                    </span>
+                  )}
+                </div>
+                <p>{t("roomSidebar.canBeMentioned")}</p>
+              </div>
+            </div>
+          ))}
         </div>
-        <p>{t("roomSidebar.protocolDesc")}</p>
+
       </section>
     </div>
   );

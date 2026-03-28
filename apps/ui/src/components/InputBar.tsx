@@ -58,6 +58,7 @@ type MentionSuggestion = {
   memberId: string;
   displayName: string;
   roleLabel: string;
+  metaLabel?: string;
 };
 
 export function InputBar() {
@@ -117,6 +118,14 @@ export function InputBar() {
               memberId: m.id,
               displayName: m.displayName,
               roleLabel: getRoleLabel(m, t),
+              metaLabel:
+                m.type === "agent" && m.roleKind === "assistant"
+                  ? t("inputBar.assistantOwner", {
+                      name:
+                        members.find((owner) => owner.id === m.ownerMemberId)?.displayName ??
+                        t("inputBar.unknownOwner"),
+                    })
+                  : undefined,
             }))
         : [],
     [mentionMenuVisible, mentionQuery, self, members, t],
@@ -364,7 +373,10 @@ export function InputBar() {
               }}
               onClick={() => applyMentionSuggestion(suggestion)}
             >
-              <strong>{suggestion.displayName}</strong>
+              <div className="mention-popup-copy">
+                <strong>{suggestion.displayName}</strong>
+                {suggestion.metaLabel && <em>{suggestion.metaLabel}</em>}
+              </div>
               <span>{suggestion.roleLabel}</span>
             </button>
           ))}

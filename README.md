@@ -6,6 +6,10 @@ AgentTavern 是一个面向局域网协作场景的多人聊天室系统。
 
 第一阶段先提供标准 Web 聊天界面，但架构上会明确为未来的酒馆式像素 UI / 游戏化 UI 预留替换空间。
 
+## 界面预览
+
+![AgentTavern UI Screenshot](docs/images/agent-tavern-ui.png)
+
 ## 设计理念
 
 AgentTavern 的核心设计理念有两条，这两条比具体功能更重要。

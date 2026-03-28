@@ -138,6 +138,11 @@
     "approve": "Approve",
     "reject": "Reject",
     "status": "Status",
+    "grantOnce": "Once",
+    "grant10m": "10 min",
+    "grant30m": "30 min",
+    "grant1h": "1 hour",
+    "grantForever": "Forever",
     "noApprovals": "No approvals",
     "approvalDetail": "Approval detail",
     "requester": "Requester",
@@ -270,7 +275,9 @@
     "uploadFailed": "Failed to upload attachment",
     "replyingTo": "Replying to {{name}}",
     "replyCancel": "Cancel",
-    "originalUnavailable": "Original message unavailable"
+    "originalUnavailable": "Original message unavailable",
+    "assistantOwner": "{{name}}'s assistant",
+    "unknownOwner": "Unknown owner"
   },
   "assistantPanel": {
     "title": "My Private Assistants",
@@ -337,6 +344,9 @@
     "viewApproval": "View approval",
     "viewTrigger": "View trigger",
     "viewMessage": "View message",
+    "dismissStatus": "Dismiss this item",
+    "expandStatus": "Expand {{count}} more",
+    "collapseStatus": "Collapse status",
     "processingRequest": "is processing a request",
     "waitingForOutput": "Waiting for output...",
     "bridgeWaiting": "Waiting for Bridge",

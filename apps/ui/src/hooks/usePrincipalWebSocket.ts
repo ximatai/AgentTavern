@@ -13,59 +13,103 @@ import { useRoomStore } from "../stores/room";
  */
 export function usePrincipalWebSocket() {
   const socketRef = useRef<WebSocket | null>(null);
+  const reconnectTimerRef = useRef<number | null>(null);
+  const reconnectAttemptRef = useRef(0);
   const principal = usePrincipalStore((s) => s.principal);
 
   useEffect(() => {
     if (!principal) {
+      if (reconnectTimerRef.current !== null) {
+        window.clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      reconnectAttemptRef.current = 0;
       socketRef.current?.close();
       socketRef.current = null;
       return;
     }
 
-    const socket = createPrincipalSocket(
-      principal.principalId,
-      principal.principalToken,
-    );
     let disposed = false;
-    socketRef.current = socket;
-
-    socket.addEventListener("open", () => {
-      if (disposed) {
-        socket.close();
-      }
-    });
-
-    socket.addEventListener("message", (event) => {
-      let raw: unknown;
-      try {
-        raw = JSON.parse(String(event.data));
-      } catch {
+    const scheduleReconnect = () => {
+      if (disposed || reconnectTimerRef.current !== null) {
         return;
       }
-      if (!isRealtimeEvent(raw)) return;
+      const attempt = reconnectAttemptRef.current;
+      const delay = Math.min(1_000 * 2 ** attempt, 10_000);
+      reconnectTimerRef.current = window.setTimeout(() => {
+        reconnectTimerRef.current = null;
+        reconnectAttemptRef.current += 1;
+        connect();
+      }, delay);
+    };
 
-      if (raw.type === "private_assistants.changed") {
-        usePrincipalStore.getState().markPrivateAssetsChanged();
-        return;
-      }
+    const connect = () => {
+      if (disposed) return;
 
-      if (raw.type === "rooms.changed") {
-        void useRoomStore.getState().refreshJoinedRooms();
-        return;
-      }
+      const socket = createPrincipalSocket(
+        principal.principalId,
+        principal.principalToken,
+      );
+      socketRef.current = socket;
 
-      if (raw.type === "lobby.presence.changed") {
-        void useRoomStore.getState().refreshLobbyPresence();
-      }
-    });
+      socket.addEventListener("open", () => {
+        if (disposed) {
+          socket.close();
+          return;
+        }
+        reconnectAttemptRef.current = 0;
+      });
+
+      socket.addEventListener("close", () => {
+        if (disposed) {
+          return;
+        }
+        if (socketRef.current === socket) {
+          socketRef.current = null;
+        }
+        scheduleReconnect();
+      });
+
+      socket.addEventListener("message", (event) => {
+        let raw: unknown;
+        try {
+          raw = JSON.parse(String(event.data));
+        } catch {
+          return;
+        }
+        if (!isRealtimeEvent(raw)) return;
+
+        if (raw.type === "private_assistants.changed") {
+          usePrincipalStore.getState().markPrivateAssetsChanged();
+          return;
+        }
+
+        if (raw.type === "rooms.changed") {
+          void useRoomStore.getState().refreshJoinedRooms();
+          return;
+        }
+
+        if (raw.type === "lobby.presence.changed") {
+          void useRoomStore.getState().refreshLobbyPresence();
+        }
+      });
+    };
+
+    connect();
 
     return () => {
       disposed = true;
-      if (socket.readyState === WebSocket.OPEN) {
-        socket.close();
+      if (reconnectTimerRef.current !== null) {
+        window.clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
       }
-      if (socketRef.current === socket) {
+      reconnectAttemptRef.current = 0;
+      if (socketRef.current) {
+        const socket = socketRef.current;
         socketRef.current = null;
+        if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+          socket.close();
+        }
       }
     };
   }, [principal]);

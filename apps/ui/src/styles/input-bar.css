@@ -15,6 +15,7 @@
 .mention-popup-item {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   width: 100%;
   padding: 6px 10px;
@@ -25,6 +26,14 @@
   text-align: left;
   color: var(--ant-color-text, #fff);
   transition: background 0.1s;
+}
+
+.mention-popup-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
 }
 
 .mention-popup-item:hover {
@@ -41,7 +50,18 @@
   color: var(--ant-color-text, #fff);
 }
 
+.mention-popup-item em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--ant-color-text-tertiary, #64748b);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
 .mention-popup-item span {
+  flex-shrink: 0;
   font-size: 11px;
   font-weight: 600;
   color: var(--ant-color-text-tertiary, #64748b);

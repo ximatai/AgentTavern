@@ -138,6 +138,11 @@
     "approve": "通过",
     "reject": "拒绝",
     "status": "状态",
+    "grantOnce": "仅一次",
+    "grant10m": "10 分钟",
+    "grant30m": "30 分钟",
+    "grant1h": "1 小时",
+    "grantForever": "永久",
     "noApprovals": "暂无审批记录",
     "approvalDetail": "审批详情",
     "requester": "申请人",
@@ -270,7 +275,9 @@
     "uploadFailed": "上传附件失败",
     "replyingTo": "正在回复 {{name}}",
     "replyCancel": "取消",
-    "originalUnavailable": "原始消息已不可用"
+    "originalUnavailable": "原始消息已不可用",
+    "assistantOwner": "{{name}} 的助理",
+    "unknownOwner": "未知 owner"
   },
   "assistantPanel": {
     "title": "我的私有助理",
@@ -337,6 +344,9 @@
     "viewApproval": "查看审批消息",
     "viewTrigger": "查看触发消息",
     "viewMessage": "查看消息",
+    "dismissStatus": "移除这条动态",
+    "expandStatus": "展开剩余 {{count}} 条",
+    "collapseStatus": "收起动态",
     "processingRequest": "正在处理请求",
     "waitingForOutput": "等待输出或结果消息...",
     "bridgeWaiting": "等待 Bridge",

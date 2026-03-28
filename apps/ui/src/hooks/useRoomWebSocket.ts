@@ -32,57 +32,94 @@ import { useSessionStore } from "../stores/session";
  */
 export function useRoomWebSocket() {
   const socketRef = useRef<WebSocket | null>(null);
+  const reconnectTimerRef = useRef<number | null>(null);
+  const reconnectAttemptRef = useRef(0);
 
   const self = useRoomStore((s) => s.self);
   const room = useRoomStore((s) => s.room);
 
   useEffect(() => {
     if (!self || !room) {
+      if (reconnectTimerRef.current !== null) {
+        window.clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      reconnectAttemptRef.current = 0;
       socketRef.current?.close();
       socketRef.current = null;
       useConnectionStore.getState().setStatus("none");
       return;
     }
 
-    const socket = createRoomSocket(room.id, self.memberId, self.wsToken);
     let disposed = false;
-    socketRef.current = socket;
-
-    socket.addEventListener("open", () => {
-      if (disposed) {
-        socket.close();
+    const scheduleReconnect = () => {
+      if (disposed || reconnectTimerRef.current !== null) {
         return;
       }
-      useConnectionStore.getState().setStatus("connected");
-    });
+      const attempt = reconnectAttemptRef.current;
+      const delay = Math.min(1_000 * 2 ** attempt, 10_000);
+      reconnectTimerRef.current = window.setTimeout(() => {
+        reconnectTimerRef.current = null;
+        reconnectAttemptRef.current += 1;
+        connect();
+      }, delay);
+    };
 
-    socket.addEventListener("close", () => {
-      if (disposed) {
-        return;
-      }
-      useConnectionStore.getState().setStatus("disconnected");
-    });
+    const connect = () => {
+      if (disposed) return;
 
-    socket.addEventListener("message", (event) => {
-      let raw: unknown;
-      try {
-        raw = JSON.parse(String(event.data));
-      } catch {
-        return;
-      }
-      if (!isRealtimeEvent(raw)) return;
+      const socket = createRoomSocket(room.id, self.memberId, self.wsToken);
+      socketRef.current = socket;
 
-      handleEvent(raw);
-    });
+      socket.addEventListener("open", () => {
+        if (disposed) {
+          socket.close();
+          return;
+        }
+        reconnectAttemptRef.current = 0;
+        useConnectionStore.getState().setStatus("connected");
+      });
+
+      socket.addEventListener("close", () => {
+        if (disposed) {
+          return;
+        }
+        if (socketRef.current === socket) {
+          socketRef.current = null;
+        }
+        useConnectionStore.getState().setStatus("disconnected");
+        scheduleReconnect();
+      });
+
+      socket.addEventListener("message", (event) => {
+        let raw: unknown;
+        try {
+          raw = JSON.parse(String(event.data));
+        } catch {
+          return;
+        }
+        if (!isRealtimeEvent(raw)) return;
+
+        handleEvent(raw);
+      });
+    };
+
+    connect();
 
     return () => {
       disposed = true;
-      useConnectionStore.getState().setStatus("none");
-      if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
-        socket.close();
+      if (reconnectTimerRef.current !== null) {
+        window.clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
       }
-      if (socketRef.current === socket) {
+      reconnectAttemptRef.current = 0;
+      useConnectionStore.getState().setStatus("none");
+      if (socketRef.current) {
+        const socket = socketRef.current;
         socketRef.current = null;
+        if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+          socket.close();
+        }
       }
     };
   }, [self, room]);

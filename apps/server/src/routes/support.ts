@@ -22,7 +22,7 @@ import {
 import { broadcastToRoom } from "../realtime";
 
 const approvalTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
-const APPROVAL_TIMEOUT_MS = Number(process.env.APPROVAL_TIMEOUT_MS ?? 30_000);
+const APPROVAL_TIMEOUT_MS = Number(process.env.APPROVAL_TIMEOUT_MS ?? 300_000);
 const ASSISTANT_INVITE_TTL_MS = Number(process.env.ASSISTANT_INVITE_TTL_MS ?? 10 * 60_000);
 
 export function now(): string {

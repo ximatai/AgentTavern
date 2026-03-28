@@ -43,6 +43,18 @@
   padding: 2px 8px;
 }
 
+.rs-section-badge-button {
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.rs-section-badge-button:hover {
+  background: rgba(34, 211, 238, 0.22);
+}
+
 .rs-muted {
   margin: 0;
   font-family: Inter, sans-serif;
@@ -83,6 +95,39 @@
   gap: 8px;
 }
 
+.rs-collab-stack {
+  position: relative;
+}
+
+.rs-collab-stack.has-more {
+  padding-bottom: 14px;
+}
+
+.rs-collab-stack.has-more::before,
+.rs-collab-stack.has-more::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-surface, #1E293B) 92%, white 8%);
+  pointer-events: none;
+}
+
+.rs-collab-stack.has-more::before {
+  height: calc(100% - 10px);
+  bottom: 7px;
+  opacity: 0.75;
+}
+
+.rs-collab-stack.has-more::after {
+  left: 16px;
+  right: 16px;
+  height: calc(100% - 20px);
+  bottom: 0;
+  opacity: 0.45;
+}
+
 .rs-collab-card {
   background: var(--bg-surface, #1E293B);
   border-radius: 8px;
@@ -90,6 +135,9 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 10px 24px rgba(2, 6, 23, 0.18);
 }
 
 .rs-collab-head {
@@ -99,10 +147,35 @@
   margin-bottom: 4px;
 }
 
+.rs-collab-head-side {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .rs-collab-time {
   font-family: Inter, sans-serif;
   font-size: 11px;
   color: var(--font-tertiary, #64748B);
+}
+
+.rs-collab-dismiss {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--font-tertiary, #64748B);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.rs-collab-dismiss:hover {
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--font-secondary, #94A3B8);
 }
 
 .rs-collab-title {
@@ -134,22 +207,6 @@
   display: flex;
   gap: 8px;
   margin-top: 4px;
-}
-
-/* ── Member Sections ── */
-.rs-member-section {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.rs-member-section-title {
-  margin: 0;
-  font-family: Inter, sans-serif;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--font-tertiary, #64748B);
-  padding: 0 12px;
 }
 
 .rs-member-list {
@@ -229,17 +286,7 @@
   border-radius: 4px;
 }
 
-.rs-role-badge-human {
-  background: rgba(99, 102, 241, 0.15);
-  color: #818CF8;
-}
-
-.rs-role-badge-independent {
-  background: rgba(34, 197, 94, 0.15);
-  color: #4ADE80;
-}
-
-.rs-role-badge-assistant {
+.rs-role-badge-agent {
   background: var(--accent-alpha, rgba(14, 116, 144, 0.15));
   color: var(--accent, #22D3EE);
 }
@@ -285,33 +332,8 @@
 }
 
 /* ── Approval Cards ── */
-.rs-approval-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.rs-approval-card {
-  background: var(--bg-surface, #1E293B);
-  border-radius: 8px;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+.rs-collab-card-approval {
   border-left: 3px solid #FBBF24;
-}
-
-.rs-approval-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.rs-approval-title {
-  font-family: Inter, sans-serif;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--font-primary, #fff);
 }
 
 .rs-approval-desc {
@@ -354,54 +376,9 @@
 .rs-approval-controls {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 4px;
   padding-top: 8px;
   border-top: 1px solid var(--border-default, rgba(255, 255, 255, 0.06));
-}
-
-.rs-approval-summary {
-  margin: 8px 12px 0;
-  font-family: Inter, sans-serif;
-  font-size: 12px;
-  color: var(--font-tertiary, #64748B);
-  text-align: center;
-}
-
-/* ── Protocol Card ── */
-.rs-protocol-card {
-  background: var(--bg-surface, #1E293B);
-  border-radius: 8px;
-  padding: 12px;
-  margin-top: auto;
-}
-
-.rs-protocol-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-.rs-protocol-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #34D399;
-  flex-shrink: 0;
-}
-
-.rs-protocol-title strong {
-  font-family: Inter, sans-serif;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--font-primary, #fff);
-}
-
-.rs-protocol-card p {
-  margin: 0;
-  font-family: Inter, sans-serif;
-  font-size: 12px;
-  color: var(--font-tertiary, #64748B);
-  line-height: 1.4;
 }
