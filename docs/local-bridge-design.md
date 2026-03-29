@@ -8,7 +8,7 @@
 
 - 对齐“服务端只调度，本地 Bridge 执行”的职责拆分
 - 为 Bridge 协议、绑定关系与恢复语义提供设计基线
-- 为后续 `codex` 等 provider driver 接入提供统一约束
+- 为后续 `codex_cli`、`claude_code`、`opencode` 等 provider driver 接入提供统一约束
 
 ## 2. 目标
 
@@ -20,7 +20,7 @@
 - 服务端只负责房间、审批、任务路由和消息广播
 - 本地 Agent 保留自己的上下文与运行环境
 - `@Agent` 后由对应客户端本地执行，再把结果回传房间
-- 后续可接入 Codex、Claude Code、Cursor、Gemini 等不同本地 Agent
+- 后续可接入 Codex、Claude Code、OpenCode、Cursor、Gemini 等不同本地 Agent
 - 为 agent 通过 URL、CLI、skill、Bridge 接入系统提供统一执行落点
 
 ### 2.1 当前阶段路线护栏

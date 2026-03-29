@@ -107,7 +107,7 @@
 - [x] `P1` 客户端本地 Agent Bridge 设计
   - [x] 明确“服务端只调度，不直接执行客户端本地 Agent”
   - [x] 明确本地 Bridge / 服务端 / provider driver 三层边界
-  - [x] 明确 Codex 方向优先使用本地 Bridge + SDK thread/resume
+  - [x] 明确会话型 backend 优先使用本地 Bridge + session/thread/resume 方向
   - [x] 补充设计文档
   - [x] 完成独立 review
 
@@ -128,7 +128,7 @@
 - [x] `P1` 客户端本地 Agent Bridge 任务协议
   - [x] 定义任务拉取协议
   - [x] 定义任务 accept / delta / complete / fail 协议
-  - [x] 将已 attach 的 Codex binding 切到桥接任务流
+  - [x] 将已 attach 的本地 backend binding 切到桥接任务流
   - [x] 增加本地 Bridge 进程骨架
   - [x] 补充自动化验证
   - [x] 完成独立 review
