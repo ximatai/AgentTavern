@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
 import type { AgentAdapter, AgentRunInput, AgentStreamEvent } from "./index";
 
@@ -10,6 +10,15 @@ export type OpenCodeAdapterConfig = {
   maxRuntimeMs?: number;
   gracefulShutdownMs?: number;
 };
+
+export type OpenCodeSpawn = (
+  command: string,
+  args: ReadonlyArray<string>,
+  options: {
+    stdio: ["pipe", "pipe", "pipe"];
+    cwd?: string;
+  },
+) => ChildProcessWithoutNullStreams;
 
 /**
  * Raw shape of a JSON event emitted by `opencode run --format json`.
@@ -59,6 +68,7 @@ function extractErrorFromEvent(event: OpenCodeJsonEvent): string | null {
 
 export function createOpenCodeAdapter(
   config: OpenCodeAdapterConfig,
+  spawnProcess: OpenCodeSpawn = spawn,
 ): AgentAdapter {
   return {
     async *run(input: AgentRunInput): AsyncIterable<AgentStreamEvent> {
@@ -78,7 +88,7 @@ export function createOpenCodeAdapter(
       }
 
       // OpenCode reads from stdin when not a TTY
-      const child = spawn("opencode", args, {
+      const child = spawnProcess("opencode", args, {
         stdio: ["pipe", "pipe", "pipe"],
         cwd: config.cwd,
       });

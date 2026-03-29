@@ -6,7 +6,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
-    "test": "node --import tsx --test src/**/*.test.ts src/**/*.test.mjs",
+    "test": "node --import tsx --test $(find src \\( -name '*.test.ts' -o -name '*.test.mjs' \\) | sort)",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

@@ -97,6 +97,42 @@ test("processTask accepts, streams deltas, and completes", async () => {
   });
 });
 
+test("processTask persists backend thread id returned by the driver", async () => {
+  const task = createTask({ backendType: "opencode", backendThreadId: "ses_initial" });
+  const { calls, postJson } = createPostJsonRecorder();
+  const drivers = new Map<AgentBackendType, BridgeDriver>([
+    [
+      "opencode",
+      createDriver("opencode", async function* () {
+        yield { type: "completed", finalText: "done", sessionId: "ses_updated" };
+      }),
+    ],
+  ]);
+
+  await processTask({
+    bridgeId: "brg_1",
+    bridgeToken: "tok_1",
+    bridgeInstanceId: "binst_1",
+    task,
+    postJson,
+    drivers,
+  });
+
+  assert.deepEqual(
+    calls.map((call) => call.path),
+    [
+      "/api/bridges/brg_1/tasks/btsk_1/accept",
+      "/api/bridges/brg_1/tasks/btsk_1/complete",
+    ],
+  );
+  assert.deepEqual(calls.at(-1)?.body, {
+    bridgeToken: "tok_1",
+    bridgeInstanceId: "binst_1",
+    finalText: "done",
+    backendThreadId: "ses_updated",
+  });
+});
+
 test("processTask fails when no driver is configured", async () => {
   const task = createTask();
   const { calls, postJson } = createPostJsonRecorder();
@@ -151,6 +187,44 @@ test("processTask reports fail when driver throws after accept", async () => {
       "/api/bridges/brg_1/tasks/btsk_1/fail",
     ],
   );
+});
+
+test("processTask reports a failed event without crashing when the CLI is unavailable", async () => {
+  const task = createTask({ backendType: "opencode" });
+  const { calls, postJson } = createPostJsonRecorder();
+  const drivers = new Map<AgentBackendType, BridgeDriver>([
+    [
+      "opencode",
+      createDriver("opencode", async function* () {
+        yield {
+          type: "failed",
+          error: "opencode CLI not found — ensure OpenCode is installed",
+        };
+      }),
+    ],
+  ]);
+
+  await processTask({
+    bridgeId: "brg_1",
+    bridgeToken: "tok_1",
+    bridgeInstanceId: "binst_1",
+    task,
+    postJson,
+    drivers,
+  });
+
+  assert.deepEqual(
+    calls.map((call) => call.path),
+    [
+      "/api/bridges/brg_1/tasks/btsk_1/accept",
+      "/api/bridges/brg_1/tasks/btsk_1/fail",
+    ],
+  );
+  assert.deepEqual(calls.at(-1)?.body, {
+    bridgeToken: "tok_1",
+    bridgeInstanceId: "binst_1",
+    error: "opencode CLI not found — ensure OpenCode is installed",
+  });
 });
 
 test("pollAndProcessTask returns false when no task is available", async () => {

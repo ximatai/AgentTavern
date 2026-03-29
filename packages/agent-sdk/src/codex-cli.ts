@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
 import type { AgentAdapter, AgentRunInput, AgentStreamEvent } from "./index";
 
@@ -8,6 +8,15 @@ export type CodexCliAdapterConfig = {
   maxRuntimeMs?: number;
   gracefulShutdownMs?: number;
 };
+
+export type CodexCliSpawn = (
+  command: string,
+  args: ReadonlyArray<string>,
+  options: {
+    cwd?: string;
+    stdio: ["pipe", "pipe", "pipe"];
+  },
+) => ChildProcessWithoutNullStreams;
 
 type CodexJsonEvent =
   | {
@@ -38,12 +47,15 @@ function extractTextFromCodexEvent(event: CodexJsonEvent): string | null {
   return null;
 }
 
-export function createCodexCliAdapter(config: CodexCliAdapterConfig): AgentAdapter {
+export function createCodexCliAdapter(
+  config: CodexCliAdapterConfig,
+  spawnProcess: CodexCliSpawn = spawn,
+): AgentAdapter {
   return {
     async *run(input: AgentRunInput): AsyncIterable<AgentStreamEvent> {
       const maxRuntimeMs = config.maxRuntimeMs ?? 180_000;
       const gracefulShutdownMs = config.gracefulShutdownMs ?? 5_000;
-      const child = spawn(
+      const child = spawnProcess(
         "codex",
         [
           "exec",
@@ -69,7 +81,12 @@ export function createCodexCliAdapter(config: CodexCliAdapterConfig): AgentAdapt
 
       const closePromise = new Promise<number | null>((resolve) => {
         child.once("error", (error) => {
-          spawnErrorMessage = error instanceof Error ? error.message : "codex cli failed";
+          const msg = error instanceof Error ? error.message : "codex cli failed";
+          if ("code" in error && error.code === "ENOENT") {
+            spawnErrorMessage = "codex CLI not found — ensure Codex is installed";
+          } else {
+            spawnErrorMessage = msg;
+          }
           resolve(null);
         });
         child.once("close", resolve);

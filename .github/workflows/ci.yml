@@ -43,3 +43,9 @@ jobs:
 
       - name: Server Tests
         run: pnpm test:server
+
+      - name: Bridge Tests
+        run: pnpm test:bridge
+
+      - name: Agent SDK Tests
+        run: pnpm test:agent-sdk

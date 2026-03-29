@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
 import type { AgentAdapter, AgentRunInput, AgentStreamEvent } from "./index";
 
@@ -12,6 +12,15 @@ export type ClaudeCodeAdapterConfig = {
   maxBudgetUsd?: number;
   allowedTools?: string[];
 };
+
+export type ClaudeCodeSpawn = (
+  command: string,
+  args: ReadonlyArray<string>,
+  options: {
+    stdio: ["pipe", "pipe", "pipe"];
+    cwd?: string;
+  },
+) => ChildProcessWithoutNullStreams;
 
 /**
  * Raw shape of a stream-json event emitted by `claude -p --output-format stream-json`.
@@ -49,6 +58,7 @@ function extractTextFromAssistantEvent(
 
 export function createClaudeCodeAdapter(
   config: ClaudeCodeAdapterConfig,
+  spawnProcess: ClaudeCodeSpawn = spawn,
 ): AgentAdapter {
   return {
     async *run(input: AgentRunInput): AsyncIterable<AgentStreamEvent> {
@@ -57,6 +67,7 @@ export function createClaudeCodeAdapter(
 
       const args = [
         "-p",
+        "--verbose",
         "--output-format",
         "stream-json",
         "--include-partial-messages",
@@ -85,7 +96,7 @@ export function createClaudeCodeAdapter(
       // trailing "-" means prompt is read from stdin
       args.push("-");
 
-      const child = spawn("claude", args, {
+      const child = spawnProcess("claude", args, {
         stdio: ["pipe", "pipe", "pipe"],
         cwd: config.cwd,
       });
