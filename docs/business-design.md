@@ -25,6 +25,17 @@ AgentTavern 是一个面向局域网的多人聊天室系统。
 - 聊天核心与 UI 解耦
 - 后续可扩展为酒馆式像素 UI
 
+## 2.1 当前结论
+
+如果只想快速把握当前业务边界，可以先记住下面这些结论：
+
+- 人和 Agent 都是一等公民
+- 聊天室里的实际协作单位是 `member`
+- 助理是 owner 的私有协作资产，不是公共机器人
+- 本地执行统一通过 Bridge 协议接入
+- backend 只是一种执行后端，不应反向主导业务模型
+- 当前业务规则应尽量保持 provider-neutral，尽量不要把某个特定工具的接入方式写成业务前提
+
 ## 3. 核心对象
 
 第一版领域模型以 `packages/shared` 中的共享类型为准。
@@ -330,7 +341,7 @@ AgentTavern 是一个面向局域网的多人聊天室系统。
 规则：
 
 - 用于将聊天室里的 agent member 绑定到真实后端实体
-- 对 Codex thread 来说，`backend_thread_id` 指向已有 thread
+- `backend_thread_id` 指向某个已存在的本地会话、thread 或执行标识
 - `bridge_id` 用于标识当前 binding 归属的本地 Bridge
 - 第一版一个聊天室内不允许重复绑定同一 `backend_thread_id`
 - 第一版一个 member 只允许一个活跃 binding
@@ -386,7 +397,7 @@ AgentTavern 是一个面向局域网的多人聊天室系统。
 - owner 可以是 human，也可以是 agent
 - 一个成员可以有多个助理
 - 助理可以继续拥有自己的助理
-- 已开启的 Codex thread 也可以作为助理加入聊天室
+- 已存在的本地会话 / thread 也可以作为助理加入聊天室
 
 显示规则：
 
@@ -424,34 +435,33 @@ MVP 规则：
 - 对应会话统一收口为 `rejected`
 - 聊天室内补写系统消息说明审批因服务重启失效
 
-### Codex Thread 助理加入
+### 本地会话 / Thread 助理加入
 
 - 已进入聊天室的成员可以生成一次性助理邀请 URL
 - 助理邀请 URL 与普通聊天室邀请链接分离
 - 助理邀请 URL 默认绑定邀请发起者为直属 owner
 - 助理邀请 URL 可预设 `display_name`
-- 预设名优先于 thread 自报默认名
-- thread 加入时，聊天室侧自动分配唯一 `member_id`
-- thread 加入时需要绑定自身的 `backend_thread_id`
-- `backend_thread_id` 指向 Codex 自己已有的 thread
-- thread 保留自己的原始上下文，不切换到聊天室上下文
-- thread 只接收 `@` 到它的消息
-- thread 可先作为 owner 的私有助理存在，再被加入一个或多个聊天室
+- 预设名优先于接入端自报默认名
+- 接受时需要绑定自身的 `backend_thread_id`
+- `backend_thread_id` 指向接入端本机已有的会话、thread 或其他稳定执行标识
+- 原有本地上下文尽量保留，不切换到聊天室上下文
+- 助理只接收 `@` 到它的消息
+- 助理可先作为 owner 的私有助理存在，再被加入一个或多个聊天室
 - 一次性助理邀请接受后，默认沉淀为 owner 名下私有助理资产
 - 同一个 owner 下，同一个 `backend_thread_id` 最终只折叠为一个私有助理资产
 - 不同 owner 之间不允许复用同一个已绑定的 `backend_thread_id`
 - 第一版不自动注入聊天室最近聊天历史
 - 第一版一个聊天室内不允许重复绑定同一 `backend_thread_id`
-- 推荐通过 Codex skill 完成加入动作
+- 具体接入形式可以是 URL、CLI、skill 或其他本地接入脚本
 
 ### 客户端本地执行边界
 
 - 本地 Agent 的长期执行位置应在用户自己的客户端设备上
 - 服务端只负责聊天室、审批、任务路由与广播
-- 服务端不应直接恢复用户本地 Codex thread
+- 服务端不应直接恢复用户本地会话或 thread
 - 本地 Bridge 负责在客户端恢复或启动 Agent
-- Codex thread 的长期目标执行方式为本地 Bridge + Codex SDK thread/resume
-- CLI 直连方案仅作为过渡实现，不作为长期边界
+- 具体 backend 的 session / thread 细节应收口在 adapter 或 driver 内
+- CLI 直连方案可以作为过渡实现，但不应成为唯一长期边界
 - Web UI 不负责承载所有 agent 入口，agent 可通过邀请 URL、CLI、skill、Bridge 等方式接入
 
 ## 5. 触发与审批
@@ -477,9 +487,8 @@ MVP 规则：
 ## 6. 执行规则
 
 - Agent 统一通过 adapter 接入
-- 第一版 adapter 类型为 `local_process`
-- 第一阶段优先接入本地 CLI Agent
-- Codex 的长期方向为客户端本地 Bridge 执行
+- 第一阶段优先接入本地 CLI Agent 与本地会话型 backend
+- 当前已存在多种 backend，并共享统一 `AgentAdapter` 抽象
 - 本地子进程需要可超时回收
 - Agent 输出以流式事件广播到聊天室
 - 最终输出固化为消息

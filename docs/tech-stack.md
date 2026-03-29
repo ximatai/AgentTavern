@@ -39,7 +39,7 @@
 
 ### 2.5 测试与验证
 
-- 单元测试：`Vitest`
+- 单元测试：`node:test` + `tsx`
 - 端到端测试：`Playwright`
 
 ## 3. 变更原则
@@ -147,7 +147,7 @@ AgentTavern/
 - Drizzle
 - React
 - Vite
-- Vitest
+- node:test
 - Playwright
 
 原则：
@@ -192,7 +192,7 @@ AgentTavern/
 - `Drizzle ORM`
 - `React`
 - `Vite`
-- `Vitest`
+- `node:test + tsx`
 - `Playwright`
 
 这套基线用于当前阶段启动项目，不代表后续不可调整。

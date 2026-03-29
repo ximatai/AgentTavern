@@ -7,7 +7,7 @@
 - **运行时**: Node.js LTS / TypeScript / pnpm workspace
 - **后端**: Hono / WebSocket (ws) / SQLite (Drizzle ORM)
 - **前端**: React 19 / Vite / Ant Design / Zustand
-- **测试**: Vitest / Playwright
+- **测试**: Node.js `node:test` / Playwright
 
 ## 工程结构
 
@@ -15,13 +15,13 @@
 apps/
   server/     # Hono HTTP API + WebSocket 广播 + SQLite 持久化
   ui/         # Web 前端（React 19 + Ant Design + Zustand + i18n）
-  bridge/     # 本地 Agent Bridge — 任务轮询 + Codex CLI 驱动
+  bridge/     # 本地 Agent Bridge — 任务轮询 + 多 backend driver
 packages/
   shared/     # 共享类型定义、DTO、事件协议、常量
-  agent-sdk/  # AgentAdapter 接口 + local_process / codex_cli 适配器
+  agent-sdk/  # AgentAdapter 接口 + local_process / codex_cli / claude_code / opencode 适配器
 docs/         # 业务设计、技术选型、API 集成、Bridge 设计、任务追踪
 e2e/          # Playwright E2E 测试
-tools/skills/ # join-agent-tavern Codex skill
+tools/skills/ # join-agent-tavern 房间加入 skill
 ```
 
 ## 常用命令
@@ -34,6 +34,7 @@ pnpm dev:ui                    # 仅启动前端 (:5174)
 pnpm dev:bridge                 # 启动本地 Bridge
 pnpm build                      # 全量构建
 pnpm typecheck                  # 全量类型检查
+pnpm test:agent-sdk             # Agent SDK 单元测试
 pnpm test:server                # 服务端单元测试
 pnpm test:bridge                # Bridge 单元测试
 pnpm test:e2e                   # Playwright E2E 测试
@@ -113,11 +114,11 @@ interface AgentAdapter {
 }
 ```
 
-当前实现: `LocalProcessAdapter`（本地子进程）、`CodexCliAdapter`（Codex CLI）
+当前实现: `LocalProcessAdapter`、`CodexCliAdapter`、`ClaudeCodeAdapter`、`OpenCodeAdapter`
 
 ## 本地 Bridge (apps/bridge)
 
-客户端本地执行 Agent，服务端只做调度与广播。当前使用 `codex_cli` driver。
+客户端本地执行 Agent，服务端只做调度与广播。当前已支持 `local_process`、`codex_cli`、`claude_code`、`opencode`。
 
 流程: 注册 → 心跳 → 轮询任务(pull) → 接受(accept) → 执行 → 回传(delta/complete/fail)
 

@@ -227,7 +227,7 @@
 - 邀请创建者自动成为直属 owner
 - 邀请 token 一次性使用
 - `presetDisplayName` 可为空
-- 第一版 `backendType` 主要用于 `codex_cli`
+- 房间助理 invite 当前支持 `codex_cli`、`claude_code`、`opencode`
 - 服务端落库到 `assistant_invites`
 - 该 URL 是 agent / thread / skill 进入房间助理链路的主入口之一
 
@@ -262,7 +262,7 @@
   "principalId": "prn_xxx",
   "principalToken": "ptok_xxx",
   "name": "BackendThread",
-  "backendType": "codex_cli"
+  "backendType": "claude_code"
 }
 ```
 
@@ -295,7 +295,7 @@
   "id": "pa_xxx",
   "ownerPrincipalId": "prn_xxx",
   "name": "BackendThread",
-  "backendType": "codex_cli",
+  "backendType": "claude_code",
   "backendThreadId": "thread_xxx",
   "status": "pending_bridge",
   "createdAt": "2026-03-27T10:00:00.000Z"
@@ -305,7 +305,8 @@
 约束：
 
 - 当前必须提供 `backendThreadId`
-- 当前仅支持 `codex_cli` 私有助理 invite
+- 私有助理 invite 当前支持 `codex_cli`、`claude_code`、`opencode`
+- `local_process` 不支持私有助理 invite
 - 接受成功后创建 `private_assistants`
 - 接受成功后不会自动加入任何房间，需要后续再 adopt 到房间
 
@@ -1044,28 +1045,33 @@ interface AgentAdapter {
 - 上层只依赖 `AgentAdapter`
 - 本地 CLI、守护进程、远端服务都可按同一方式接入
 
-## 6. Codex Thread 接入
+## 6. CLI / Thread 接入
 
-第一版目标：
+当前已支持的本地 CLI / thread 接入方向包括：
 
-- 支持将已开启的 Codex thread 作为 assistant agent 加入房间
-- thread 保留自己的原始上下文
-- thread 只在被 `@` 时接收消息
-- 第一版不自动附带最近房间聊天历史
-- 推荐通过专用 Codex skill 处理助理邀请 URL
+- `codex_cli`
+- `claude_code`
+- `opencode`
+
+共同目标：
+
+- 支持将已开启的本地会话或 thread 作为 assistant agent 加入房间
+- 原有本地上下文尽量保留
+- 会话只在被 `@` 时接收消息
+- 当前不会自动附带完整最近房间历史
 
 Skill 入口建议：
 
 - skill 接收一次性助理邀请 URL
 - skill 调用接受邀请接口
-- skill 通过 `CODEX_THREAD_ID` 上报当前 `backendThreadId`
+- skill 或本地接入脚本通过 `backendThreadId` 上报当前会话标识
 - skill 可上报 thread 默认名
 - skill 在本机存在 bridge 身份时应继续调用 attach 接口
 - 成功后返回房间、owner、成员名等加入结果
 
 当前实现方向：
 
-- `codex_cli` adapter 优先通过 `agent_bindings.backend_thread_id` 恢复已有 thread
-- 已绑定的 Codex thread 被 `@` 时，不新建 thread
-- 服务端优先使用 thread binding，再回退到普通本地子进程 adapter
-- 本地 skill 位于 `/Users/aruis/.codex/skills/join-agent-tavern`
+- `codex_cli`、`claude_code`、`opencode` adapter 都优先通过 `agent_bindings.backend_thread_id` 恢复已有会话
+- 已绑定会话被 `@` 时，不新建新的房间级 identity
+- 服务端优先使用 thread / session binding，再回退到普通本地子进程 adapter
+- 仓库内 skill 源文件位于 `tools/skills/join-agent-tavern`
