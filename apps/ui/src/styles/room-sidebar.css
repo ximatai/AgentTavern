@@ -25,6 +25,12 @@
   padding: 0 12px;
 }
 
+.rs-section-header-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .rs-section-header h4 {
   margin: 0;
   font-family: Inter, sans-serif;

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, Select } from "antd";
-import { CloseOutlined, DownOutlined, UpOutlined } from "@ant-design/icons";
+import { CloseOutlined, DownOutlined, RobotOutlined, UpOutlined } from "@ant-design/icons";
 import type {
   AgentSessionStatus,
   ApprovalGrantDuration,
@@ -13,6 +13,7 @@ import { useRoomStore } from "../stores/room";
 import { useApprovalStore } from "../stores/approval";
 import { useSessionStore } from "../stores/session";
 import { useMessageStore } from "../stores/message";
+import { RoomAssistantModal } from "./RoomAssistantModal";
 
 import "../styles/room-sidebar.css";
 
@@ -126,6 +127,7 @@ export function RoomSidebar() {
   const [busyApprovalId, setBusyApprovalId] = useState<string | null>(null);
   const [collabExpanded, setCollabExpanded] = useState(false);
   const [dismissedCollabIds, setDismissedCollabIds] = useState<string[]>([]);
+  const [assistantModalOpen, setAssistantModalOpen] = useState(false);
 
   const collabDismissKey = room && self
     ? `agent-tavern-room-sidebar-dismissed:${room.id}:${self.memberId}`
@@ -530,8 +532,18 @@ export function RoomSidebar() {
       {/* ── Section 2: Room Members ── */}
       <section className="rs-section">
         <div className="rs-section-header">
-          <h4>{t("roomSidebar.roomMembers")}</h4>
-          <span className="rs-section-badge">{members.length}</span>
+          <div className="rs-section-header-main">
+            <h4>{t("roomSidebar.roomMembers")}</h4>
+            <span className="rs-section-badge">{members.length}</span>
+          </div>
+          <button
+            type="button"
+            className="rs-section-badge rs-section-badge-button"
+            onClick={() => setAssistantModalOpen(true)}
+          >
+            <RobotOutlined />
+            <span>{t("roomSidebar.manageAssistants")}</span>
+          </button>
         </div>
 
         <div className="rs-member-list">
@@ -622,6 +634,7 @@ export function RoomSidebar() {
         </div>
 
       </section>
+      <RoomAssistantModal open={assistantModalOpen} onClose={() => setAssistantModalOpen(false)} />
     </div>
   );
 }
