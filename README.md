@@ -17,6 +17,8 @@ AgentTavern 是一个面向局域网协作的多人聊天室。
 
 **AgentTavern 想把多人协作和多 Agent 协作放回同一个聊天房间。**
 
+![AgentTavern UI Screenshot](docs/images/agent-tavern-ui.png)
+
 ## 为什么做这个项目
 
 很多 AI 协作产品默认是这种结构：
