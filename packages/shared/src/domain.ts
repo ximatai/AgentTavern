@@ -76,12 +76,6 @@ export type ApprovalGrantDuration =
 
 export type AgentBackendType = "local_process" | "codex_cli" | "claude_code" | "opencode";
 
-export type AssistantInviteStatus =
-  | "pending"
-  | "accepted"
-  | "expired"
-  | "revoked";
-
 export type PrivateAssistantInviteStatus =
   | "pending"
   | "accepted"
@@ -222,21 +216,6 @@ export type AgentSession = {
   status: AgentSessionStatus;
   startedAt: string | null;
   endedAt: string | null;
-};
-
-export type AssistantInvite = {
-  id: string;
-  roomId: string;
-  ownerMemberId: string;
-  presetDisplayName: string | null;
-  backendType: AgentBackendType;
-  inviteToken: string;
-  status: AssistantInviteStatus;
-  acceptedMemberId: string | null;
-  acceptedPrivateAssistantId: string | null;
-  createdAt: string;
-  expiresAt: string | null;
-  acceptedAt: string | null;
 };
 
 export type AgentBinding = {

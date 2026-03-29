@@ -250,37 +250,6 @@ export const agentSessions = sqliteTable("agent_sessions", {
   statusIdx: index("agent_sessions_status_idx").on(table.status),
 }));
 
-export const assistantInvites = sqliteTable("assistant_invites", {
-  id: text("id").primaryKey(),
-  roomId: text("room_id")
-    .notNull()
-    .references(() => rooms.id),
-  ownerMemberId: text("owner_member_id")
-    .notNull()
-    .references(() => members.id),
-  presetDisplayName: text("preset_display_name"),
-  backendType: text("backend_type").notNull(),
-  inviteToken: text("invite_token").notNull(),
-  status: text("status").notNull(),
-  acceptedMemberId: text("accepted_member_id").references(() => members.id),
-  acceptedPrivateAssistantId: text("accepted_private_assistant_id").references(
-    () => privateAssistants.id,
-  ),
-  createdAt: text("created_at").notNull(),
-  expiresAt: text("expires_at"),
-  acceptedAt: text("accepted_at"),
-}, (table) => ({
-  roomIdIdx: index("assistant_invites_room_id_idx").on(table.roomId),
-  ownerMemberIdIdx: index("assistant_invites_owner_member_id_idx").on(table.ownerMemberId),
-  acceptedPrivateAssistantIdIdx: index("assistant_invites_accepted_private_assistant_id_idx").on(
-    table.acceptedPrivateAssistantId,
-  ),
-  statusIdx: index("assistant_invites_status_idx").on(table.status),
-  inviteTokenUniqueIdx: uniqueIndex("assistant_invites_invite_token_unique_idx").on(
-    table.inviteToken,
-  ),
-}));
-
 export const localBridges = sqliteTable("local_bridges", {
   id: text("id").primaryKey(),
   bridgeName: text("bridge_name").notNull(),

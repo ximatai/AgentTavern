@@ -16,6 +16,7 @@ import "./styles/error-boundary.css";
 import { Header } from "./components/Header";
 import { ChatSidebar } from "./components/ChatSidebar";
 import { HomeStage } from "./components/HomeStage";
+import { JoinInviteCard } from "./components/JoinInviteCard";
 import { HomeSidebar } from "./components/HomeSidebar";
 import { RoomSidebar } from "./components/RoomSidebar";
 import { OnlineMembersPanel } from "./components/OnlineMembersPanel";
@@ -77,6 +78,11 @@ function App() {
     void roomStore.refreshJoinedRooms();
   }, [principal]);
 
+  const joinInviteToken = (() => {
+    const match = window.location.pathname.match(/^\/join\/([^/]+)$/);
+    return match?.[1] ?? null;
+  })();
+
   return (
     <ConfigProvider theme={antdThemeConfig}>
       <AntdApp message={{ duration: 2.4 }}>
@@ -99,7 +105,7 @@ function App() {
                 <div className="chat-layout">
                   <section className="message-column">
                     <section className="message-panel">
-                      {room ? <MessageList /> : <HomeStage />}
+                      {room ? <MessageList /> : joinInviteToken ? <JoinInviteCard inviteToken={joinInviteToken} /> : <HomeStage />}
                     </section>
                     {room ? <InputBar /> : null}
                   </section>

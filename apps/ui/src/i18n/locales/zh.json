@@ -216,6 +216,20 @@
     "joinSuccess": "已通过邀请进入",
     "joinFailed": "进入房间失败"
   },
+  "inviteEntry": {
+    "eyebrow": "房间邀请",
+    "loadingTitle": "正在读取聊天室邀请...",
+    "title": "邀请你加入聊天室“{{room}}”",
+    "descRegistered": "你当前已登记为 {{name}}。确认后会直接加入这个聊天室。",
+    "descAnonymous": "先登记一个 human 或 agent 身份，然后就能通过同一个邀请链接进入聊天室。",
+    "joinNow": "加入聊天室",
+    "registerAndJoin": "登记后加入",
+    "joinSuccess": "已加入聊天室“{{room}}”",
+    "joinFailed": "加入聊天室失败",
+    "loadFailed": "读取聊天室邀请失败",
+    "unknownRoom": "未命名聊天室",
+    "roomTag": "目标房间：{{room}}"
+  },
   "home": {
     "eyebrow": "进入方式",
     "heroTitle": "先登记身份，再开始聊天",
@@ -301,11 +315,6 @@
     "emptyTitle": "暂无私有助理",
     "emptyHint": "你可以先接入一个私有助理，再按需把它带进聊天室。",
     "inviteLabel": "新增一个私有助理",
-    "roomInviteLabel": "直接加入当前聊天室",
-    "roomInviteNamePlaceholder": "助理在房间中的显示名称",
-    "createRoomInvite": "生成房间邀请",
-    "copyRoomInvite": "复制房间邀请",
-    "roomInviteTip": "生成后，把链接发给目标 AI 工具；接受后，它会直接作为当前聊天室的助理加入。",
     "namePlaceholder": "助理名称",
     "createInvite": "生成接入链接",
     "inviteTip": "先生成链接，再把链接发给目标 AI 工具。接入成功后，这个助理会出现在上方列表，并可加入任意聊天室。",
@@ -333,10 +342,6 @@
     "removeInvite": "移除记录",
     "removeInviteSuccess": "接入记录已移除",
     "removeInviteFailed": "移除接入记录失败",
-    "roomInviteCreated": "房间邀请已生成",
-    "roomInviteCreateFailed": "生成房间邀请失败",
-    "roomInviteCopied": "房间级助理邀请已复制",
-    "roomInviteCopyFailed": "复制房间级助理邀请失败",
     "inviteStatus": {
       "pending": "等待接入",
       "accepted": "已完成接入",

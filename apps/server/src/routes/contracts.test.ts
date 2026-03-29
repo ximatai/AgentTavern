@@ -39,7 +39,6 @@ const {
   approvals,
   agentSessions,
   agentBindings,
-  assistantInvites,
   agentAuthorizations,
   bridgeTasks,
   localBridges,
@@ -2828,508 +2827,6 @@ test("bridge attach returns 409 when the binding is already owned by another bri
   });
 });
 
-test("accepted assistant invite can be attached to a bridge by privateAssistantId", async () => {
-  const createdAt = new Date("2026-03-25T05:45:00.000Z").toISOString();
-
-  db.insert(rooms).values({
-    id: "room_invite_attach",
-    name: "Invite Attach Room",
-    inviteToken: createInviteToken(),
-    status: "active",
-    createdAt,
-  }).run();
-
-  db.insert(principals).values({
-    id: "prn_owner_invite_attach",
-    kind: "human",
-    loginKey: "owner-invite-attach@example.com",
-    globalDisplayName: "OwnerInviteAttach",
-    backendType: null,
-    backendThreadId: null,
-    status: "online",
-    createdAt,
-  }).run();
-
-  db.insert(members).values({
-    id: "mem_owner_invite_attach",
-    roomId: "room_invite_attach",
-    principalId: "prn_owner_invite_attach",
-    type: "human",
-    roleKind: "none",
-    displayName: "OwnerInviteAttach",
-    ownerMemberId: null,
-    adapterType: null,
-    adapterConfig: null,
-    presenceStatus: "online",
-    createdAt,
-  }).run();
-
-  db.insert(assistantInvites).values({
-    id: "ainv_attach",
-    roomId: "room_invite_attach",
-    ownerMemberId: "mem_owner_invite_attach",
-    presetDisplayName: "ThreadAttach",
-    backendType: "codex_cli",
-    inviteToken: "invite_attach_token",
-    status: "pending",
-    acceptedMemberId: null,
-    acceptedPrivateAssistantId: null,
-    createdAt,
-    expiresAt: null,
-    acceptedAt: null,
-  }).run();
-
-  db.insert(localBridges).values({
-    id: "brg_invite_attach",
-    bridgeName: "Invite Attach Bridge",
-    bridgeToken: "bridge_invite_attach_token",
-    status: "online",
-    platform: "macOS",
-    version: "0.1.0",
-    metadata: null,
-    lastSeenAt: createdAt,
-    createdAt,
-    updatedAt: createdAt,
-  }).run();
-
-  const acceptResponse = await app.request(
-    "http://localhost/api/assistant-invites/invite_attach_token/accept",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        backendThreadId: "thread_invite_attach",
-      }),
-    },
-  );
-
-  assert.equal(acceptResponse.status, 201);
-  const accepted = await acceptResponse.json();
-  assert.ok(accepted.privateAssistantId);
-
-  const storedInvite = db
-    .select()
-    .from(assistantInvites)
-    .where(eq(assistantInvites.id, "ainv_attach"))
-    .get();
-  assert.equal(storedInvite?.acceptedPrivateAssistantId, accepted.privateAssistantId);
-
-  const storedAssistant = db
-    .select()
-    .from(privateAssistants)
-    .where(eq(privateAssistants.id, accepted.privateAssistantId))
-    .get();
-  assert.equal(storedAssistant?.ownerPrincipalId, "prn_owner_invite_attach");
-  assert.equal(storedAssistant?.backendThreadId, "thread_invite_attach");
-
-  const attachResponse = await app.request(
-    "http://localhost/api/bridges/brg_invite_attach/agents/attach",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        bridgeToken: "bridge_invite_attach_token",
-        privateAssistantId: accepted.privateAssistantId,
-        cwd: "/tmp/invite-attach",
-      }),
-    },
-  );
-
-  assert.equal(attachResponse.status, 200);
-
-  const binding = db
-    .select()
-    .from(agentBindings)
-    .where(eq(agentBindings.privateAssistantId, accepted.privateAssistantId))
-    .get();
-
-  assert.equal(binding?.bridgeId, "brg_invite_attach");
-  assert.equal(binding?.status, "active");
-  assert.equal(binding?.cwd, "/tmp/invite-attach");
-});
-
-test("assistant invite accept reuses the same private assistant asset for the same owner and thread", async () => {
-  const createdAt = new Date("2026-03-25T05:55:00.000Z").toISOString();
-
-  db.insert(principals).values({
-    id: "prn_owner_reuse",
-    kind: "human",
-    loginKey: "owner-reuse@example.com",
-    globalDisplayName: "OwnerReuse",
-    backendType: null,
-    backendThreadId: null,
-    status: "online",
-    createdAt,
-  }).run();
-
-  db.insert(rooms).values([
-    {
-      id: "room_owner_reuse_a",
-      name: "Owner Reuse A",
-      inviteToken: createInviteToken(),
-      status: "active",
-      createdAt,
-    },
-    {
-      id: "room_owner_reuse_b",
-      name: "Owner Reuse B",
-      inviteToken: createInviteToken(),
-      status: "active",
-      createdAt,
-    },
-  ]).run();
-
-  db.insert(members).values([
-    {
-      id: "mem_owner_reuse_a",
-      roomId: "room_owner_reuse_a",
-      principalId: "prn_owner_reuse",
-      type: "human",
-      roleKind: "none",
-      displayName: "OwnerReuseA",
-      ownerMemberId: null,
-      adapterType: null,
-      adapterConfig: null,
-      presenceStatus: "online",
-      createdAt,
-    },
-    {
-      id: "mem_owner_reuse_b",
-      roomId: "room_owner_reuse_b",
-      principalId: "prn_owner_reuse",
-      type: "human",
-      roleKind: "none",
-      displayName: "OwnerReuseB",
-      ownerMemberId: null,
-      adapterType: null,
-      adapterConfig: null,
-      presenceStatus: "online",
-      createdAt,
-    },
-  ]).run();
-
-  db.insert(assistantInvites).values([
-    {
-      id: "ainv_reuse_a",
-      roomId: "room_owner_reuse_a",
-      ownerMemberId: "mem_owner_reuse_a",
-      presetDisplayName: "账本助理",
-      backendType: "codex_cli",
-      inviteToken: "invite_reuse_a",
-      status: "pending",
-      acceptedMemberId: null,
-      acceptedPrivateAssistantId: null,
-      createdAt,
-      expiresAt: null,
-      acceptedAt: null,
-    },
-    {
-      id: "ainv_reuse_b",
-      roomId: "room_owner_reuse_b",
-      ownerMemberId: "mem_owner_reuse_b",
-      presetDisplayName: "另一个名字",
-      backendType: "codex_cli",
-      inviteToken: "invite_reuse_b",
-      status: "pending",
-      acceptedMemberId: null,
-      acceptedPrivateAssistantId: null,
-      createdAt,
-      expiresAt: null,
-      acceptedAt: null,
-    },
-  ]).run();
-
-  const firstAcceptResponse = await app.request(
-    "http://localhost/api/assistant-invites/invite_reuse_a/accept",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        backendThreadId: "thread_owner_reuse",
-      }),
-    },
-  );
-
-  assert.equal(firstAcceptResponse.status, 201);
-  const firstAccepted = await firstAcceptResponse.json();
-
-  const secondAcceptResponse = await app.request(
-    "http://localhost/api/assistant-invites/invite_reuse_b/accept",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        backendThreadId: "thread_owner_reuse",
-      }),
-    },
-  );
-
-  assert.equal(secondAcceptResponse.status, 201);
-  const secondAccepted = await secondAcceptResponse.json();
-
-  assert.equal(secondAccepted.privateAssistantId, firstAccepted.privateAssistantId);
-
-  const storedAssistants = db
-    .select()
-    .from(privateAssistants)
-    .where(eq(privateAssistants.ownerPrincipalId, "prn_owner_reuse"))
-    .all();
-  assert.equal(storedAssistants.length, 1);
-  assert.equal(storedAssistants[0]?.name, "账本助理");
-  assert.equal(storedAssistants[0]?.backendThreadId, "thread_owner_reuse");
-
-  const secondProjection = db
-    .select()
-    .from(members)
-    .where(eq(members.id, secondAccepted.memberId))
-    .get();
-  assert.equal(secondProjection?.sourcePrivateAssistantId, firstAccepted.privateAssistantId);
-  assert.equal(secondProjection?.displayName, "账本助理");
-
-  const firstInvite = db
-    .select()
-    .from(assistantInvites)
-    .where(eq(assistantInvites.id, "ainv_reuse_a"))
-    .get();
-  const secondInvite = db
-    .select()
-    .from(assistantInvites)
-    .where(eq(assistantInvites.id, "ainv_reuse_b"))
-    .get();
-  assert.equal(firstInvite?.acceptedPrivateAssistantId, firstAccepted.privateAssistantId);
-  assert.equal(secondInvite?.acceptedPrivateAssistantId, firstAccepted.privateAssistantId);
-});
-
-test("assistant invite accept does not leak a private assistant asset when room displayName conflicts", async () => {
-  const createdAt = new Date("2026-03-25T05:56:00.000Z").toISOString();
-
-  db.insert(principals).values({
-    id: "prn_owner_display_conflict",
-    kind: "human",
-    loginKey: "owner-display-conflict@example.com",
-    globalDisplayName: "OwnerDisplayConflict",
-    backendType: null,
-    backendThreadId: null,
-    status: "online",
-    createdAt,
-  }).run();
-
-  db.insert(rooms).values({
-    id: "room_owner_display_conflict",
-    name: "Owner Display Conflict",
-    inviteToken: createInviteToken(),
-    status: "active",
-    createdAt,
-  }).run();
-
-  db.insert(members).values([
-    {
-      id: "mem_owner_display_conflict",
-      roomId: "room_owner_display_conflict",
-      principalId: "prn_owner_display_conflict",
-      type: "human",
-      roleKind: "none",
-      displayName: "OwnerDisplayConflict",
-      ownerMemberId: null,
-      adapterType: null,
-      adapterConfig: null,
-      presenceStatus: "online",
-      createdAt,
-    },
-    {
-      id: "mem_conflicting_name",
-      roomId: "room_owner_display_conflict",
-      principalId: null,
-      type: "human",
-      roleKind: "none",
-      displayName: "冲突助理",
-      ownerMemberId: null,
-      adapterType: null,
-      adapterConfig: null,
-      presenceStatus: "online",
-      createdAt,
-    },
-  ]).run();
-
-  db.insert(assistantInvites).values({
-    id: "ainv_display_conflict",
-    roomId: "room_owner_display_conflict",
-    ownerMemberId: "mem_owner_display_conflict",
-    presetDisplayName: "冲突助理",
-    backendType: "codex_cli",
-    inviteToken: "invite_display_conflict",
-    status: "pending",
-    acceptedMemberId: null,
-    acceptedPrivateAssistantId: null,
-    createdAt,
-    expiresAt: null,
-    acceptedAt: null,
-  }).run();
-
-  const response = await app.request(
-    "http://localhost/api/assistant-invites/invite_display_conflict/accept",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        backendThreadId: "thread_display_conflict",
-      }),
-    },
-  );
-
-  assert.equal(response.status, 409);
-  assert.deepEqual(await response.json(), {
-    error: "displayName already exists in room",
-  });
-
-  const leakedAssistant = db
-    .select()
-    .from(privateAssistants)
-    .where(eq(privateAssistants.backendThreadId, "thread_display_conflict"))
-    .get();
-  const inviteAfter = db
-    .select()
-    .from(assistantInvites)
-    .where(eq(assistantInvites.id, "ainv_display_conflict"))
-    .get();
-
-  assert.equal(leakedAssistant, undefined);
-  assert.equal(inviteAfter?.status, "pending");
-  assert.equal(inviteAfter?.acceptedPrivateAssistantId, null);
-});
-
-test("assistant invite accept rejects reusing a private assistant thread across different owners", async () => {
-  const createdAt = new Date("2026-03-25T05:58:00.000Z").toISOString();
-
-  db.insert(principals).values([
-    {
-      id: "prn_owner_conflict_a",
-      kind: "human",
-      loginKey: "owner-conflict-a@example.com",
-      globalDisplayName: "OwnerConflictA",
-      backendType: null,
-      backendThreadId: null,
-      status: "online",
-      createdAt,
-    },
-    {
-      id: "prn_owner_conflict_b",
-      kind: "human",
-      loginKey: "owner-conflict-b@example.com",
-      globalDisplayName: "OwnerConflictB",
-      backendType: null,
-      backendThreadId: null,
-      status: "online",
-      createdAt,
-    },
-  ]).run();
-
-  db.insert(rooms).values([
-    {
-      id: "room_owner_conflict_a",
-      name: "Owner Conflict A",
-      inviteToken: createInviteToken(),
-      status: "active",
-      createdAt,
-    },
-    {
-      id: "room_owner_conflict_b",
-      name: "Owner Conflict B",
-      inviteToken: createInviteToken(),
-      status: "active",
-      createdAt,
-    },
-  ]).run();
-
-  db.insert(members).values([
-    {
-      id: "mem_owner_conflict_a",
-      roomId: "room_owner_conflict_a",
-      principalId: "prn_owner_conflict_a",
-      type: "human",
-      roleKind: "none",
-      displayName: "OwnerConflictA",
-      ownerMemberId: null,
-      adapterType: null,
-      adapterConfig: null,
-      presenceStatus: "online",
-      createdAt,
-    },
-    {
-      id: "mem_owner_conflict_b",
-      roomId: "room_owner_conflict_b",
-      principalId: "prn_owner_conflict_b",
-      type: "human",
-      roleKind: "none",
-      displayName: "OwnerConflictB",
-      ownerMemberId: null,
-      adapterType: null,
-      adapterConfig: null,
-      presenceStatus: "online",
-      createdAt,
-    },
-  ]).run();
-
-  db.insert(assistantInvites).values([
-    {
-      id: "ainv_conflict_a",
-      roomId: "room_owner_conflict_a",
-      ownerMemberId: "mem_owner_conflict_a",
-      presetDisplayName: "共享助理",
-      backendType: "codex_cli",
-      inviteToken: "invite_conflict_a",
-      status: "pending",
-      acceptedMemberId: null,
-      acceptedPrivateAssistantId: null,
-      createdAt,
-      expiresAt: null,
-      acceptedAt: null,
-    },
-    {
-      id: "ainv_conflict_b",
-      roomId: "room_owner_conflict_b",
-      ownerMemberId: "mem_owner_conflict_b",
-      presetDisplayName: "共享助理",
-      backendType: "codex_cli",
-      inviteToken: "invite_conflict_b",
-      status: "pending",
-      acceptedMemberId: null,
-      acceptedPrivateAssistantId: null,
-      createdAt,
-      expiresAt: null,
-      acceptedAt: null,
-    },
-  ]).run();
-
-  const firstAcceptResponse = await app.request(
-    "http://localhost/api/assistant-invites/invite_conflict_a/accept",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        backendThreadId: "thread_owner_conflict",
-      }),
-    },
-  );
-
-  assert.equal(firstAcceptResponse.status, 201);
-
-  const secondAcceptResponse = await app.request(
-    "http://localhost/api/assistant-invites/invite_conflict_b/accept",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        backendThreadId: "thread_owner_conflict",
-      }),
-    },
-  );
-
-  assert.equal(secondAcceptResponse.status, 409);
-  assert.deepEqual(await secondAcceptResponse.json(), {
-    error: "backendThreadId already bound",
-  });
-});
 
 test("unattached codex binding fails with a local bridge requirement message", async () => {
   const roomId = "room_codex_requires_bridge";
@@ -3651,7 +3148,7 @@ test("attached codex binding can be pulled and completed through bridge task end
   );
 });
 
-test("attached claude assistant binding persists refreshed backendThreadId on completion", async () => {
+test("attached claude private assistant binding persists refreshed backendThreadId on completion", async () => {
   const roomId = "room_claude_assistant_bridge_task";
   const createdAt = new Date("2026-03-25T07:30:00.000Z").toISOString();
 
@@ -3714,23 +3211,22 @@ test("attached claude assistant binding persists refreshed backendThreadId on co
     },
   ]).run();
 
-  db.insert(assistantInvites).values({
-    id: "ainv_claude_task",
-    roomId,
-    ownerMemberId: "mem_owner_claude_task",
-    presetDisplayName: "ClaudeHelper",
-    backendType: "claude_code",
-    inviteToken: "invite_claude_task_token",
-    status: "pending",
-    acceptedMemberId: null,
-    acceptedPrivateAssistantId: null,
-    createdAt,
-    expiresAt: null,
-    acceptedAt: null,
-  }).run();
+  const inviteResponse = await app.request("http://localhost/api/me/assistants/invites", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      principalId: "prn_owner_claude_task",
+      principalToken: issuePrincipalToken("prn_owner_claude_task"),
+      name: "ClaudeHelper",
+      backendType: "claude_code",
+    }),
+  });
+
+  assert.equal(inviteResponse.status, 201);
+  const createdInvite = await inviteResponse.json();
 
   const acceptResponse = await app.request(
-    "http://localhost/api/assistant-invites/invite_claude_task_token/accept",
+    `http://localhost/api/private-assistant-invites/${createdInvite.inviteToken}/accept`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -3742,7 +3238,7 @@ test("attached claude assistant binding persists refreshed backendThreadId on co
 
   assert.equal(acceptResponse.status, 201);
   const accepted = await acceptResponse.json();
-  assert.ok(accepted.privateAssistantId);
+  assert.ok(accepted.id);
 
   const attachResponse = await app.request(
     "http://localhost/api/bridges/brg_claude_task/agents/attach",
@@ -3751,7 +3247,7 @@ test("attached claude assistant binding persists refreshed backendThreadId on co
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         bridgeToken: "bridge_claude_task_token",
-        privateAssistantId: accepted.privateAssistantId,
+        privateAssistantId: accepted.id,
         cwd: "/tmp/claude-assistant-task",
       }),
     },
@@ -3760,6 +3256,18 @@ test("attached claude assistant binding persists refreshed backendThreadId on co
   assert.equal(attachResponse.status, 200);
 
   const requesterToken = issueWsToken("mem_owner_claude_task", roomId);
+  const adoptResponse = await app.request(`http://localhost/api/rooms/${roomId}/assistants/adopt`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      actorMemberId: "mem_owner_claude_task",
+      wsToken: requesterToken,
+      privateAssistantId: accepted.id,
+    }),
+  });
+
+  assert.equal(adoptResponse.status, 201);
+
   const messageResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -3818,7 +3326,7 @@ test("attached claude assistant binding persists refreshed backendThreadId on co
   const binding = db
     .select()
     .from(agentBindings)
-    .where(eq(agentBindings.privateAssistantId, accepted.privateAssistantId))
+    .where(eq(agentBindings.privateAssistantId, accepted.id))
     .get();
 
   assert.equal(binding?.backendThreadId, "11111111-2222-3333-4444-555555555555");
@@ -3826,7 +3334,7 @@ test("attached claude assistant binding persists refreshed backendThreadId on co
   const storedAssistant = db
     .select()
     .from(privateAssistants)
-    .where(eq(privateAssistants.id, accepted.privateAssistantId))
+    .where(eq(privateAssistants.id, accepted.id))
     .get();
 
   assert.equal(storedAssistant?.backendThreadId, "thread_claude_task_initial");

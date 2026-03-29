@@ -22,6 +22,13 @@ export type JoinedRoomRecord = {
   createdAt: string;
 };
 
+export type RoomInviteRecord = {
+  id: string;
+  name: string;
+  inviteToken: string;
+  inviteUrl: string;
+};
+
 async function getRoom(roomId: string): Promise<Room> {
   return request<Room>(`/api/rooms/${roomId}`);
 }
@@ -31,6 +38,10 @@ async function createRoom(name: string): Promise<{ id: string; name: string; inv
     method: "POST",
     body: JSON.stringify({ name }),
   });
+}
+
+async function getRoomInvite(inviteToken: string): Promise<RoomInviteRecord> {
+  return request<RoomInviteRecord>(`/api/invites/${inviteToken}`);
 }
 
 async function joinRoom(
@@ -97,6 +108,7 @@ async function getJoinedRooms(
 
 export {
   getRoom,
+  getRoomInvite,
   createRoom,
   joinRoom,
   joinExistingRoom,

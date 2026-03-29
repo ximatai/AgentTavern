@@ -5,7 +5,6 @@ import type {
   AgentAuthorization,
   ApprovalGrantDuration,
   Approval,
-  AssistantInvite,
   Message,
   RealtimeEvent,
 } from "@agent-tavern/shared";

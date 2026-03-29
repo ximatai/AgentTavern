@@ -301,30 +301,6 @@ AgentTavern 是一个面向局域网的多人聊天室系统。
 - `created_at`
 - `resolved_at`
 
-### AssistantInvite
-
-关键字段：
-
-- `id`
-- `room_id`
-- `owner_member_id`
-- `preset_display_name`
-- `backend_type`
-- `invite_token`
-- `status`
-- `accepted_member_id`
-- `created_at`
-- `expires_at`
-- `accepted_at`
-
-规则：
-
-- 用于一次性助理邀请 URL
-- 创建者自动成为直属 owner
-- `invite_token` 全局唯一
-- 一次接受成功后不可复用
-- 可选择在接受后立即加入当前聊天室，也可先沉淀为 owner 的私有助理
-
 ### AgentBinding
 
 关键字段：

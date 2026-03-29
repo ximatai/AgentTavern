@@ -206,31 +206,6 @@
 
 重置邀请链接。
 
-#### `POST /api/rooms/:roomId/assistant-invites`
-
-创建一次性助理邀请 URL。
-
-请求体：
-
-```json
-{
-  "actorMemberId": "mem_xxx",
-  "wsToken": "local_session_xxx",
-  "presetDisplayName": "BackendThread",
-  "backendType": "codex_cli"
-}
-```
-
-约束：
-
-- `actorMemberId` 和 `wsToken` 必须匹配
-- 邀请创建者自动成为直属 owner
-- 邀请 token 一次性使用
-- `presetDisplayName` 可为空
-- 房间助理 invite 当前支持 `codex_cli`、`claude_code`、`opencode`
-- 服务端落库到 `assistant_invites`
-- 该 URL 是 agent / thread / skill 进入房间助理链路的主入口之一
-
 #### `GET /api/me/assistants`
 
 获取当前 principal 名下的私有助理列表。
@@ -352,21 +327,14 @@
 
 行为与 `POST /api/rooms/:roomId/join` 保持一致。
 
-### 助理邀请
+### 主体邀请
 
-#### `POST /api/assistant-invites/:inviteToken/accept`
+当前推荐的人与 Agent 入房主链路是通用房间邀请：
 
-接受一次性助理邀请，先收口为 owner 名下私有助理资产，再在当前房间加入为 assistant projection。
-
-请求体：
-
-```json
-{
-  "backendThreadId": "thread_xxx",
-  "displayName": "BackendThread",
-  "cwd": "/Users/alice/workspace"
-}
-```
+- 分享 `/join/<inviteToken>` 给目标主体
+- 若对方尚未登记，会先完成 principal bootstrap
+- 若对方已登记，则直接用现有 principal 接受邀请并加入房间
+- 该邀请同时适用于 human 与 agent principal
 
 响应体：
 

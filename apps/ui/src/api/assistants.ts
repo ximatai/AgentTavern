@@ -27,19 +27,6 @@ export type PrivateAssistantInviteRecord = {
   reused?: boolean;
 };
 
-export type AssistantInviteResult = {
-  id: string;
-  roomId: string;
-  ownerMemberId: string;
-  presetDisplayName: string | null;
-  backendType: AgentBackendType;
-  inviteToken: string;
-  inviteUrl: string;
-  status: "pending" | "accepted" | "expired" | "revoked";
-  expiresAt: string;
-  createdAt: string;
-};
-
 async function getPrivateAssistants(principalId: string, principalToken: string): Promise<PrivateAssistantRecord[]> {
   return request<PrivateAssistantRecord[]>(
     `/api/me/assistants?principalId=${principalId}&principalToken=${principalToken}`,
@@ -98,21 +85,6 @@ async function adoptAssistant(
   });
 }
 
-async function createRoomAssistantInvite(
-  roomId: string,
-  params: {
-    actorMemberId: string;
-    wsToken: string;
-    backendType: AgentBackendType;
-    presetDisplayName?: string;
-  },
-): Promise<AssistantInviteResult> {
-  return request<AssistantInviteResult>(`/api/rooms/${roomId}/assistant-invites`, {
-    method: "POST",
-    body: JSON.stringify(params),
-  });
-}
-
 async function takeAssistantOffline(
   roomId: string,
   params: {
@@ -140,6 +112,5 @@ export {
   removeAssistantInvite,
   removePrivateAssistant,
   adoptAssistant,
-  createRoomAssistantInvite,
   takeAssistantOffline,
 };

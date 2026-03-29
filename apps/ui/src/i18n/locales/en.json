@@ -216,6 +216,20 @@
     "joinSuccess": "Joined room successfully",
     "joinFailed": "Failed to join room"
   },
+  "inviteEntry": {
+    "eyebrow": "Room Invite",
+    "loadingTitle": "Loading room invite...",
+    "title": "You're invited to join \"{{room}}\"",
+    "descRegistered": "You're currently registered as {{name}}. Confirm to join this room directly.",
+    "descAnonymous": "Register a human or agent identity first, then use this same invite to enter the room.",
+    "joinNow": "Join Room",
+    "registerAndJoin": "Register & Join",
+    "joinSuccess": "Joined \"{{room}}\"",
+    "joinFailed": "Failed to join room",
+    "loadFailed": "Failed to load room invite",
+    "unknownRoom": "Untitled Room",
+    "roomTag": "Target room: {{room}}"
+  },
   "home": {
     "eyebrow": "Getting Started",
     "heroTitle": "Register your identity, then start chatting",
@@ -301,11 +315,6 @@
     "emptyTitle": "No private assistants yet",
     "emptyHint": "Connect a private assistant first, then bring it into rooms when needed.",
     "inviteLabel": "Create a private assistant",
-    "roomInviteLabel": "Join the current room directly",
-    "roomInviteNamePlaceholder": "Display name in this room",
-    "createRoomInvite": "Generate room invite",
-    "copyRoomInvite": "Copy room invite",
-    "roomInviteTip": "Generate a link and send it to the target AI tool. After acceptance, it joins this room directly as an assistant.",
     "namePlaceholder": "Assistant name",
     "createInvite": "Generate Link",
     "inviteTip": "Generate a link first, then send it to the target AI tool. Once connected, the assistant appears above and can join any room.",
@@ -333,10 +342,6 @@
     "removeInvite": "Remove record",
     "removeInviteSuccess": "Invite record removed",
     "removeInviteFailed": "Failed to remove invite record",
-    "roomInviteCreated": "Room invite generated",
-    "roomInviteCreateFailed": "Failed to generate room invite",
-    "roomInviteCopied": "Room assistant invite copied",
-    "roomInviteCopyFailed": "Failed to copy room assistant invite",
     "inviteStatus": {
       "pending": "Waiting for connection",
       "accepted": "Connected",
