@@ -13,6 +13,7 @@ import {
   broadcastToPrincipal,
   broadcastToRoom,
   issueWsToken,
+  revokeWsTokensForMember,
   verifyPrincipalToken,
   verifyWsToken,
 } from "../realtime";
@@ -44,6 +45,59 @@ function joinRoom(params: {
       .where(and(eq(members.roomId, params.roomId), eq(members.principalId, params.principal.id)))
       .get() as Member | undefined;
 
+    if (existingByPrincipal && (existingByPrincipal.membershipStatus ?? "active") === "left") {
+      const conflictingActiveMember = db
+        .select()
+        .from(members)
+        .where(and(eq(members.roomId, params.roomId), eq(members.displayName, params.displayName)))
+        .get() as Member | undefined;
+
+      if (
+        conflictingActiveMember &&
+        conflictingActiveMember.id !== existingByPrincipal.id &&
+        (conflictingActiveMember.membershipStatus ?? "active") === "active"
+      ) {
+        return { error: { error: "displayName already exists in room" }, status: 409 as const };
+      }
+
+      db
+        .update(members)
+        .set({
+          displayName: params.displayName,
+          presenceStatus: "online",
+          membershipStatus: "active",
+          leftAt: null,
+        })
+        .where(eq(members.id, existingByPrincipal.id))
+        .run();
+
+      const restoredMember = db
+        .select()
+        .from(members)
+        .where(eq(members.id, existingByPrincipal.id))
+        .get() as Member;
+      const wsToken = issueWsToken(restoredMember.id, params.roomId);
+      const binding = params.principal.kind === "agent"
+        ? resolveBindingForPrincipal(params.principal.id)
+        : null;
+      const runtimeStatus = resolveMemberRuntimeStatus(restoredMember, binding, null);
+      broadcastToRoom(params.roomId, {
+        type: "member.joined",
+        roomId: params.roomId,
+        timestamp: now(),
+        payload: { member: toPublicMember(restoredMember, runtimeStatus) },
+      });
+
+      return {
+        payload: {
+          memberId: restoredMember.id,
+          roomId: restoredMember.roomId,
+          displayName: restoredMember.displayName,
+          wsToken,
+        },
+      };
+    }
+
     if (existingByPrincipal) {
       const wsToken = issueWsToken(existingByPrincipal.id, params.roomId);
 
@@ -62,9 +116,9 @@ function joinRoom(params: {
     .select()
     .from(members)
     .where(and(eq(members.roomId, params.roomId), eq(members.displayName, params.displayName)))
-    .get();
+    .get() as Member | undefined;
 
-  if (existing) {
+  if (existing && (existing.membershipStatus ?? "active") === "active") {
     return { error: { error: "displayName already exists in room" }, status: 409 as const };
   }
 
@@ -80,6 +134,8 @@ function joinRoom(params: {
     adapterType: params.principal?.kind === "agent" ? (params.principal.backendType ?? "codex_cli") : null,
     adapterConfig: null,
     presenceStatus: "online",
+    membershipStatus: "active",
+    leftAt: null,
     createdAt: now(),
   };
 
@@ -115,6 +171,54 @@ function joinRoom(params: {
   };
 }
 
+function leaveRoomByPrincipal(params: {
+  roomId: string;
+  principal: Principal;
+}) {
+  const existingMembership = db
+    .select()
+    .from(members)
+    .where(and(eq(members.roomId, params.roomId), eq(members.principalId, params.principal.id)))
+    .get() as Member | undefined;
+
+  if (!existingMembership || (existingMembership.membershipStatus ?? "active") !== "active") {
+    return {
+      payload: {
+        left: false,
+        roomId: params.roomId,
+        principalId: params.principal.id,
+        memberId: null,
+      },
+    };
+  }
+
+  db
+    .update(members)
+    .set({
+      presenceStatus: "offline",
+      membershipStatus: "left",
+      leftAt: now(),
+    })
+    .where(eq(members.id, existingMembership.id))
+    .run();
+  revokeWsTokensForMember(existingMembership.id, params.roomId);
+  broadcastToRoom(params.roomId, {
+    type: "member.left",
+    roomId: params.roomId,
+    timestamp: now(),
+    payload: { memberId: existingMembership.id },
+  });
+
+  return {
+    payload: {
+      left: true,
+      roomId: params.roomId,
+      principalId: params.principal.id,
+      memberId: existingMembership.id,
+    },
+  };
+}
+
 function findReusableDirectRoom(params: {
   actorPrincipalId: string;
   peerPrincipalId: string;
@@ -122,7 +226,12 @@ function findReusableDirectRoom(params: {
   const allRooms = db.select().from(rooms).all() as Room[];
 
   for (const room of allRooms) {
-    const roomMembers = db.select().from(members).where(eq(members.roomId, room.id)).all() as Member[];
+    const roomMembers = db
+      .select()
+      .from(members)
+      .where(eq(members.roomId, room.id))
+      .all()
+      .filter((member) => (member.membershipStatus ?? "active") === "active") as Member[];
 
     if (roomMembers.length !== 2) {
       continue;
@@ -189,7 +298,8 @@ roomRoutes.get("/api/me/rooms", (c) => {
     .select()
     .from(members)
     .where(eq(members.principalId, principalId))
-    .all() as Member[];
+    .all()
+    .filter((member) => (member.membershipStatus ?? "active") === "active") as Member[];
 
   const joinedRoomIds = Array.from(new Set(joinedMembers.map((member) => member.roomId)));
   const joinedRooms = joinedRoomIds
@@ -263,7 +373,7 @@ roomRoutes.post("/api/direct-rooms", async (c) => {
       .where(and(eq(members.roomId, reusable.id), eq(members.principalId, actorPrincipalId)))
       .get() as Member | undefined;
 
-    if (!actorMember) {
+    if (!actorMember || (actorMember.membershipStatus ?? "active") !== "active") {
       return c.json({ error: "actor membership missing in reusable direct room" }, 409);
     }
 
@@ -314,6 +424,8 @@ roomRoutes.post("/api/direct-rooms", async (c) => {
     adapterType: actor.kind === "agent" ? (actor.backendType ?? "codex_cli") : null,
     adapterConfig: null,
     presenceStatus: "online",
+    membershipStatus: "active",
+    leftAt: null,
     createdAt,
   };
 
@@ -329,6 +441,8 @@ roomRoutes.post("/api/direct-rooms", async (c) => {
     adapterType: peer.kind === "agent" ? (peer.backendType ?? "codex_cli") : null,
     adapterConfig: null,
     presenceStatus: peer.status,
+    membershipStatus: "active",
+    leftAt: null,
     createdAt,
   };
 
@@ -515,6 +629,41 @@ roomRoutes.post("/api/invites/:inviteToken/join", async (c) => {
     return c.json(result.error, result.status);
   }
 
+  return c.json(result.payload);
+});
+
+roomRoutes.post("/api/rooms/:roomId/leave", async (c) => {
+  const roomId = c.req.param("roomId");
+  const room = db.select().from(rooms).where(eq(rooms.id, roomId)).get();
+
+  if (!room) {
+    return c.json({ error: "room not found" }, 404);
+  }
+
+  const body = await c.req.json().catch(() => null);
+  const principalId = typeof body?.principalId === "string" ? body.principalId.trim() : "";
+  const principalToken =
+    typeof body?.principalToken === "string" ? body.principalToken.trim() : "";
+
+  if (!principalId || !principalToken) {
+    return c.json({ error: "principalId and principalToken are required" }, 400);
+  }
+
+  if (!verifyPrincipalToken(principalToken, principalId)) {
+    return c.json({ error: "invalid principal token" }, 403);
+  }
+
+  const principal = db
+    .select()
+    .from(principals)
+    .where(eq(principals.id, principalId))
+    .get() as Principal | undefined;
+
+  if (!principal) {
+    return c.json({ error: "principal not found" }, 404);
+  }
+
+  const result = leaveRoomByPrincipal({ roomId, principal });
   return c.json(result.payload);
 });
 

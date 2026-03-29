@@ -6,6 +6,7 @@ import { createRoomSocket, isRealtimeEvent } from "../api/ws";
 import { useApprovalStore } from "../stores/approval";
 import { useConnectionStore } from "../stores/connection";
 import { useMessageStore } from "../stores/message";
+import { usePrincipalStore } from "../stores/principal";
 import { useRoomStore } from "../stores/room";
 import { useSessionStore } from "../stores/session";
 
@@ -34,6 +35,7 @@ export function useRoomWebSocket() {
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const reconnectAttemptRef = useRef(0);
+  const recoveringRoomRef = useRef(false);
 
   const self = useRoomStore((s) => s.self);
   const room = useRoomStore((s) => s.room);
@@ -77,16 +79,37 @@ export function useRoomWebSocket() {
           return;
         }
         reconnectAttemptRef.current = 0;
+        recoveringRoomRef.current = false;
         useConnectionStore.getState().setStatus("connected");
       });
 
-      socket.addEventListener("close", () => {
+      socket.addEventListener("close", (event) => {
         if (disposed) {
           return;
         }
         if (socketRef.current === socket) {
           socketRef.current = null;
         }
+
+        if (event.code === 1008 && !recoveringRoomRef.current) {
+          recoveringRoomRef.current = true;
+          useConnectionStore.getState().setStatus("disconnected");
+          void (async () => {
+            try {
+              await usePrincipalStore.getState().restoreFromStorage();
+              const refreshedPrincipal = usePrincipalStore.getState().principal;
+              if (refreshedPrincipal) {
+                await useRoomStore.getState().joinExistingRoom(room.id);
+              } else {
+                scheduleReconnect();
+              }
+            } catch {
+              scheduleReconnect();
+            }
+          })();
+          return;
+        }
+
         useConnectionStore.getState().setStatus("disconnected");
         scheduleReconnect();
       });

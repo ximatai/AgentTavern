@@ -100,6 +100,14 @@ export function revokeWsTokensForMember(memberId: string, roomId: string): void 
   }
 }
 
+export function revokePrincipalTokensForPrincipal(principalId: string): void {
+  for (const [token, entry] of principalTokens.entries()) {
+    if (entry.principalId === principalId) {
+      principalTokens.set(token, { ...entry, active: false });
+    }
+  }
+}
+
 export function registerSocket(socket: WebSocket, request: IncomingMessage): boolean {
   const url = new URL(request.url ?? "/", "http://localhost");
   const roomId = url.searchParams.get("roomId");

@@ -3,7 +3,8 @@ import { useTranslation } from "react-i18next";
 
 import type { PublicMember } from "@agent-tavern/shared";
 
-import { useMessageStore } from "../stores/message";import { useRoomStore } from "../stores/room";
+import { useMessageStore } from "../stores/message";
+import { useRoomStore } from "../stores/room";
 import { MessageRow } from "./MessageRow";
 
 const AUTO_SCROLL_THRESHOLD = 48;
@@ -33,6 +34,36 @@ function getMemberInitial(member: PublicMember): string {
 function getAgentRoleLabel(member: PublicMember, owner: PublicMember | undefined): string {
   const ownerName = owner?.displayName ?? "?";
   return member.roleKind === "assistant" ? `${member.displayName} · ${ownerName}的助理` : member.displayName;
+}
+
+function buildMessageMemberSnapshot(
+  memberId: string,
+  message: {
+    roomId: string;
+    createdAt: string;
+    senderDisplayName?: string | null;
+    senderType?: PublicMember["type"] | null;
+    senderRoleKind?: PublicMember["roleKind"] | null;
+    senderPresenceStatus?: PublicMember["presenceStatus"] | null;
+  },
+): PublicMember | undefined {
+  if (!message.senderDisplayName) {
+    return undefined;
+  }
+
+  return {
+    id: memberId,
+    roomId: message.roomId,
+    principalId: null,
+    type: message.senderType ?? "human",
+    roleKind: message.senderRoleKind ?? "none",
+    displayName: message.senderDisplayName,
+    ownerMemberId: null,
+    sourcePrivateAssistantId: null,
+    presenceStatus: message.senderPresenceStatus ?? "offline",
+    runtimeStatus: null,
+    createdAt: message.createdAt,
+  };
 }
 
 export function MessageList() {
@@ -131,7 +162,7 @@ export function MessageList() {
 
       {sortedMessages.map((msg) => {
         const isStream = "sessionId" in msg;
-        const sender = memberMap.get(msg.senderMemberId);
+        const sender = memberMap.get(msg.senderMemberId) ?? buildMessageMemberSnapshot(msg.senderMemberId, msg);
         const isSelf = msg.senderMemberId === self?.memberId;
         const isAgent = sender?.type === "agent" || msg.messageType === "agent_text";
         const isSystemNotice = msg.messageType === "system_notice";
@@ -156,13 +187,13 @@ export function MessageList() {
           ? sender.type === "agent" && sender.roleKind === "assistant"
             ? getAgentRoleLabel(sender, memberMap.get(sender.ownerMemberId ?? ""))
             : sender.displayName
-          : msg.senderMemberId;
+          : msg.senderDisplayName || msg.senderMemberId;
 
         const replyTarget = msg.replyToMessageId
           ? sortedMessages.find((m) => m.id === msg.replyToMessageId)
           : undefined;
         const replyTargetSender = replyTarget
-          ? memberMap.get(replyTarget.senderMemberId)
+          ? memberMap.get(replyTarget.senderMemberId) ?? buildMessageMemberSnapshot(replyTarget.senderMemberId, replyTarget)
           : undefined;
 
         return (

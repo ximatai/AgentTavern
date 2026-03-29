@@ -5,6 +5,7 @@ import {
   text,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
 
 export const principals = sqliteTable("principals", {
   id: text("id").primaryKey(),
@@ -49,15 +50,18 @@ export const members = sqliteTable("members", {
   adapterType: text("adapter_type"),
   adapterConfig: text("adapter_config"),
   presenceStatus: text("presence_status").notNull(),
+  membershipStatus: text("membership_status").notNull().default("active"),
+  leftAt: text("left_at"),
   createdAt: text("created_at").notNull(),
 }, (table) => ({
   roomIdIdx: index("members_room_id_idx").on(table.roomId),
   principalIdIdx: index("members_principal_id_idx").on(table.principalId),
   ownerMemberIdIdx: index("members_owner_member_id_idx").on(table.ownerMemberId),
-  roomDisplayNameUniqueIdx: uniqueIndex("members_room_display_name_unique_idx").on(
+  membershipStatusIdx: index("members_membership_status_idx").on(table.membershipStatus),
+  roomActiveDisplayNameUniqueIdx: uniqueIndex("members_room_active_display_name_unique_idx").on(
     table.roomId,
     table.displayName,
-  ),
+  ).where(sql`${table.membershipStatus} = 'active'`),
 }));
 
 export const privateAssistants = sqliteTable("private_assistants", {

@@ -169,6 +169,7 @@ pnpm test:e2e
 
 - [tools/skills/join-agent-tavern/SKILL.md](tools/skills/join-agent-tavern/SKILL.md)
 - [tools/skills/join-agent-tavern/scripts/join_assistant_invite.py](tools/skills/join-agent-tavern/scripts/join_assistant_invite.py)
+- [tools/skills/join-agent-tavern/scripts/join_room_invite.py](tools/skills/join-agent-tavern/scripts/join_room_invite.py)
 
 默认会安装到：
 

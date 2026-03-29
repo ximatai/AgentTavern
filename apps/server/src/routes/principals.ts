@@ -4,11 +4,17 @@ import { Hono } from "hono";
 import type { Principal, PrincipalKind } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
-import { agentBindings, localBridges, principals } from "../db/schema";
+import { agentBindings, localBridges, members, principals } from "../db/schema";
 import { resolveBindingForPrincipal } from "../lib/agent-binding-resolution";
 import { createId } from "../lib/id";
 import { resolveMemberRuntimeStatus } from "../lib/member-runtime";
-import { issuePrincipalToken } from "../realtime";
+import {
+  broadcastToRoom,
+  issuePrincipalToken,
+  revokePrincipalTokensForPrincipal,
+  revokeWsTokensForMember,
+  verifyPrincipalToken,
+} from "../realtime";
 import { isSupportedAgentBackendType, now } from "./support";
 
 const principalRoutes = new Hono();
@@ -205,46 +211,130 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
   });
 });
 
-principalRoutes.get("/api/presence/lobby", (c) => {
-  const onlinePrincipals = db
+principalRoutes.post("/api/principals/:principalId/leave-system", async (c) => {
+  const principalId = c.req.param("principalId");
+  const principal = db
     .select()
     .from(principals)
-    .where(eq(principals.status, "online"))
+    .where(eq(principals.id, principalId))
+    .get() as Principal | undefined;
+
+  if (!principal) {
+    return c.json({ error: "principal not found" }, 404);
+  }
+
+  const body = await c.req.json().catch(() => null);
+  const principalToken =
+    typeof body?.principalToken === "string" ? body.principalToken.trim() : "";
+
+  if (!principalToken) {
+    return c.json({ error: "principalToken is required" }, 400);
+  }
+
+  if (!verifyPrincipalToken(principalToken, principalId)) {
+    return c.json({ error: "invalid principal token" }, 403);
+  }
+
+  const timestamp = now();
+  const roomMemberships = db
+    .select()
+    .from(members)
+    .where(eq(members.principalId, principalId))
+    .all();
+
+  db.transaction((tx) => {
+    tx
+      .update(members)
+      .set({
+        principalId: null,
+        presenceStatus: "offline",
+        membershipStatus: "left",
+        leftAt: timestamp,
+      })
+      .where(eq(members.principalId, principalId))
+      .run();
+    tx.update(principals).set({ status: "offline" }).where(eq(principals.id, principalId)).run();
+    tx
+      .update(agentBindings)
+      .set({
+        bridgeId: null,
+        status: "detached",
+        detachedAt: timestamp,
+      })
+      .where(eq(agentBindings.principalId, principalId))
+      .run();
+  });
+
+  for (const membership of roomMemberships) {
+    revokeWsTokensForMember(membership.id, membership.roomId);
+    broadcastToRoom(membership.roomId, {
+      type: "member.left",
+      roomId: membership.roomId,
+      timestamp,
+      payload: { memberId: membership.id },
+    });
+  }
+
+  revokePrincipalTokensForPrincipal(principalId);
+
+  return c.json({
+    principalId,
+    leftSystem: true,
+    removedRoomCount: roomMemberships.length,
+    removedMemberIds: roomMemberships.map((membership) => membership.id),
+  });
+});
+
+principalRoutes.get("/api/presence/lobby", (c) => {
+  const allPrincipals = db
+    .select()
+    .from(principals)
     .all();
 
   return c.json({
-    principals: onlinePrincipals.map((principal) => ({
-      runtimeStatus:
-        principal.kind === "agent"
-          ? (() => {
-              if (principal.backendType === "local_process") {
-                return "ready";
-              }
+    principals: allPrincipals
+      .map((principal) => {
+        const binding = principal.kind === "agent"
+          ? resolveBindingForPrincipal(principal.id)
+          : null;
+        const bridge = binding?.bridgeId
+          ? db.select().from(localBridges).where(eq(localBridges.id, binding.bridgeId)).get() ?? null
+          : null;
+        const runtimeStatus = principal.kind === "agent"
+          ? resolveMemberRuntimeStatus(
+              {
+                type: "agent",
+                adapterType: principal.backendType ?? null,
+              },
+              binding,
+              bridge,
+            )
+          : null;
+        const visibleInLobby = principal.kind === "human"
+          ? principal.status === "online"
+          : Boolean(
+              binding &&
+              (binding.status === "active" || binding.status === "pending_bridge"),
+            );
 
-              const binding = resolveBindingForPrincipal(principal.id);
-              const bridge = binding?.bridgeId
-                ? db.select().from(localBridges).where(eq(localBridges.id, binding.bridgeId)).get() ?? null
-                : null;
-
-              return resolveMemberRuntimeStatus(
-                {
-                  type: "agent",
-                  adapterType: principal.backendType ?? null,
-                },
-                binding,
-                bridge,
-              );
-            })()
-          : null,
-      principalId: principal.id,
-      id: principal.id,
-      kind: principal.kind,
-      loginKey: principal.loginKey,
-      globalDisplayName: principal.globalDisplayName,
-      backendType: principal.backendType ?? null,
-      status: principal.status,
-      createdAt: principal.createdAt,
-    })),
+        return {
+          visibleInLobby,
+          principal: {
+            principalId: principal.id,
+            id: principal.id,
+            kind: principal.kind,
+            loginKey: principal.loginKey,
+            globalDisplayName: principal.globalDisplayName,
+            backendType: principal.backendType ?? null,
+            backendThreadId: principal.backendThreadId ?? null,
+            status: visibleInLobby ? "online" : principal.status,
+            createdAt: principal.createdAt,
+            runtimeStatus,
+          },
+        };
+      })
+      .filter((entry) => entry.visibleInLobby)
+      .map((entry) => entry.principal),
   });
 });
 
