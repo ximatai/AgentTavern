@@ -105,7 +105,11 @@ function App() {
                 <div className="chat-layout">
                   <section className="message-column">
                     <section className="message-panel">
-                      {room ? <MessageList /> : joinInviteToken ? <JoinInviteCard inviteToken={joinInviteToken} /> : <HomeStage />}
+                      {room
+                        ? <MessageList />
+                        : joinInviteToken && principal
+                          ? <JoinInviteCard inviteToken={joinInviteToken} />
+                          : <HomeStage inviteToken={joinInviteToken} />}
                     </section>
                     {room ? <InputBar /> : null}
                   </section>

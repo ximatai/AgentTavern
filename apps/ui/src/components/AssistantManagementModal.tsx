@@ -100,10 +100,6 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
     () => invites.filter((invite) => invite.status === "pending"),
     [invites],
   );
-  const archivedInvites = useMemo(
-    () => invites.filter((invite) => invite.status !== "pending"),
-    [invites],
-  );
 
   async function handleCreate() {
     const name = nameInput.trim();
@@ -290,42 +286,8 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
           </div>
         ) : null}
 
-        {/* Invite history */}
-        {archivedInvites.length > 0 ? (
-          <div className="am-section">
-            <div className="am-section-header">
-              <span className="am-section-title">{t("assistantPanel.historyTitle")}</span>
-            </div>
-            <div className="am-list">
-              {archivedInvites.map((invite) => (
-                <div key={invite.id} className="am-list-item">
-                  <div className="am-item-left">
-                    <div className="am-item-name">{invite.name}</div>
-                    <div className="am-item-meta">
-                      <Tag className="am-backend-tag">{backendTypeLabel(invite.backendType)}</Tag>
-                      <Tag className="am-status-tag">{inviteStatusLabel(invite.status)}</Tag>
-                    </div>
-                  </div>
-                  <div className="am-item-actions">
-                    <Button
-                      size="small"
-                      type="text"
-                      danger
-                      loading={removingInviteId === invite.id}
-                      onClick={() => void handleRemoveInvite(invite.id)}
-                      icon={<DeleteOutlined />}
-                    >
-                      {t("assistantPanel.removeInvite")}
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
         {/* Empty state */}
-        {assistants.length === 0 && pendingInvites.length === 0 && archivedInvites.length === 0 ? (
+        {assistants.length === 0 && pendingInvites.length === 0 ? (
           <div className="am-empty">
             <RobotOutlined className="am-empty-icon" />
             <div className="am-empty-title">{t("assistantPanel.emptyTitle")}</div>

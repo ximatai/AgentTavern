@@ -1,19 +1,25 @@
 import { useState, useCallback, useEffect } from "react";
-import { Modal, Input, Form, Radio, Select } from "antd";
+import { Modal, Input, Form, Radio, Select, Typography } from "antd";
 import { LogoutOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 
 import { toast } from "../lib/feedback";
+import { getRoomInvite } from "../api/rooms";
+import type { RoomInviteRecord } from "../api/rooms";
 import { usePrincipalStore } from "../stores/principal";
 import { useRoomStore } from "../stores/room";
 import { useMessageStore } from "../stores/message";
 
+const { Paragraph, Text } = Typography;
+
 interface LoginModalProps {
   open: boolean;
   onClose: () => void;
+  inviteToken?: string | null;
+  afterBootstrap?: () => Promise<void>;
 }
 
-export function LoginModal({ open, onClose }: LoginModalProps) {
+export function LoginModal({ open, onClose, inviteToken = null, afterBootstrap }: LoginModalProps) {
   const { t } = useTranslation();
   const principal = usePrincipalStore((s) => s.principal);
   const bootstrap = usePrincipalStore((s) => s.bootstrap);
@@ -24,9 +30,37 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
 
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
+  const [invite, setInvite] = useState<RoomInviteRecord | null>(null);
 
   const isLoggedIn = !!principal;
+  const isHumanFirstRun = !isLoggedIn;
+  const isInviteLogin = !!inviteToken && isHumanFirstRun;
   const selectedKind = Form.useWatch("kind", form) ?? principal?.kind ?? "human";
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!open || !inviteToken) {
+      setInvite(null);
+      return;
+    }
+
+    getRoomInvite(inviteToken)
+      .then((payload) => {
+        if (!cancelled) {
+          setInvite(payload);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setInvite(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, inviteToken]);
 
   useEffect(() => {
     if (open && isLoggedIn && principal) {
@@ -52,7 +86,7 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
     try {
       const values = await form.validateFields();
       setLoading(true);
-      const kind = values.kind as "human" | "agent";
+      const kind = isHumanFirstRun ? "human" : (values.kind as "human" | "agent");
       await bootstrap({
         kind,
         loginKey: values.loginKey,
@@ -60,6 +94,9 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
         backendType: kind === "agent" ? (values.backendType as "codex_cli" | "claude_code" | "opencode") : null,
         backendThreadId: kind === "agent" ? values.backendThreadId : null,
       });
+      if (afterBootstrap) {
+        await afterBootstrap();
+      }
       await refreshLobbyPresence();
       toast().success(t("login.loginSuccess"));
       onClose();
@@ -70,7 +107,7 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
     } finally {
       setLoading(false);
     }
-  }, [form, bootstrap, onClose, t]);
+  }, [form, bootstrap, afterBootstrap, isHumanFirstRun, onClose, t]);
 
   const handleLogout = useCallback(() => {
     logout();
@@ -118,17 +155,28 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
         </div>
       )}
     >
+      {inviteToken ? (
+        <div style={{ marginBottom: 16 }}>
+          <Text type="secondary">{t("inviteEntry.eyebrow")}</Text>
+          <Paragraph style={{ marginTop: 8, marginBottom: 4, fontSize: 16, fontWeight: 600 }}>
+            {t("inviteEntry.title", { room: invite?.name ?? t("inviteEntry.unknownRoom") })}
+          </Paragraph>
+          <Text type="secondary">{t("inviteEntry.loginHint")}</Text>
+        </div>
+      ) : null}
       <Form form={form} layout="vertical">
-        <Form.Item
-          name="kind"
-          label={t("login.identityKindLabel")}
-          rules={[{ required: true, message: t("login.identityKindRequired") }]}
-        >
-          <Radio.Group disabled={isLoggedIn}>
-            <Radio.Button value="human">{t("login.kindHuman")}</Radio.Button>
-            <Radio.Button value="agent">{t("login.kindAgent")}</Radio.Button>
-          </Radio.Group>
-        </Form.Item>
+        {!isHumanFirstRun ? (
+          <Form.Item
+            name="kind"
+            label={t("login.identityKindLabel")}
+            rules={[{ required: true, message: t("login.identityKindRequired") }]}
+          >
+            <Radio.Group disabled={isLoggedIn}>
+              <Radio.Button value="human">{t("login.kindHuman")}</Radio.Button>
+              <Radio.Button value="agent">{t("login.kindAgent")}</Radio.Button>
+            </Radio.Group>
+          </Form.Item>
+        ) : null}
         <Form.Item
           name="loginKey"
           label={selectedKind === "agent" ? t("login.agentKeyLabel") : t("login.emailLabel")}
@@ -160,7 +208,7 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
         >
           <Input placeholder={t("login.displayNamePlaceholder")} />
         </Form.Item>
-        {selectedKind === "agent" ? (
+        {!isHumanFirstRun && selectedKind === "agent" ? (
           <>
             <Form.Item
               name="backendType"
@@ -190,9 +238,11 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
           </>
         ) : null}
       </Form>
-      <div style={{ color: "#94A3B8", fontSize: 13, marginTop: 8 }}>
-        {statusText}
-      </div>
+      {!isHumanFirstRun ? (
+        <div style={{ color: "#94A3B8", fontSize: 13, marginTop: 8 }}>
+          {statusText}
+        </div>
+      ) : null}
     </Modal>
   );
 }

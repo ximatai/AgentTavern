@@ -21,15 +21,22 @@ import "../styles/home.css";
 
 const { Title, Paragraph, Text } = Typography;
 
-export function HomeStage() {
+interface HomeStageProps {
+  inviteToken?: string | null;
+}
+
+export function HomeStage({ inviteToken = null }: HomeStageProps) {
   const { t } = useTranslation();
   const lobbyPrincipals = useRoomStore((s) => s.lobbyPrincipals);
   const recentRooms = useRoomStore((s) => s.recentRooms);
   const principal = usePrincipalStore((s) => s.principal);
+  const joinRoom = useRoomStore((s) => s.joinRoom);
   const [assistantCount, setAssistantCount] = useState(0);
   const [loginOpen, setLoginOpen] = useState(false);
   const [roomModalOpen, setRoomModalOpen] = useState(false);
   const [actioningPrincipalId, setActioningPrincipalId] = useState<string | null>(null);
+  const [invitePromptShown, setInvitePromptShown] = useState(false);
+  const [loginPromptShown, setLoginPromptShown] = useState(false);
 
   useEffect(() => {
     useRoomStore.getState().refreshLobbyPresence();
@@ -44,6 +51,18 @@ export function HomeStage() {
       .then((list) => setAssistantCount(list.length))
       .catch(() => setAssistantCount(0));
   }, [principal]);
+
+  useEffect(() => {
+    if (!inviteToken || principal || invitePromptShown) return;
+    setLoginOpen(true);
+    setInvitePromptShown(true);
+  }, [inviteToken, principal, invitePromptShown]);
+
+  useEffect(() => {
+    if (inviteToken || principal || loginPromptShown) return;
+    setLoginOpen(true);
+    setLoginPromptShown(true);
+  }, [inviteToken, principal, loginPromptShown]);
 
   const visibleLobbyPrincipals = useMemo(
     () => lobbyPrincipals.filter((item) => (item.principalId ?? item.id) !== principal?.principalId),
@@ -66,6 +85,13 @@ export function HomeStage() {
     } finally {
       setActioningPrincipalId(null);
     }
+  }
+
+  async function handleInviteBootstrap() {
+    if (!inviteToken) return;
+    await joinRoom(inviteToken);
+    window.history.replaceState({}, "", "/");
+    toast().success(t("roomModal.joinSuccess"));
   }
 
   return (
@@ -227,7 +253,12 @@ export function HomeStage() {
         </Card>
       </div>
 
-      <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
+      <LoginModal
+        open={loginOpen}
+        onClose={() => setLoginOpen(false)}
+        inviteToken={inviteToken}
+        afterBootstrap={inviteToken ? handleInviteBootstrap : undefined}
+      />
       <RoomModal open={roomModalOpen} onClose={() => setRoomModalOpen(false)} />
     </div>
   );

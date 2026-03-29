@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button, Card, Tag, Typography } from "antd";
-import { LoginOutlined, UserAddOutlined } from "@ant-design/icons";
+import { UserAddOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 
 import { toast } from "../lib/feedback";
@@ -8,7 +8,6 @@ import { getRoomInvite } from "../api/rooms";
 import type { RoomInviteRecord } from "../api/rooms";
 import { usePrincipalStore } from "../stores/principal";
 import { useRoomStore } from "../stores/room";
-import { LoginModal } from "./LoginModal";
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -24,8 +23,6 @@ export function JoinInviteCard({ inviteToken }: JoinInviteCardProps) {
   const [invite, setInvite] = useState<RoomInviteRecord | null>(null);
   const [loadingInvite, setLoadingInvite] = useState(false);
   const [joining, setJoining] = useState(false);
-  const [loginOpen, setLoginOpen] = useState(false);
-  const [pendingJoinAfterLogin, setPendingJoinAfterLogin] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -53,27 +50,10 @@ export function JoinInviteCard({ inviteToken }: JoinInviteCardProps) {
     };
   }, [inviteToken, t]);
 
-  useEffect(() => {
-    if (!principal || !pendingJoinAfterLogin) return;
-    void handleJoin();
-    setPendingJoinAfterLogin(false);
-  }, [principal, pendingJoinAfterLogin]);
-
   const inviteTitle = useMemo(() => invite?.name ?? t("inviteEntry.unknownRoom"), [invite, t]);
 
-  function handleCloseLogin() {
-    setLoginOpen(false);
-    if (!principal) {
-      setPendingJoinAfterLogin(false);
-    }
-  }
-
   async function handleJoin() {
-    if (!principal) {
-      setPendingJoinAfterLogin(true);
-      setLoginOpen(true);
-      return;
-    }
+    if (!principal) return;
 
     setJoining(true);
     try {
@@ -99,24 +79,21 @@ export function JoinInviteCard({ inviteToken }: JoinInviteCardProps) {
             : t("inviteEntry.title", { room: inviteTitle })}
         </Title>
         <Paragraph type="secondary" className="home-hero-desc">
-          {principal
-            ? t("inviteEntry.descRegistered", { name: principal.globalDisplayName })
-            : t("inviteEntry.descAnonymous")}
+          {t("inviteEntry.descRegistered", { name: principal?.globalDisplayName ?? "" })}
         </Paragraph>
         <div className="home-hero-actions">
           <Button
             type="primary"
-            icon={principal ? <UserAddOutlined /> : <LoginOutlined />}
+            icon={<UserAddOutlined />}
             loading={joining || loadingInvite}
             disabled={!invite || loadingInvite}
             onClick={() => void handleJoin()}
           >
-            {principal ? t("inviteEntry.joinNow") : t("inviteEntry.registerAndJoin")}
+            {t("inviteEntry.joinNow")}
           </Button>
           {invite ? <Tag color="cyan">{t("inviteEntry.roomTag", { room: invite.name })}</Tag> : null}
         </div>
       </Card>
-      <LoginModal open={loginOpen} onClose={handleCloseLogin} />
     </>
   );
 }

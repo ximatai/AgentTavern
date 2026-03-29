@@ -115,31 +115,33 @@ export function OnlineMembersPanel() {
                   <Button size="small" disabled>
                     {t("onlineMembers.selfAction")}
                   </Button>
-                ) : inRoom ? (
-                  <Button size="small" disabled>
-                    {t("onlineMembers.alreadyInRoom")}
-                  </Button>
-                ) : room ? (
-                  <Button
-                    size="small"
-                    type="primary"
-                    loading={actioning}
-                    disabled={actioning}
-                    onClick={() => void handlePullPrincipal(principalId)}
-                  >
-                    {t("onlineMembers.pullToRoom")}
-                  </Button>
-                ) : (
-                  <Button
-                    size="small"
-                    type="primary"
-                    loading={actioning}
-                    disabled={actioning}
-                    onClick={() => void handleStartDirectRoom(principalId)}
-                  >
-                    {t("onlineMembers.startChat")}
-                  </Button>
-                )}
+                ) : principal ? (
+                  inRoom ? (
+                    <Button size="small" disabled>
+                      {t("onlineMembers.alreadyInRoom")}
+                    </Button>
+                  ) : room ? (
+                    <Button
+                      size="small"
+                      type="primary"
+                      loading={actioning}
+                      disabled={actioning}
+                      onClick={() => void handlePullPrincipal(principalId)}
+                    >
+                      {t("onlineMembers.pullToRoom")}
+                    </Button>
+                  ) : (
+                    <Button
+                      size="small"
+                      type="primary"
+                      loading={actioning}
+                      disabled={actioning}
+                      onClick={() => void handleStartDirectRoom(principalId)}
+                    >
+                      {t("onlineMembers.startChat")}
+                    </Button>
+                  )
+                ) : null}
               </div>
             );
           })}
