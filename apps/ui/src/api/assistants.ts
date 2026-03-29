@@ -1,4 +1,4 @@
-import type { AgentBackendType, AgentRoleKind, PublicMember } from "@agent-tavern/shared";
+import type { AgentBackendType, PublicMember } from "@agent-tavern/shared";
 
 import { request } from "./client";
 
@@ -133,28 +133,6 @@ async function takeAssistantOffline(
   );
 }
 
-async function addLocalAgent(
-  roomId: string,
-  params: {
-    displayName: string;
-    roleKind: AgentRoleKind;
-    actorMemberId: string;
-    wsToken: string;
-    ownerMemberId: string | null;
-    adapterType: string;
-    adapterConfig: {
-      command: string;
-      args: string[];
-      inputFormat: string;
-    };
-  },
-): Promise<PublicMember> {
-  return request<PublicMember>(`/api/rooms/${roomId}/members/agents`, {
-    method: "POST",
-    body: JSON.stringify(params),
-  });
-}
-
 export {
   getPrivateAssistants,
   getAssistantInvites,
@@ -164,5 +142,4 @@ export {
   adoptAssistant,
   createRoomAssistantInvite,
   takeAssistantOffline,
-  addLocalAgent,
 };

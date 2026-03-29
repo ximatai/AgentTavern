@@ -4,6 +4,8 @@ import { PlusOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 
 import { useRoomStore } from "../stores/room";
+import { usePrincipalStore } from "../stores/principal";
+import { LoginModal } from "./LoginModal";
 import { RoomModal } from "./RoomModal";
 import type { RecentRoomRecord } from "../types";
 
@@ -58,7 +60,17 @@ export function ChatSidebar() {
   const room = useRoomStore((s) => s.room);
   const recentRooms = useRoomStore((s) => s.recentRooms);
   const openRecentRoom = useRoomStore((s) => s.openRecentRoom);
+  const principal = usePrincipalStore((s) => s.principal);
   const [showRoomModal, setShowRoomModal] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+
+  function handleOpenRoomModal() {
+    if (!principal) {
+      setShowLoginModal(true);
+      return;
+    }
+    setShowRoomModal(true);
+  }
 
   const sortedRooms = useMemo(() => {
     const mergedRooms =
@@ -90,7 +102,7 @@ export function ChatSidebar() {
         <Text type="secondary" className="room-list-title">
           {t("sidebar.myRooms")}
         </Text>
-        <button type="button" className="room-list-add-btn" title={t("sidebar.createRoom")} onClick={() => setShowRoomModal(true)}>
+        <button type="button" className="room-list-add-btn" title={t("sidebar.createRoom")} onClick={handleOpenRoomModal}>
           <PlusOutlined />
         </button>
       </div>
@@ -115,12 +127,13 @@ export function ChatSidebar() {
 
       {/* Bottom: Create room button */}
       <div className="sidebar-bottom">
-        <Button type="primary" block icon={<PlusOutlined />} onClick={() => setShowRoomModal(true)}>
+        <Button type="primary" block icon={<PlusOutlined />} onClick={handleOpenRoomModal}>
           {t("sidebar.createRoom")}
         </Button>
       </div>
 
       <RoomModal open={showRoomModal} onClose={() => setShowRoomModal(false)} />
+      <LoginModal open={showLoginModal} onClose={() => setShowLoginModal(false)} />
     </>
   );
 }

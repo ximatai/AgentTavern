@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { SettingOutlined, RobotOutlined, LoginOutlined, PlusOutlined, ShareAltOutlined } from "@ant-design/icons";
+import { SettingOutlined, RobotOutlined, LoginOutlined, ShareAltOutlined } from "@ant-design/icons";
 
 import { toast } from "../lib/feedback";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 import { LoginModal } from "./LoginModal";
 import { AssistantManagementModal } from "./AssistantManagementModal";
-import { AddLocalAgentModal } from "./AddLocalAgentModal";
 import { usePrincipalStore } from "../stores/principal";
 import { useConnectionStore } from "../stores/connection";
 import { useRoomStore } from "../stores/room";
@@ -89,7 +88,6 @@ export function Header() {
   const self = useRoomStore((s) => s.self);
   const connectionStatus = useConnectionStore((s) => s.status);
   const [assistantOpen, setAssistantOpen] = useState(false);
-  const [localAgentOpen, setLocalAgentOpen] = useState(false);
   const [copyingRoomInvite, setCopyingRoomInvite] = useState(false);
 
   const handleCopyRoomInvite = async () => {
@@ -157,14 +155,6 @@ export function Header() {
               <ShareAltOutlined />
               <span>{copyingRoomInvite ? t("header.copying") : t("header.shareRoom")}</span>
             </button>
-            <button type="button" className="assistant-badge" onClick={() => setLocalAgentOpen(true)}>
-              <PlusOutlined />
-              <span>{t("header.addLocalAgent")}</span>
-            </button>
-            <AddLocalAgentModal
-              open={localAgentOpen}
-              onClose={() => setLocalAgentOpen(false)}
-            />
           </>
         )}
         <ThemeSwitcher />

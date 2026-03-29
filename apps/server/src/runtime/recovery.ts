@@ -10,7 +10,14 @@ import {
   createApprovalResultSystemData,
   createStructuredSystemMessage,
 } from "../lib/system-messages";
-import { agentSessions, approvals, mentions } from "../db/schema";
+import {
+  agentSessions,
+  approvals,
+  localBridges,
+  members,
+  mentions,
+  principals,
+} from "../db/schema";
 
 function now(): string {
   return new Date().toISOString();
@@ -23,6 +30,23 @@ export function recoverRuntimeState(): {
   expiredDraftAttachments: number;
   expiredBridgeTasks: number;
 } {
+  // On server restart, all in-memory sockets are gone. Persisted "online" state
+  // must be folded back before runtime recovery continues.
+  db.update(principals)
+    .set({ status: "offline" })
+    .where(eq(principals.status, "online"))
+    .run();
+
+  db.update(members)
+    .set({ presenceStatus: "offline" })
+    .where(eq(members.presenceStatus, "online"))
+    .run();
+
+  db.update(localBridges)
+    .set({ status: "offline" })
+    .where(eq(localBridges.status, "online"))
+    .run();
+
   const pendingApprovals = db.select().from(approvals).where(eq(approvals.status, "pending")).all();
   const expiredDraftAttachments = cleanupExpiredDraftAttachments();
   const expiredBridgeTasksResult = expireStalePendingBridgeTasks();

@@ -379,3 +379,128 @@ test("recoverRuntimeState fails stale pending bridge tasks and their sessions", 
   assert.equal(task?.status, "failed");
   assert.match(allMessages.at(-1)?.content ?? "", /did not accept the task in time/i);
 });
+
+test("recoverRuntimeState folds stale online presence back to offline", async () => {
+  const databasePath = uniqueTempDbPath();
+  process.env.AGENT_TAVERN_DB_PATH = databasePath;
+
+  const [{ runMigrations }, dbClient, schema, recovery] = await Promise.all([
+    import("../db/migrate.js"),
+    import("../db/client.js"),
+    import("../db/schema.js"),
+    import("./recovery.js"),
+  ]);
+
+  runMigrations();
+
+  const { db } = dbClient;
+  const { principals, rooms, members, localBridges } = schema;
+  const createdAt = new Date("2026-03-25T16:00:00.000Z").toISOString();
+
+  db.insert(principals).values([
+    {
+      id: "prn_human_online",
+      kind: "human",
+      loginKey: "alice@example.com",
+      globalDisplayName: "Alice",
+      backendType: null,
+      backendThreadId: null,
+      status: "online",
+      createdAt,
+    },
+    {
+      id: "prn_agent_online",
+      kind: "agent",
+      loginKey: "agent:helper",
+      globalDisplayName: "Helper",
+      backendType: "claude_code",
+      backendThreadId: "thread_helper",
+      status: "online",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(rooms).values({
+    id: "room_presence_recovery",
+    name: "Presence Recovery",
+    inviteToken: "inv_presence_recovery",
+    status: "active",
+    createdAt,
+  }).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_human_online",
+      roomId: "room_presence_recovery",
+      principalId: "prn_human_online",
+      type: "human",
+      roleKind: "none",
+      displayName: "Alice",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_agent_online",
+      roomId: "room_presence_recovery",
+      principalId: "prn_agent_online",
+      type: "agent",
+      roleKind: "independent",
+      displayName: "Helper",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: "claude_code",
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_projection_online",
+      roomId: "room_presence_recovery",
+      principalId: null,
+      type: "agent",
+      roleKind: "assistant",
+      displayName: "Projection",
+      ownerMemberId: "mem_human_online",
+      sourcePrivateAssistantId: "pa_projection",
+      adapterType: "claude_code",
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(localBridges).values({
+    id: "brg_presence_online",
+    bridgeName: "Local Bridge",
+    bridgeToken: "token_presence_online",
+    currentInstanceId: "binst_presence_online",
+    status: "online",
+    platform: "macOS",
+    version: "0.1.0",
+    metadata: null,
+    lastSeenAt: createdAt,
+    createdAt,
+    updatedAt: createdAt,
+  }).run();
+
+  const result = recovery.recoverRuntimeState();
+
+  assert.equal(result.expiredApprovals, 0);
+  assert.equal(result.rejectedSessions, 0);
+  assert.equal(result.systemMessages, 0);
+  assert.equal(result.expiredDraftAttachments, 0);
+  assert.equal(result.expiredBridgeTasks, 0);
+
+  const refreshedPrincipals = db.select().from(principals).all();
+  const refreshedMembers = db.select().from(members).all();
+  const refreshedBridge = db.select().from(localBridges).where(eq(localBridges.id, "brg_presence_online")).get();
+
+  assert.ok(refreshedPrincipals.every((principal) => principal.status === "offline"));
+  assert.ok(refreshedMembers.every((member) => member.presenceStatus === "offline"));
+  assert.equal(refreshedBridge?.status, "offline");
+  assert.equal(refreshedBridge?.currentInstanceId, "binst_presence_online");
+});

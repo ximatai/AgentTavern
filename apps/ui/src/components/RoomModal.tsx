@@ -4,6 +4,8 @@ import { useTranslation } from "react-i18next";
 
 import { toast } from "../lib/feedback";
 import { useRoomStore } from "../stores/room";
+import { usePrincipalStore } from "../stores/principal";
+import { LoginModal } from "./LoginModal";
 
 const { Text } = Typography;
 
@@ -21,10 +23,12 @@ interface RoomModalProps {
 
 export function RoomModal({ open, onClose }: RoomModalProps) {
   const { t } = useTranslation();
+  const principal = usePrincipalStore((s) => s.principal);
   const [roomName, setRoomName] = useState("");
   const [inviteInput, setInviteInput] = useState("");
   const [creating, setCreating] = useState(false);
   const [joining, setJoining] = useState(false);
+  const [loginOpen, setLoginOpen] = useState(false);
 
   const createRoom = useRoomStore((s) => s.createRoom);
   const joinRoom = useRoomStore((s) => s.joinRoom);
@@ -73,6 +77,17 @@ export function RoomModal({ open, onClose }: RoomModalProps) {
       footer={null}
       destroyOnHidden
     >
+      {!principal ? (
+        <div className="room-modal-section">
+          <Text type="secondary" className="room-modal-label">
+            {t("roomModal.identityRequired")}
+          </Text>
+          <Button type="primary" block onClick={() => setLoginOpen(true)}>
+            {t("home.primaryActionRegister")}
+          </Button>
+        </div>
+      ) : null}
+
       {/* Section 1: Create room */}
       <div className="room-modal-section">
         <Text type="secondary" className="room-modal-label">
@@ -83,6 +98,7 @@ export function RoomModal({ open, onClose }: RoomModalProps) {
           onChange={(e) => setRoomName(e.target.value)}
           placeholder={t("roomModal.roomNamePlaceholder")}
           onPressEnter={handleCreate}
+          disabled={!principal}
         />
         <Button
           type="primary"
@@ -90,6 +106,7 @@ export function RoomModal({ open, onClose }: RoomModalProps) {
           loading={creating}
           onClick={handleCreate}
           className="room-modal-action"
+          disabled={!principal}
         >
           {t("roomModal.createAndEnter")}
         </Button>
@@ -105,16 +122,19 @@ export function RoomModal({ open, onClose }: RoomModalProps) {
           onChange={(e) => setInviteInput(e.target.value)}
           placeholder={t("roomModal.invitePlaceholder")}
           onPressEnter={handleJoin}
+          disabled={!principal}
         />
         <Button
           block
           loading={joining}
           onClick={handleJoin}
           className="room-modal-action"
+          disabled={!principal}
         >
           {t("roomModal.joinViaInvite")}
         </Button>
       </div>
+      <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
     </Modal>
   );
 }
