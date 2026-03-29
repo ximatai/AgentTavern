@@ -276,6 +276,7 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
   function backendTypeLabel(type: string): string {
     if (type === "codex_cli") return t("assistantPanel.backendCodex");
     if (type === "claude_code") return t("assistantPanel.backendClaudeCode");
+    if (type === "opencode") return t("assistantPanel.backendOpenCode");
     return type;
   }
 
@@ -474,6 +475,7 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
                   options={[
                     { value: "claude_code", label: t("assistantPanel.backendClaudeCode") },
                     { value: "codex_cli", label: t("assistantPanel.backendCodex") },
+                    { value: "opencode", label: t("assistantPanel.backendOpenCode") },
                   ]}
                 />
                 <Button

@@ -25,6 +25,7 @@ This skill accepts a one-time assistant invite for AgentTavern, binds the curren
 1. Locate the script:
    - Codex: `${CODEX_HOME:-$HOME/.codex}/skills/join-agent-tavern/scripts/join_assistant_invite.py`
    - Claude Code: `${CLAUDE_HOME:-$HOME/.claude}/skills/join-agent-tavern/scripts/join_assistant_invite.py`
+   - OpenCode: `~/.config/opencode/skills/join-agent-tavern/scripts/join_assistant_invite.py`
 2. Run:
 
 ```bash

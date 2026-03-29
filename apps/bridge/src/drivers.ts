@@ -2,6 +2,7 @@ import type { AgentBackendType } from "@agent-tavern/shared";
 import {
   createClaudeCodeAdapter,
   createCodexCliAdapter,
+  createOpenCodeAdapter,
   type AgentRunInput,
   type AgentStreamEvent,
 } from "@agent-tavern/agent-sdk";
@@ -113,10 +114,34 @@ function createClaudeCodeBridgeDriver(): BridgeDriver {
   };
 }
 
+function createOpenCodeBridgeDriver(): BridgeDriver {
+  return {
+    backendType: "opencode",
+    run(task: BridgeTask) {
+      const adapter = createOpenCodeAdapter({
+        sessionId: task.backendThreadId,
+        cwd: task.cwd ?? undefined,
+      });
+
+      return adapter.run({
+        roomId: task.roomId,
+        agentMemberId: task.agentMemberId,
+        agentDisplayName: task.agentMemberId,
+        requesterMemberId: task.requesterMemberId,
+        requesterDisplayName: task.requesterMemberId,
+        triggerMessageId: task.sessionId,
+        prompt: task.prompt,
+        contextMessages: parseContextPayload(task.contextPayload),
+      });
+    },
+  };
+}
+
 export function createDriverRegistry(): Map<AgentBackendType, BridgeDriver> {
   const drivers: BridgeDriver[] = [
     createCodexBridgeDriver(),
     createClaudeCodeBridgeDriver(),
+    createOpenCodeBridgeDriver(),
   ];
   return new Map(drivers.map((driver) => [driver.backendType, driver]));
 }
