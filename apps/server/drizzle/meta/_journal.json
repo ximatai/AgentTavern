@@ -120,6 +120,13 @@
       "when": 1774587600000,
       "tag": "0016_binding_owner_split",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1774793400000,
+      "tag": "0017_member_membership_status",
+      "breakpoints": true
     }
   ]
 }

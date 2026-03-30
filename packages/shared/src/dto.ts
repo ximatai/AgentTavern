@@ -5,6 +5,7 @@ import type {
   MessageAttachment,
   MemberType,
   MessageType,
+  MembershipStatus,
   PresenceStatus,
   SystemMessageData,
 } from "./domain";
@@ -21,6 +22,8 @@ export type PublicMember = {
   ownerMemberId: string | null;
   sourcePrivateAssistantId: string | null;
   presenceStatus: PresenceStatus;
+  membershipStatus: MembershipStatus;
+  leftAt: string | null;
   runtimeStatus: PublicMemberRuntimeStatus;
   createdAt: string;
 };

@@ -7,6 +7,7 @@ export type MemberType = "human" | "agent";
 export type AgentRoleKind = "none" | "independent" | "assistant";
 
 export type PresenceStatus = "online" | "offline";
+export type MembershipStatus = "active" | "left";
 
 export type MessageType =
   | "user_text"
@@ -151,6 +152,8 @@ export type Member = {
   adapterType: string | null;
   adapterConfig: string | null;
   presenceStatus: PresenceStatus;
+  membershipStatus?: MembershipStatus;
+  leftAt?: string | null;
   createdAt: string;
 };
 

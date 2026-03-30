@@ -14,6 +14,8 @@ export function toPublicMember(
     ownerMemberId: member.ownerMemberId,
     sourcePrivateAssistantId: member.sourcePrivateAssistantId,
     presenceStatus: member.presenceStatus,
+    membershipStatus: member.membershipStatus ?? "active",
+    leftAt: member.leftAt ?? null,
     runtimeStatus,
     createdAt: member.createdAt,
   };

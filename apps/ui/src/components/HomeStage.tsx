@@ -30,6 +30,7 @@ export function HomeStage({ inviteToken = null }: HomeStageProps) {
   const lobbyPrincipals = useRoomStore((s) => s.lobbyPrincipals);
   const recentRooms = useRoomStore((s) => s.recentRooms);
   const principal = usePrincipalStore((s) => s.principal);
+  const restoreReady = usePrincipalStore((s) => s.restoreReady);
   const joinRoom = useRoomStore((s) => s.joinRoom);
   const [assistantCount, setAssistantCount] = useState(0);
   const [loginOpen, setLoginOpen] = useState(false);
@@ -53,16 +54,16 @@ export function HomeStage({ inviteToken = null }: HomeStageProps) {
   }, [principal]);
 
   useEffect(() => {
-    if (!inviteToken || principal || invitePromptShown) return;
+    if (!restoreReady || !inviteToken || principal || invitePromptShown) return;
     setLoginOpen(true);
     setInvitePromptShown(true);
-  }, [inviteToken, principal, invitePromptShown]);
+  }, [inviteToken, principal, invitePromptShown, restoreReady]);
 
   useEffect(() => {
-    if (inviteToken || principal || loginPromptShown) return;
+    if (!restoreReady || inviteToken || principal || loginPromptShown) return;
     setLoginOpen(true);
     setLoginPromptShown(true);
-  }, [inviteToken, principal, loginPromptShown]);
+  }, [inviteToken, principal, loginPromptShown, restoreReady]);
 
   const visibleLobbyPrincipals = useMemo(
     () => lobbyPrincipals.filter((item) => (item.principalId ?? item.id) !== principal?.principalId),

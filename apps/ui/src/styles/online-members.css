@@ -1,0 +1,122 @@
+.online-members-popover .ant-popover-inner {
+  border-radius: 18px;
+  background: rgba(248, 250, 252, 0.98);
+  box-shadow: 0 24px 56px rgba(15, 23, 42, 0.18);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.online-members-panel {
+  width: 336px;
+  max-height: 420px;
+  overflow-y: auto;
+  color: #0f172a;
+}
+
+.online-members-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.online-members-panel-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.online-members-panel-count {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.online-members-panel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.online-members-panel-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(241, 245, 249, 0.96));
+  border: 1px solid rgba(203, 213, 225, 0.9);
+}
+
+.online-members-panel-meta {
+  min-width: 0;
+  flex: 1;
+}
+
+.online-members-panel-name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.online-members-panel-kind {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.online-members-panel-kind.is-human {
+  color: #0f766e;
+  background: rgba(45, 212, 191, 0.14);
+}
+
+.online-members-panel-kind.is-agent {
+  color: #0369a1;
+  background: rgba(14, 165, 233, 0.14);
+}
+
+.online-members-panel-runtime {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #047857;
+  background: rgba(16, 185, 129, 0.14);
+}
+
+.online-members-panel-runtime.is-waiting {
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.16);
+}
+
+.online-members-panel-login-key {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #64748b;
+  word-break: break-all;
+}
+
+.online-members-panel-empty {
+  margin: 0;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 12px;
+  padding: 18px 0 8px;
+}
+
+.online-members-button-count {
+  margin-left: 6px;
+  background: rgba(8, 145, 178, 0.24);
+  border-radius: 10px;
+  padding: 0 7px;
+  font-size: 12px;
+  line-height: 20px;
+}

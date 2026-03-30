@@ -10,6 +10,7 @@ interface PrincipalState {
   loginKey: string;
   globalDisplayName: string;
   privateAssetsVersion: number;
+  restoreReady: boolean;
 }
 
 interface PrincipalActions {
@@ -33,6 +34,7 @@ export const usePrincipalStore = create<PrincipalStore>()((set, get) => ({
   loginKey: "",
   globalDisplayName: "",
   privateAssetsVersion: 0,
+  restoreReady: false,
 
   bootstrap: async (params) => {
     const session = await bootstrapAPI(params);
@@ -40,24 +42,35 @@ export const usePrincipalStore = create<PrincipalStore>()((set, get) => ({
       principal: session,
       loginKey: session.loginKey,
       globalDisplayName: session.globalDisplayName,
+      restoreReady: true,
     });
     get().persistToStorage();
     return session;
   },
 
   logout: () => {
-    set({ principal: null, loginKey: "", globalDisplayName: "", privateAssetsVersion: 0 });
+    set({
+      principal: null,
+      loginKey: "",
+      globalDisplayName: "",
+      privateAssetsVersion: 0,
+      restoreReady: true,
+    });
     localStorage.removeItem(STORAGE_KEY);
   },
 
   restoreFromStorage: async () => {
     const cached = localStorage.getItem(STORAGE_KEY);
-    if (!cached) return;
+    if (!cached) {
+      set({ restoreReady: true });
+      return;
+    }
 
     try {
       const parsed = JSON.parse(cached) as PrincipalSession;
       if (parsed.kind !== "human" && parsed.kind !== "agent") {
         localStorage.removeItem(STORAGE_KEY);
+        set({ restoreReady: true });
         return;
       }
       const refreshed = await bootstrapAPI({
@@ -71,11 +84,18 @@ export const usePrincipalStore = create<PrincipalStore>()((set, get) => ({
         principal: refreshed,
         loginKey: refreshed.loginKey,
         globalDisplayName: refreshed.globalDisplayName,
+        restoreReady: true,
       });
       get().persistToStorage();
     } catch {
       localStorage.removeItem(STORAGE_KEY);
-      set({ principal: null, loginKey: "", globalDisplayName: "", privateAssetsVersion: 0 });
+      set({
+        principal: null,
+        loginKey: "",
+        globalDisplayName: "",
+        privateAssetsVersion: 0,
+        restoreReady: true,
+      });
     }
   },
 

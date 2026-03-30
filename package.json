@@ -13,7 +13,8 @@
     "test:bridge": "pnpm --filter @agent-tavern/bridge test",
     "test:e2e": "pnpm exec playwright test",
     "typecheck": "pnpm -r typecheck",
-    "skill:install": "python3 tools/install-skill.py"
+    "skill:install": "python3 tools/install-skill.py",
+    "cleanup:test-agents": "python3 tools/cleanup-test-agents.py"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

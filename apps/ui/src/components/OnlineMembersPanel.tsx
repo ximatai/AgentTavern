@@ -6,7 +6,8 @@ import { useTranslation } from "react-i18next";
 import { toast } from "../lib/feedback";
 import { useRoomStore } from "../stores/room";
 import { usePrincipalStore } from "../stores/principal";
-import type { LobbyPrincipal } from "../api/principals";
+
+import "../styles/online-members.css";
 
 export function OnlineMembersPanel() {
   const { t } = useTranslation();
@@ -64,51 +65,39 @@ export function OnlineMembersPanel() {
   };
 
   const panelContent = (
-    <div style={{ width: 320, maxHeight: 400, overflowY: "auto" }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 12,
-        }}
-      >
-        <span style={{ fontWeight: 600, fontSize: 14 }}>
-          {t("onlineMembers.panelTitle")}
-        </span>
-        <span style={{ color: "#94A3B8", fontSize: 12 }}>
+    <div className="online-members-panel">
+      <div className="online-members-panel-header">
+        <span className="online-members-panel-title">{t("onlineMembers.panelTitle")}</span>
+        <span className="online-members-panel-count">
           {t("onlineMembers.countOnline", { count: visiblePrincipals.length })}
         </span>
       </div>
 
       {visiblePrincipals.length > 0 ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div className="online-members-panel-list">
           {visiblePrincipals.map((item) => {
             const principalId = item.principalId ?? item.id;
             const isSelf = principalId === principal?.principalId;
             const inRoom = room && roomPrincipalIds.has(principalId);
             const actioning = actioningPrincipalId === principalId;
+            const runtimeWaiting = item.runtimeStatus === "pending_bridge" || item.runtimeStatus === "waiting_bridge";
             return (
-              <div
-                key={item.id}
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  padding: "8px 10px",
-                  borderRadius: 8,
-                  background: "#1A2332",
-                }}
-              >
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: 13, color: "#fff" }}>
+              <div key={item.id} className="online-members-panel-item">
+                <div className="online-members-panel-meta">
+                  <div className="online-members-panel-name">
                     {item.globalDisplayName}
                     {isSelf ? ` (${t("onlineMembers.self")})` : ""}
+                    <span className={`online-members-panel-kind ${item.kind === "agent" ? "is-agent" : "is-human"}`}>
+                      {item.kind === "agent" ? t("onlineMembers.kindAgent") : t("onlineMembers.kindHuman")}
+                    </span>
+                    {item.runtimeStatus ? (
+                      <span className={`online-members-panel-runtime ${runtimeWaiting ? "is-waiting" : ""}`}>
+                        {t(`runtimeStatus.${item.runtimeStatus}`)}
+                      </span>
+                    ) : null}
                   </div>
-                  <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>
-                    {item.kind === "agent"
-                      ? `${t("onlineMembers.kindAgent")} · ${item.loginKey}${item.runtimeStatus ? ` · ${t(`runtimeStatus.${item.runtimeStatus}`)}` : ""}`
-                      : `${t("onlineMembers.kindHuman")} · ${item.loginKey}`}
+                  <div className="online-members-panel-login-key">
+                    {item.loginKey}
                   </div>
                 </div>
                 {isSelf ? (
@@ -147,9 +136,7 @@ export function OnlineMembersPanel() {
           })}
         </div>
       ) : (
-        <p style={{ color: "#64748B", fontSize: 12, margin: 0, textAlign: "center" }}>
-          {t("onlineMembers.empty")}
-        </p>
+        <p className="online-members-panel-empty">{t("onlineMembers.empty")}</p>
       )}
     </div>
   );
@@ -169,23 +156,13 @@ export function OnlineMembersPanel() {
         open={open}
         onOpenChange={setOpen}
         placement="topRight"
+        overlayClassName="online-members-popover"
         overlayStyle={{ minWidth: 340 }}
       >
         <Button type="primary" icon={<TeamOutlined />} size="large">
           {t("onlineMembers.button")}
           {visiblePrincipals.length > 0 && (
-            <span
-              style={{
-                marginLeft: 6,
-                background: "#0E7490",
-                borderRadius: 10,
-                padding: "0 7px",
-                fontSize: 12,
-                lineHeight: "20px",
-              }}
-            >
-              {visiblePrincipals.length}
-            </span>
+            <span className="online-members-button-count">{visiblePrincipals.length}</span>
           )}
         </Button>
       </Popover>

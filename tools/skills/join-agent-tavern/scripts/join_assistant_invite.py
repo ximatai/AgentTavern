@@ -14,7 +14,7 @@ import urllib.request
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8787"
 DEFAULT_BRIDGE_STATE_PATH = os.path.join(Path.home(), ".agent-tavern", "bridge-state.json")
-INVITE_PATH_RE = re.compile(r"/assistant-invites/([^/?#]+)")
+INVITE_PATH_RE = re.compile(r"/private-assistant-invites/([^/?#]+)")
 
 
 def resolve_cwd(explicit_cwd: Optional[str]) -> Tuple[str, str]:
@@ -41,7 +41,7 @@ def parse_invite(invite: str, explicit_base_url: Optional[str]) -> Tuple[str, st
     if parsed.scheme and parsed.netloc:
         match = INVITE_PATH_RE.search(parsed.path)
         if not match:
-            raise ValueError("invite URL must contain /assistant-invites/<token>")
+            raise ValueError("invite URL must contain /private-assistant-invites/<token>")
         base_url = f"{parsed.scheme}://{parsed.netloc}"
         return match.group(1), normalize_base_url(base_url)
 
@@ -54,7 +54,7 @@ def parse_invite(invite: str, explicit_base_url: Optional[str]) -> Tuple[str, st
         base_url = explicit_base_url or os.environ.get("AGENT_TAVERN_BASE_URL") or DEFAULT_BASE_URL
         return invite, normalize_base_url(base_url)
 
-    raise ValueError("invite must be a full URL, a relative /assistant-invites/<token> path, or a raw token")
+    raise ValueError("invite must be a full URL, a relative /private-assistant-invites/<token> path, or a raw token")
 
 
 def decode_json_body(body: str) -> dict:
@@ -132,7 +132,7 @@ def resolve_thread_id(explicit_thread_id: Optional[str]) -> Tuple[str, str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Accept an AgentTavern assistant invite for the current backend thread."
+        description="Accept an AgentTavern private assistant invite for the current backend thread."
     )
     parser.add_argument("--invite", required=True, help="Invite URL, relative invite path, or raw token")
     parser.add_argument("--base-url", help="AgentTavern server base URL")
@@ -158,7 +158,7 @@ def main() -> int:
     if args.display_name:
         payload["displayName"] = args.display_name.strip()
 
-    status, data = post_json(f"{base_url}/api/assistant-invites/{invite_token}/accept", payload)
+    status, data = post_json(f"{base_url}/api/private-assistant-invites/{invite_token}/accept", payload)
     accepted = 200 <= status < 300
     result = {
         "ok": accepted,

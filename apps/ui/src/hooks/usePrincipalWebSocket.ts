@@ -15,6 +15,7 @@ export function usePrincipalWebSocket() {
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const reconnectAttemptRef = useRef(0);
+  const recoveringTokenRef = useRef(false);
   const principal = usePrincipalStore((s) => s.principal);
 
   useEffect(() => {
@@ -58,15 +59,23 @@ export function usePrincipalWebSocket() {
           return;
         }
         reconnectAttemptRef.current = 0;
+        recoveringTokenRef.current = false;
       });
 
-      socket.addEventListener("close", () => {
+      socket.addEventListener("close", (event) => {
         if (disposed) {
           return;
         }
         if (socketRef.current === socket) {
           socketRef.current = null;
         }
+
+        if (event.code === 1008 && !recoveringTokenRef.current) {
+          recoveringTokenRef.current = true;
+          void usePrincipalStore.getState().restoreFromStorage();
+          return;
+        }
+
         scheduleReconnect();
       });
 

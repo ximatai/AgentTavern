@@ -100,7 +100,7 @@ function mergeJoinedRooms(
   current: RecentRoomRecord[],
   joinedRooms: Array<{ id: string; name: string; inviteToken: string; createdAt: string }>,
 ): RecentRoomRecord[] {
-  let next = [...current];
+  const next = [...current];
   for (const room of joinedRooms) {
     if (next.some((item) => item.roomId === room.id)) continue;
     next.push({

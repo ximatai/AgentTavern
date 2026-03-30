@@ -1,6 +1,7 @@
 import { Component } from "react";
 import type { ErrorInfo, ReactNode } from "react";
-import { useTranslation } from "react-i18next";
+import { withTranslation } from "react-i18next";
+import type { WithTranslation } from "react-i18next";
 
 interface Props {
   children: ReactNode;
@@ -11,8 +12,8 @@ interface State {
   error: Error | null;
 }
 
-export class ErrorBoundary extends Component<Props, State> {
-  constructor(props: Props) {
+class ErrorBoundaryImpl extends Component<Props & WithTranslation, State> {
+  constructor(props: Props & WithTranslation) {
     super(props);
     this.state = { hasError: false, error: null };
   }
@@ -34,36 +35,23 @@ export class ErrorBoundary extends Component<Props, State> {
       return this.props.children;
     }
 
+    const { t } = this.props;
+
     return (
-      <ErrorBoundaryContent
-        error={this.state.error}
-        onReset={this.handleReset}
-      />
+      <div className="eb-fallback">
+        <div className="eb-card">
+          <div className="eb-icon">!</div>
+          <h2 className="eb-title">{t("errorBoundary.title")}</h2>
+          <p className="eb-message">
+            {this.state.error?.message || t("errorBoundary.defaultError")}
+          </p>
+          <button className="eb-retry" onClick={this.handleReset}>
+            {t("errorBoundary.retry")}
+          </button>
+        </div>
+      </div>
     );
   }
 }
 
-function ErrorBoundaryContent({
-  error,
-  onReset,
-}: {
-  error: Error | null;
-  onReset: () => void;
-}) {
-  const { t } = useTranslation();
-
-  return (
-    <div className="eb-fallback">
-      <div className="eb-card">
-        <div className="eb-icon">!</div>
-        <h2 className="eb-title">{t("errorBoundary.title")}</h2>
-        <p className="eb-message">
-          {error?.message || t("errorBoundary.defaultError")}
-        </p>
-        <button className="eb-retry" onClick={onReset}>
-          {t("errorBoundary.retry")}
-        </button>
-      </div>
-    </div>
-  );
-}
+export const ErrorBoundary = withTranslation()(ErrorBoundaryImpl);

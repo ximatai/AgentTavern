@@ -148,6 +148,80 @@ test("joining the same room twice with the same nickname returns 409", async () 
   });
 });
 
+test("a nickname can be reused after the previous principal leaves the room", async () => {
+  const roomId = "room_join_reuse_after_leave";
+  const inviteToken = createInviteToken();
+  seedRoom({
+    roomId,
+    name: "Join Reuse Room",
+    inviteToken,
+  });
+
+  const firstBootstrap = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "reuse-a@example.com",
+      globalDisplayName: "Alice",
+    }),
+  });
+  assert.equal(firstBootstrap.status, 200);
+  const firstPrincipal = await firstBootstrap.json();
+
+  const secondBootstrap = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "reuse-b@example.com",
+      globalDisplayName: "Alice",
+    }),
+  });
+  assert.equal(secondBootstrap.status, 200);
+  const secondPrincipal = await secondBootstrap.json();
+
+  const firstJoin = await app.request(`http://localhost/api/invites/${inviteToken}/join`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      principalId: firstPrincipal.principalId,
+      principalToken: firstPrincipal.principalToken,
+    }),
+  });
+  assert.equal(firstJoin.status, 200);
+
+  const leaveResponse = await app.request(`http://localhost/api/rooms/${roomId}/leave`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      principalId: firstPrincipal.principalId,
+      principalToken: firstPrincipal.principalToken,
+    }),
+  });
+  assert.equal(leaveResponse.status, 200);
+
+  const secondJoin = await app.request(`http://localhost/api/invites/${inviteToken}/join`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      principalId: secondPrincipal.principalId,
+      principalToken: secondPrincipal.principalToken,
+    }),
+  });
+
+  assert.equal(secondJoin.status, 200);
+  const activeMembers = db
+    .select()
+    .from(members)
+    .where(eq(members.roomId, roomId))
+    .all()
+    .filter((member) => (member.membershipStatus ?? "active") === "active");
+  assert.equal(activeMembers.length, 1);
+  assert.equal(activeMembers[0]?.principalId, secondPrincipal.principalId);
+  assert.equal(activeMembers[0]?.displayName, "Alice");
+});
+
 test("principal bootstrap creates or restores a human principal and room join can inherit global display name", async () => {
   const bootstrapResponse = await app.request("http://localhost/api/principals/bootstrap", {
     method: "POST",
@@ -287,6 +361,175 @@ test("principal lobby presence follows websocket connection instead of bootstrap
     offlineLobby.principals.some((item: { id: string }) => item.id === principal.principalId),
     false,
   );
+});
+
+test("agent principal can leave a room with principal token", async () => {
+  const bootstrapResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "agent",
+      loginKey: "agent:leave-room:test",
+      globalDisplayName: "LeaveRoomBot",
+      backendType: "codex_cli",
+      backendThreadId: "thread-leave-room",
+    }),
+  });
+
+  assert.equal(bootstrapResponse.status, 200);
+  const principal = await bootstrapResponse.json();
+
+  const roomId = "room_leave_principal";
+  const inviteToken = createInviteToken();
+  seedRoom({
+    roomId,
+    name: "Leave Room",
+    inviteToken,
+  });
+
+  const joinResponse = await app.request(`http://localhost/api/invites/${inviteToken}/join`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      principalId: principal.principalId,
+      principalToken: principal.principalToken,
+    }),
+  });
+
+  assert.equal(joinResponse.status, 200);
+  const joinResult = await joinResponse.json();
+  assert.ok(db.select().from(members).where(eq(members.id, joinResult.memberId)).get());
+
+  const leaveResponse = await app.request(`http://localhost/api/rooms/${roomId}/leave`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      principalId: principal.principalId,
+      principalToken: principal.principalToken,
+    }),
+  });
+
+  assert.equal(leaveResponse.status, 200);
+  assert.deepEqual(await leaveResponse.json(), {
+    left: true,
+    roomId,
+    principalId: principal.principalId,
+    memberId: joinResult.memberId,
+  });
+  const departedMember = db.select().from(members).where(eq(members.id, joinResult.memberId)).get();
+  assert.equal(departedMember?.principalId, principal.principalId);
+  assert.equal(departedMember?.presenceStatus, "offline");
+  assert.equal(departedMember?.membershipStatus, "left");
+  assert.ok(departedMember?.leftAt);
+});
+
+test("agent principal can leave the system and detach from all rooms", async () => {
+  const bootstrapResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "agent",
+      loginKey: "agent:leave-system:test",
+      globalDisplayName: "LeaveSystemBot",
+      backendType: "codex_cli",
+      backendThreadId: "thread-leave-system",
+    }),
+  });
+
+  assert.equal(bootstrapResponse.status, 200);
+  const principal = await bootstrapResponse.json();
+
+  db.insert(localBridges).values({
+    id: "brg_leave_system",
+    bridgeName: "Leave System Bridge",
+    bridgeToken: "bridge-token",
+    currentInstanceId: "bridge-instance",
+    status: "online",
+    platform: "darwin",
+    version: "1.0.0",
+    metadata: null,
+    lastSeenAt: new Date("2026-03-25T00:00:00.000Z").toISOString(),
+    createdAt: new Date("2026-03-25T00:00:00.000Z").toISOString(),
+    updatedAt: new Date("2026-03-25T00:00:00.000Z").toISOString(),
+  }).run();
+
+  db.update(agentBindings)
+    .set({
+      bridgeId: "brg_leave_system",
+      status: "active",
+      attachedAt: new Date("2026-03-25T00:00:00.000Z").toISOString(),
+      detachedAt: null,
+    })
+    .where(eq(agentBindings.principalId, principal.principalId))
+    .run();
+
+  const roomA = { roomId: "room_leave_system_a", inviteToken: createInviteToken(), name: "Leave A" };
+  const roomB = { roomId: "room_leave_system_b", inviteToken: createInviteToken(), name: "Leave B" };
+  seedRoom(roomA);
+  seedRoom(roomB);
+
+  for (const room of [roomA, roomB]) {
+    const joinResponse = await app.request(`http://localhost/api/invites/${room.inviteToken}/join`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        principalId: principal.principalId,
+        principalToken: principal.principalToken,
+      }),
+    });
+    assert.equal(joinResponse.status, 200);
+  }
+
+  db.update(principals).set({ status: "online" }).where(eq(principals.id, principal.principalId)).run();
+
+  const leaveResponse = await app.request(
+    `http://localhost/api/principals/${principal.principalId}/leave-system`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        principalToken: principal.principalToken,
+      }),
+    },
+  );
+
+  assert.equal(leaveResponse.status, 200);
+  const leaveResult = await leaveResponse.json();
+  assert.equal(leaveResult.leftSystem, true);
+  assert.equal(leaveResult.removedRoomCount, 2);
+
+  const remainingMembers = db
+    .select()
+    .from(members)
+    .where(eq(members.principalId, principal.principalId))
+    .all();
+  assert.equal(remainingMembers.length, 0);
+
+  const departedMembers = db
+    .select()
+    .from(members)
+    .where(eq(members.displayName, "LeaveSystemBot"))
+    .all();
+  assert.ok(departedMembers.length >= 2);
+  assert.ok(departedMembers.every((member) => member.principalId === null));
+  assert.ok(departedMembers.every((member) => member.presenceStatus === "offline"));
+  assert.ok(departedMembers.every((member) => member.membershipStatus === "left"));
+  assert.ok(departedMembers.every((member) => Boolean(member.leftAt)));
+
+  const refreshedPrincipal = db
+    .select()
+    .from(principals)
+    .where(eq(principals.id, principal.principalId))
+    .get();
+  assert.equal(refreshedPrincipal?.status, "offline");
+
+  const refreshedBinding = db
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.principalId, principal.principalId))
+    .get();
+  assert.equal(refreshedBinding?.bridgeId, null);
+  assert.equal(refreshedBinding?.status, "detached");
 });
 
 test("direct room reuses the same two-principal room and room pull adds a lobby principal into an existing room", async () => {
@@ -468,6 +711,56 @@ test("agent principal bootstrap exposes runtime-capable lobby presence and creat
   assert.equal(binding?.principalId, agent.principalId);
 
   disconnectAgent();
+});
+
+test("agent principal with active binding appears in lobby without principal websocket", async () => {
+  const agentResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "agent",
+      loginKey: "agent:lobby-bridge-bot",
+      globalDisplayName: "LobbyBridgeBot",
+      backendType: "codex_cli",
+      backendThreadId: "thread_agent_principal_lobby_bridge",
+    }),
+  });
+
+  assert.equal(agentResponse.status, 200);
+  const agent = await agentResponse.json();
+  assert.equal(agent.status, "offline");
+
+  db.insert(localBridges).values({
+    id: "brg_lobby_bridge",
+    bridgeName: "Lobby Bridge",
+    bridgeToken: "bridge-token-lobby",
+    currentInstanceId: "bridge-instance",
+    status: "online",
+    platform: "darwin",
+    version: "1.0.0",
+    metadata: null,
+    lastSeenAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }).run();
+
+  db.update(agentBindings)
+    .set({
+      bridgeId: "brg_lobby_bridge",
+      status: "active",
+      attachedAt: new Date().toISOString(),
+      detachedAt: null,
+    })
+    .where(eq(agentBindings.backendThreadId, "thread_agent_principal_lobby_bridge"))
+    .run();
+
+  const lobbyResponse = await app.request("http://localhost/api/presence/lobby");
+  assert.equal(lobbyResponse.status, 200);
+  const lobby = await lobbyResponse.json();
+  const lobbyAgent = lobby.principals.find((item: { id: string }) => item.id === agent.principalId);
+  assert.ok(lobbyAgent);
+  assert.equal(lobbyAgent.status, "online");
+  assert.equal(lobbyAgent.runtimeStatus, "ready");
 });
 
 test("claude agent principal bootstrap exposes runtime-capable lobby presence and creates an independent agent projection", async () => {

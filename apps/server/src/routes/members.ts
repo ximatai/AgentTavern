@@ -21,7 +21,9 @@ memberRoutes.get("/api/rooms/:roomId/members", (c) => {
     .from(members)
     .where(eq(members.roomId, roomId))
     .all()
-    .filter((member) => !(member.sourcePrivateAssistantId && member.presenceStatus === "offline"));
+    .filter((member) => (member.membershipStatus ?? "active") === "active")
+    .filter((member) => !(member.sourcePrivateAssistantId && member.presenceStatus === "offline"))
+    ;
   const bindings = roomMembers
     .map((member) => resolveBindingForMember(member as Member))
     .filter(Boolean) as Array<typeof agentBindings.$inferSelect>;
@@ -147,6 +149,8 @@ memberRoutes.post("/api/rooms/:roomId/members/agents", async (c) => {
     adapterType,
     adapterConfig,
     presenceStatus: "online",
+    membershipStatus: "active",
+    leftAt: null,
     createdAt: now(),
   };
 

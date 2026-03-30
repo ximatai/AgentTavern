@@ -34,7 +34,6 @@ export function LoginModal({ open, onClose, inviteToken = null, afterBootstrap }
 
   const isLoggedIn = !!principal;
   const isHumanFirstRun = !isLoggedIn;
-  const isInviteLogin = !!inviteToken && isHumanFirstRun;
   const selectedKind = Form.useWatch("kind", form) ?? principal?.kind ?? "human";
 
   useEffect(() => {
@@ -94,11 +93,18 @@ export function LoginModal({ open, onClose, inviteToken = null, afterBootstrap }
         backendType: kind === "agent" ? (values.backendType as "codex_cli" | "claude_code" | "opencode") : null,
         backendThreadId: kind === "agent" ? values.backendThreadId : null,
       });
-      if (afterBootstrap) {
-        await afterBootstrap();
-      }
       await refreshLobbyPresence();
       toast().success(t("login.loginSuccess"));
+      if (afterBootstrap) {
+        try {
+          await afterBootstrap();
+        } catch (err) {
+          const message = err instanceof Error ? `: ${err.message}` : "";
+          toast().error(t("inviteEntry.joinAfterLoginFailed") + message);
+          onClose();
+          return;
+        }
+      }
       onClose();
     } catch (err) {
       if (err instanceof Error) {
@@ -107,7 +113,7 @@ export function LoginModal({ open, onClose, inviteToken = null, afterBootstrap }
     } finally {
       setLoading(false);
     }
-  }, [form, bootstrap, afterBootstrap, isHumanFirstRun, onClose, t]);
+  }, [form, bootstrap, afterBootstrap, isHumanFirstRun, onClose, refreshLobbyPresence, t]);
 
   const handleLogout = useCallback(() => {
     logout();
