@@ -150,6 +150,44 @@ function parseAgentMessageAction(value: unknown): AgentMessageAction | null {
   };
 }
 
+function parseBridgeTaskCompletionBody(body: unknown): {
+  bridgeToken: string;
+  bridgeInstanceId: string;
+  backendThreadId: string;
+  attachmentIds: string[];
+  action: AgentMessageAction;
+} {
+  const record = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+  const action = parseAgentMessageAction(record.action);
+
+  return {
+    bridgeToken: typeof record.bridgeToken === "string" ? record.bridgeToken.trim() : "",
+    bridgeInstanceId: typeof record.bridgeInstanceId === "string" ? record.bridgeInstanceId.trim() : "",
+    backendThreadId: typeof record.backendThreadId === "string" ? record.backendThreadId.trim() : "",
+    attachmentIds: Array.isArray(record.attachmentIds)
+      ? record.attachmentIds.flatMap((value: unknown) =>
+          typeof value === "string" && value.trim() ? [value.trim()] : [],
+        )
+      : [],
+    action: {
+      content:
+        action?.content?.trim() ||
+        (typeof record.finalText === "string" ? record.finalText.trim() : ""),
+      summaryText: action?.summaryText?.trim()
+        ? action.summaryText.trim()
+        : typeof record.summaryText === "string" && record.summaryText.trim()
+          ? record.summaryText.trim()
+          : undefined,
+      mentionedDisplayNames: action?.mentionedDisplayNames ?? (Array.isArray(record.mentionedDisplayNames)
+        ? record.mentionedDisplayNames.flatMap((value: unknown) =>
+            typeof value === "string" && value.trim() ? [value.trim()] : [],
+          )
+        : undefined),
+      attachments: action?.attachments,
+    },
+  };
+}
+
 bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/pull", async (c) => {
   const bridgeId = c.req.param("bridgeId");
   const body = await c.req.json().catch(() => null);
@@ -348,30 +386,13 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
   const bridgeId = c.req.param("bridgeId");
   const taskId = c.req.param("taskId");
   const body = await c.req.json().catch(() => null);
-  const action = parseAgentMessageAction(body?.action);
-  const bridgeToken = typeof body?.bridgeToken === "string" ? body.bridgeToken.trim() : "";
-  const bridgeInstanceId =
-    typeof body?.bridgeInstanceId === "string" ? body.bridgeInstanceId.trim() : "";
-  const finalText =
-    action?.content?.trim() ||
-    (typeof body?.finalText === "string" ? body.finalText.trim() : "");
-  const backendThreadId =
-    typeof body?.backendThreadId === "string" ? body.backendThreadId.trim() : "";
-  const summaryText = action?.summaryText?.trim()
-    ? action.summaryText.trim()
-    : typeof body?.summaryText === "string" && body.summaryText.trim()
-      ? body.summaryText.trim()
-      : null;
-  const mentionedDisplayNames = action?.mentionedDisplayNames ?? (Array.isArray(body?.mentionedDisplayNames)
-    ? body.mentionedDisplayNames.flatMap((value: unknown) =>
-        typeof value === "string" && value.trim() ? [value.trim()] : [],
-      )
-    : []);
-  const attachmentIds = Array.isArray(body?.attachmentIds)
-    ? body.attachmentIds.flatMap((value: unknown) =>
-        typeof value === "string" && value.trim() ? [value.trim()] : [],
-      )
-    : [];
+  const {
+    bridgeToken,
+    bridgeInstanceId,
+    backendThreadId,
+    attachmentIds,
+    action,
+  } = parseBridgeTaskCompletionBody(body);
 
   if (!bridgeToken || !bridgeInstanceId) {
     return c.json(
@@ -428,10 +449,10 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
     room.secretaryMemberId === session.agentMemberId &&
       room.secretaryMode === "coordinate_and_summarize"
       ? normalizeRoomSummaryOutput({
-          visibleContent: finalText,
-          summaryText,
+          visibleContent: action.content ?? "",
+          summaryText: action.summaryText ?? null,
         })
-      : { visibleContent: finalText, summaryText: null };
+      : { visibleContent: action.content ?? "", summaryText: null };
   const visibleFinalText = parsedSummary.visibleContent.trim();
 
   if (!visibleFinalText && attachmentIds.length === 0 && !allowSilentCompletion) {
@@ -489,7 +510,7 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
     action: {
       content: visibleFinalText,
       summaryText: parsedSummary.summaryText ?? undefined,
-      mentionedDisplayNames,
+      mentionedDisplayNames: action.mentionedDisplayNames,
       attachments,
     },
     ...(visibleFinalText || attachments.length > 0
