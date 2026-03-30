@@ -3369,6 +3369,92 @@ test("mentioning an independent agent triggers execution and commits a reply", a
   );
 });
 
+test("local independent agent can commit an attachment-only reply from a unified action", async () => {
+  const roomId = "room_local_agent_attachment_action";
+  const createdAt = new Date("2026-03-25T04:10:00.000Z").toISOString();
+
+  seedRoom({
+    roomId,
+    name: "Local Agent Attachment Action Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(members).values([
+    {
+      id: "mem_requester_local_attachment_action",
+      roomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "RequesterAttachmentAction",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_agent_local_attachment_action",
+      roomId,
+      type: "agent",
+      roleKind: "independent",
+      displayName: "FileAgent",
+      ownerMemberId: null,
+      adapterType: "local_process",
+      adapterConfig: JSON.stringify({
+        command: "node",
+        args: [
+          "-e",
+          "process.stdout.write(JSON.stringify({ type: 'completed', action: { attachments: [{ name: 'report.txt', mimeType: 'text/plain', contentBase64: Buffer.from('report body').toString('base64') }] } }) + '\\n');",
+        ],
+        inputFormat: "text",
+        outputFormat: "jsonl",
+      }),
+      presenceStatus: "online",
+      createdAt,
+    },
+  ]).run();
+
+  const requesterToken = issueWsToken("mem_requester_local_attachment_action", roomId);
+  const response = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_requester_local_attachment_action",
+      wsToken: requesterToken,
+      content: "@FileAgent send the report file",
+    }),
+  });
+
+  assert.equal(response.status, 201);
+
+  const session = await waitFor(
+    () =>
+      db
+        .select()
+        .from(agentSessions)
+        .where(eq(agentSessions.roomId, roomId))
+        .get(),
+    (value) => value?.status === "completed",
+  );
+  assert.equal(session?.agentMemberId, "mem_agent_local_attachment_action");
+
+  const agentMessage = db
+    .select()
+    .from(messages)
+    .where(eq(messages.senderMemberId, "mem_agent_local_attachment_action"))
+    .get();
+  assert.equal(agentMessage?.content, "");
+
+  const attachedRows = db
+    .select()
+    .from(messageAttachments)
+    .where(eq(messageAttachments.messageId, agentMessage?.id ?? ""))
+    .all();
+  assert.equal(attachedRows.length, 1);
+  assert.equal(attachedRows[0]?.originalName, "report.txt");
+  assert.equal(attachedRows[0]?.mimeType, "text/plain");
+});
+
 test("private assistant projections reject concurrent runs across rooms for the same asset", async () => {
   const createdAt = new Date("2026-03-25T04:50:00.000Z").toISOString();
 

@@ -14,6 +14,7 @@ import type {
   BridgeTask,
   Member,
   Message,
+  MessageAttachment,
   Room,
 } from "@agent-tavern/shared";
 
@@ -32,6 +33,12 @@ import { expireStalePendingBridgeTasks } from "../lib/bridge-task-maintenance";
 import { createId } from "../lib/id";
 import { insertMessage } from "../lib/message-records";
 import { getRoomSummary, normalizeRoomSummaryOutput } from "../lib/room-summary";
+import {
+  MAX_MESSAGE_ATTACHMENTS,
+  MAX_TOTAL_ATTACHMENT_BYTES,
+  createDraftAttachmentFromBuffer,
+  deleteDraftAttachment,
+} from "../lib/message-attachments";
 import {
   createAgentBusySystemData,
   createBridgeAttachRequiredSystemData,
@@ -273,6 +280,56 @@ function isSecretarySession(room: Room, session: AgentSession): boolean {
 
 function allowsSilentCompletion(session: AgentSession): boolean {
   return session.kind === "room_observe" || session.kind === "summary_refresh";
+}
+
+function createGeneratedAttachments(params: {
+  roomId: string;
+  uploaderMemberId: string;
+  attachments: NonNullable<AgentMessageAction["attachments"]>;
+  createdAt: string;
+}): MessageAttachment[] {
+  if (params.attachments.length > MAX_MESSAGE_ATTACHMENTS) {
+    throw new Error(`up to ${MAX_MESSAGE_ATTACHMENTS} attachments are allowed`);
+  }
+
+  const created: MessageAttachment[] = [];
+  let totalBytes = 0;
+
+  try {
+    for (const attachment of params.attachments) {
+      const content = Buffer.from(attachment.contentBase64, "base64");
+      if (content.byteLength === 0) {
+        throw new Error("attachment content must not be empty");
+      }
+
+      totalBytes += content.byteLength;
+      if (totalBytes > MAX_TOTAL_ATTACHMENT_BYTES) {
+        throw new Error(`attachments exceed ${MAX_TOTAL_ATTACHMENT_BYTES} bytes in total`);
+      }
+
+      created.push(
+        createDraftAttachmentFromBuffer({
+          roomId: params.roomId,
+          uploaderMemberId: params.uploaderMemberId,
+          fileName: attachment.name,
+          mimeType: attachment.mimeType,
+          content,
+          createdAt: params.createdAt,
+        }),
+      );
+    }
+  } catch (error) {
+    for (const attachment of created) {
+      deleteDraftAttachment({
+        roomId: params.roomId,
+        uploaderMemberId: params.uploaderMemberId,
+        attachmentId: attachment.id,
+      });
+    }
+    throw error;
+  }
+
+  return created;
 }
 
 function toCompletedAction(params: {
@@ -589,8 +646,16 @@ async function runAgentSession(sessionId: string): Promise<void> {
     : { visibleContent: (completedAction?.content ?? finalText).trim(), summaryText: null };
   const committedText = parsedSummary.visibleContent.trim();
   const canCompleteSilently = allowsSilentCompletion(runningSession);
+  const generatedAttachments = Array.isArray(completedAction?.attachments)
+    ? createGeneratedAttachments({
+        roomId: typedSession.roomId,
+        uploaderMemberId: typedAgent.id,
+        attachments: completedAction.attachments,
+        createdAt: now(),
+      })
+    : [];
 
-  if (!committedText) {
+  if (!committedText && generatedAttachments.length === 0) {
     if (parsedSummary.summaryText && isSecretarySession(typedRoom, runningSession) && canCompleteSilently) {
       completeSessionWithSummary({
         session: runningSession,
@@ -614,7 +679,7 @@ async function runAgentSession(sessionId: string): Promise<void> {
     content: committedText,
     summaryText: parsedSummary.summaryText,
     mentionedDisplayNames: completedAction?.mentionedDisplayNames ?? completedMentionedDisplayNames,
-    attachments: [],
+    attachments: generatedAttachments,
     replyToMessageId: typedTriggerMessage.id,
   });
   for (const queuedSessionId of committed.queuedSessionIds) {
