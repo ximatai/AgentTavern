@@ -984,6 +984,85 @@ test("principal bootstrap creates or restores a human principal and room join ca
   assert.equal(insertedMember?.displayName, "阿南二号");
 });
 
+test("principal bootstrap syncs inherited member display names but preserves room-specific overrides", async () => {
+  const bootstrapResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "rename@example.com",
+      globalDisplayName: "gmail",
+    }),
+  });
+
+  assert.equal(bootstrapResponse.status, 200);
+  const principal = await bootstrapResponse.json();
+
+  const roomId = "room_principal_rename_sync";
+  seedRoom({
+    roomId,
+    name: "Rename Sync Room",
+    inviteToken: createInviteToken(),
+  });
+
+  const invitedJoinResponse = await app.request(
+    `http://localhost/api/invites/${db.select().from(rooms).where(eq(rooms.id, roomId)).get()!.inviteToken}/join`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        principalId: principal.principalId,
+        principalToken: principal.principalToken,
+      }),
+    },
+  );
+
+  assert.equal(invitedJoinResponse.status, 200);
+  const joinResult = await invitedJoinResponse.json();
+
+  const customRoomId = "room_principal_rename_custom";
+  seedRoom({
+    roomId: customRoomId,
+    name: "Rename Custom Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(members).values({
+    id: "mem_principal_rename_custom",
+    roomId: customRoomId,
+    principalId: principal.principalId,
+    type: "human",
+    roleKind: "none",
+    displayName: "自定义昵称",
+    ownerMemberId: null,
+    sourcePrivateAssistantId: null,
+    adapterType: null,
+    adapterConfig: null,
+    presenceStatus: "offline",
+    membershipStatus: "active",
+    leftAt: null,
+    createdAt: new Date("2026-03-30T08:00:00.000Z").toISOString(),
+  }).run();
+
+  const renameResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "rename@example.com",
+      globalDisplayName: "老刘",
+    }),
+  });
+
+  assert.equal(renameResponse.status, 200);
+
+  const inheritedMember = db.select().from(members).where(eq(members.id, joinResult.memberId)).get();
+  const customMember = db.select().from(members).where(eq(members.id, "mem_principal_rename_custom")).get();
+
+  assert.equal(inheritedMember?.displayName, "老刘");
+  assert.equal(customMember?.displayName, "自定义昵称");
+});
+
 test("principal lobby presence follows websocket connection instead of bootstrap", async () => {
   const bootstrapResponse = await app.request("http://localhost/api/principals/bootstrap", {
     method: "POST",

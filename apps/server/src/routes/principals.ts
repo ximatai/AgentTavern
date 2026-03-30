@@ -8,6 +8,7 @@ import { agentBindings, localBridges, members, principals } from "../db/schema";
 import { resolveBindingForPrincipal } from "../lib/agent-binding-resolution";
 import { createId } from "../lib/id";
 import { resolveMemberRuntimeStatus } from "../lib/member-runtime";
+import { toPublicMember } from "../lib/public";
 import {
   broadcastToRoom,
   issuePrincipalToken,
@@ -105,6 +106,8 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
 
   if (existing) {
     try {
+      const updatedMemberIds = new Set<string>();
+      const oldGlobalDisplayName = existing.globalDisplayName;
       const updated = db.transaction((tx) => {
         if (kind === "agent") {
           const conflictingBinding = tx
@@ -134,6 +137,24 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
             .run();
         }
 
+        if (oldGlobalDisplayName !== globalDisplayName) {
+          const syncedMembers = tx
+            .select()
+            .from(members)
+            .where(and(eq(members.principalId, existing.id), eq(members.displayName, oldGlobalDisplayName)))
+            .all();
+
+          if (syncedMembers.length > 0) {
+            tx
+              .update(members)
+              .set({ displayName: globalDisplayName })
+              .where(and(eq(members.principalId, existing.id), eq(members.displayName, oldGlobalDisplayName)))
+              .run();
+
+            syncedMembers.forEach((member) => updatedMemberIds.add(member.id));
+          }
+        }
+
         const refreshed = tx
           .select()
           .from(principals)
@@ -143,6 +164,33 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
         ensureAgentPrincipalBinding(refreshed, tx);
         return refreshed;
       });
+
+      if (updatedMemberIds.size > 0) {
+        const refreshedMembers = db
+          .select()
+          .from(members)
+          .where(eq(members.principalId, existing.id))
+          .all()
+          .filter((member) => updatedMemberIds.has(member.id));
+        const binding = updated.kind === "agent" ? resolveBindingForPrincipal(updated.id) : null;
+        const bridge = binding?.bridgeId
+          ? db.select().from(localBridges).where(eq(localBridges.id, binding.bridgeId)).get() ?? null
+          : null;
+
+        for (const member of refreshedMembers) {
+          broadcastToRoom(member.roomId, {
+            type: "member.updated",
+            roomId: member.roomId,
+            timestamp: now(),
+            payload: {
+              member: toPublicMember(
+                member as never,
+                resolveMemberRuntimeStatus(member as never, binding, bridge),
+              ),
+            },
+          });
+        }
+      }
 
       return c.json({
         principalId: updated.id,
