@@ -62,6 +62,8 @@ function buildMessageMemberSnapshot(
     sourcePrivateAssistantId: null,
     presenceStatus: message.senderPresenceStatus ?? "offline",
     runtimeStatus: null,
+    membershipStatus: "active",
+    leftAt: null,
     createdAt: message.createdAt,
   };
 }
