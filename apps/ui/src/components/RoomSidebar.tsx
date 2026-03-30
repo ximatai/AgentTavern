@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, Select } from "antd";
@@ -205,21 +205,27 @@ export function RoomSidebar() {
     }
   };
 
-  const findApprovalMessage = (approvalId: string) =>
-    messages.find(
-      (m) => m.systemData?.approvalId === approvalId && m.messageType === "approval_request",
-    );
+  const findApprovalMessage = useCallback(
+    (approvalId: string) =>
+      messages.find(
+        (m) => m.systemData?.approvalId === approvalId && m.messageType === "approval_request",
+      ),
+    [messages],
+  );
 
-  const handleApproval = (approvalId: string, action: "approve" | "reject") => {
-    if (!self) return;
-    setBusyApprovalId(approvalId);
-    const fn = action === "approve" ? approve : reject;
-    fn({
-      approvalId,
-      actorMemberId: self.memberId,
-      wsToken: self.wsToken,
-    }).finally(() => setBusyApprovalId(null));
-  };
+  const handleApproval = useCallback(
+    (approvalId: string, action: "approve" | "reject") => {
+      if (!self) return;
+      setBusyApprovalId(approvalId);
+      const fn = action === "approve" ? approve : reject;
+      fn({
+        approvalId,
+        actorMemberId: self.memberId,
+        wsToken: self.wsToken,
+      }).finally(() => setBusyApprovalId(null));
+    },
+    [approve, reject, self],
+  );
 
   const collabItems = useMemo<CollabItem[]>(() => {
     const items: CollabItem[] = [];
@@ -470,11 +476,12 @@ export function RoomSidebar() {
     busyApprovalId,
     dismissedCollabIds,
     memberMap,
-    messages,
     pendingApprovals,
     recentIssueMessages,
     runningSessionSummaries,
     self?.memberId,
+    findApprovalMessage,
+    handleApproval,
     setGrantDuration,
     streams,
     t,

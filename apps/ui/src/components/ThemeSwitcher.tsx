@@ -3,7 +3,7 @@ import { BgColorsOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useSettingsStore } from "../stores/settings";
 import { themeRegistry } from "../styles/themes/registry";
-import type { ThemeId, ResolvedThemeId } from "../styles/themes/types";
+import type { ResolvedThemeId } from "../styles/themes/types";
 import "../styles/theme-switcher.css";
 
 export function ThemeSwitcher() {
