@@ -39,6 +39,10 @@ function isAgentStreamEvent(value: unknown): value is AgentStreamEvent {
     ) && (
       event.summaryText === undefined || typeof event.summaryText === "string"
     ) && (
+      event.mentionedDisplayNames === undefined ||
+      (Array.isArray(event.mentionedDisplayNames) &&
+        event.mentionedDisplayNames.every((value) => typeof value === "string"))
+    ) && (
       event.sessionId === undefined || typeof event.sessionId === "string"
     ) && (
       event.attachments === undefined || Array.isArray(event.attachments)

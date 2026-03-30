@@ -3215,9 +3215,10 @@ test("assistant replies can mention an independent agent and trigger a follow-up
         command: "node",
         args: [
           "-e",
-          "process.stdin.setEncoding('utf8');process.stdin.resume();process.stdin.on('end',()=>process.stdout.write('@BetaFollowup please take the next turn'));",
+          "process.stdout.write(JSON.stringify({ type: 'completed', finalText: 'Please take the next turn.', mentionedDisplayNames: ['BetaFollowup'] }) + '\\n');",
         ],
         inputFormat: "text",
+        outputFormat: "jsonl",
       }),
       presenceStatus: "online",
       createdAt,
@@ -4561,7 +4562,8 @@ test("bridge-completed agent replies can mention another independent agent and t
       body: JSON.stringify({
         bridgeToken: "bridge_followup_token",
         bridgeInstanceId: "binst_bridge_followup",
-        finalText: "@Beta please answer the requester next",
+        finalText: "Please answer the requester next",
+        mentionedDisplayNames: ["Beta"],
       }),
     },
   );

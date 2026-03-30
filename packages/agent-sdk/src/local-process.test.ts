@@ -86,3 +86,41 @@ test("createLocalProcessAdapter supports jsonl structured room summaries", async
     },
   ]);
 });
+
+test("createLocalProcessAdapter supports structured mention targets", async () => {
+  const adapter = createLocalProcessAdapter({
+    command: "node",
+    args: [
+      "-e",
+      [
+        "const lines = [",
+        "  JSON.stringify({ type: 'completed', finalText: 'Please take the next turn.', mentionedDisplayNames: ['Planner'] })",
+        "];",
+        "process.stdout.write(lines.join('\\n'));",
+      ].join(" "),
+    ],
+    outputFormat: "jsonl",
+  });
+
+  const events = [];
+  for await (const event of adapter.run({
+    roomId: "room_1",
+    agentMemberId: "agent_1",
+    agentDisplayName: "Local Agent",
+    requesterMemberId: "user_1",
+    requesterDisplayName: "Requester",
+    triggerMessageId: "msg_1",
+    prompt: "handoff",
+    contextMessages: [],
+  })) {
+    events.push(event);
+  }
+
+  assert.deepEqual(events, [
+    {
+      type: "completed",
+      finalText: "Please take the next turn.",
+      mentionedDisplayNames: ["Planner"],
+    },
+  ]);
+});

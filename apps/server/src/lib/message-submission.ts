@@ -16,6 +16,7 @@ export function submitMessageInternal(params: {
   sender: Member;
   content: string;
   attachments: MessageAttachment[];
+  mentionedDisplayNames?: string[];
   replyToMessageId?: string | null;
   messageId?: string;
   createdAt?: string;
@@ -52,6 +53,7 @@ export function submitMessageInternal(params: {
       roomId: params.roomId,
       sender: params.sender,
       message,
+      explicitMentionNames: params.mentionedDisplayNames ?? [],
     }),
   };
 }

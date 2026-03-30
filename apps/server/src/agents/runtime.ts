@@ -508,6 +508,7 @@ async function runAgentSession(sessionId: string): Promise<void> {
   const runningSession = markSessionRunning(typedSession);
   let finalText = "";
   let completedSummaryText: string | null = null;
+  let completedMentionedDisplayNames: string[] = [];
   let failedError: string | null = null;
 
   try {
@@ -531,6 +532,9 @@ async function runAgentSession(sessionId: string): Promise<void> {
       }
       if (event.type === "completed" && event.summaryText) {
         completedSummaryText = event.summaryText;
+      }
+      if (event.type === "completed" && Array.isArray(event.mentionedDisplayNames)) {
+        completedMentionedDisplayNames = event.mentionedDisplayNames;
       }
     }
   } catch (error) {
@@ -575,6 +579,7 @@ async function runAgentSession(sessionId: string): Promise<void> {
     messageId: outputMessageId,
     content: committedText,
     summaryText: parsedSummary.summaryText,
+    mentionedDisplayNames: completedMentionedDisplayNames,
     replyToMessageId: typedTriggerMessage.id,
   });
   for (const queuedSessionId of committed.queuedSessionIds) {

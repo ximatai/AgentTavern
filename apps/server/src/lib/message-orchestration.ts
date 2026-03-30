@@ -8,6 +8,7 @@ export function submitMessage(params: {
   sender: Member;
   content: string;
   attachments: MessageAttachment[];
+  mentionedDisplayNames?: string[];
   replyToMessageId?: string | null;
   messageId?: string;
   createdAt?: string;

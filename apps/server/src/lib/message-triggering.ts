@@ -407,9 +407,13 @@ export function processMessageTriggers(params: {
   roomId: string;
   sender: Member;
   message: Message;
+  explicitMentionNames?: string[];
 }): string[] {
   const queuedSessionIds: string[] = [];
-  const mentionNames = extractMentionNames(params.message.content);
+  const mentionNames = [
+    ...extractMentionNames(params.message.content),
+    ...(params.explicitMentionNames ?? []).map((value) => value.trim()).filter(Boolean),
+  ];
   const explicitMentionNames = new Set(mentionNames);
 
   if (explicitMentionNames.size === 0 && params.message.replyToMessageId) {

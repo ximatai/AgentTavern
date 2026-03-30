@@ -146,6 +146,7 @@ export function commitSessionMessage(params: {
   messageId: string;
   content: string;
   summaryText?: string | null;
+  mentionedDisplayNames?: string[];
   attachments?: MessageAttachment[];
   replyToMessageId: string;
 }): { session: AgentSession; queuedSessionIds: string[] } {
@@ -178,6 +179,7 @@ export function commitSessionMessage(params: {
     },
     content: parsedContent.visibleContent,
     attachments: params.attachments ?? [],
+    mentionedDisplayNames: params.mentionedDisplayNames,
     replyToMessageId: params.replyToMessageId,
     messageId: params.messageId,
     draftAttachmentIds: params.attachments?.map((attachment) => attachment.id) ?? [],

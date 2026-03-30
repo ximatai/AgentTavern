@@ -319,6 +319,11 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
     typeof body?.summaryText === "string" && body.summaryText.trim()
       ? body.summaryText.trim()
       : null;
+  const mentionedDisplayNames = Array.isArray(body?.mentionedDisplayNames)
+    ? body.mentionedDisplayNames.flatMap((value: unknown) =>
+        typeof value === "string" && value.trim() ? [value.trim()] : [],
+      )
+    : [];
   const attachmentIds = Array.isArray(body?.attachmentIds)
     ? body.attachmentIds.flatMap((value: unknown) =>
         typeof value === "string" && value.trim() ? [value.trim()] : [],
@@ -456,6 +461,7 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
       messageId: task.outputMessageId,
       content: visibleFinalText,
       summaryText: parsedSummary.summaryText,
+      mentionedDisplayNames,
       attachments,
       replyToMessageId: session.triggerMessageId,
     });

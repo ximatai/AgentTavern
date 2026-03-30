@@ -92,6 +92,9 @@ export async function processTask(params: {
         if (event.summaryText) {
           completeBody.summaryText = event.summaryText;
         }
+        if (Array.isArray(event.mentionedDisplayNames) && event.mentionedDisplayNames.length > 0) {
+          completeBody.mentionedDisplayNames = event.mentionedDisplayNames;
+        }
 
         if (event.sessionId) {
           completeBody.backendThreadId = event.sessionId;
