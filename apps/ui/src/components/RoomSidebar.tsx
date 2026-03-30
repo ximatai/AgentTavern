@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Button, Select } from "antd";
 import { CloseOutlined, DownOutlined, RobotOutlined, UpOutlined } from "@ant-design/icons";
 import type {
+  AgentSessionKind,
   AgentSessionStatus,
   ApprovalGrantDuration,
   PublicMember,
@@ -48,6 +49,15 @@ function sessionStatusKey(status: AgentSessionStatus): string {
     cancelled: "roomSidebar.sessionCancelled",
   };
   return map[status];
+}
+
+function sessionKindKey(kind: AgentSessionKind): string {
+  const map: Record<AgentSessionKind, string> = {
+    message_reply: "roomSidebar.sessionKindReply",
+    room_observe: "roomSidebar.sessionKindObserve",
+    summary_refresh: "roomSidebar.sessionKindSummarize",
+  };
+  return map[kind];
 }
 
 function getRuntimeLabel(
@@ -400,9 +410,14 @@ export function RoomSidebar() {
               {t("roomSidebar.processingRequest")}
             </strong>
             <p className="rs-collab-desc">
-              {t("roomSidebar.requester")}:{" "}
-              {requester?.displayName ?? session.requesterMemberId ?? "?"}
+              {t("roomSidebar.sessionType")}: {t(sessionKindKey(session.kind))}
             </p>
+            {session.kind === "message_reply" ? (
+              <p className="rs-collab-desc">
+                {t("roomSidebar.requester")}:{" "}
+                {requester?.displayName ?? session.requesterMemberId ?? "?"}
+              </p>
+            ) : null}
             <p className="rs-collab-stream">
               {stream?.content
                 ? stream.content.slice(-72)

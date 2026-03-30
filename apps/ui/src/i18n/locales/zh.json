@@ -434,13 +434,17 @@
     "runtimeReady": "已连接",
     "runtimePendingBridge": "待绑定",
     "runtimeWaitingBridge": "等待 Bridge",
+    "sessionType": "任务类型",
     "sessionPending": "排队中",
     "sessionWaitingApproval": "等待审批",
     "sessionRunning": "运行中",
     "sessionCompleted": "已完成",
     "sessionRejected": "已拒绝",
     "sessionFailed": "失败",
-    "sessionCancelled": "已取消"
+    "sessionCancelled": "已取消",
+    "sessionKindReply": "回复消息",
+    "sessionKindObserve": "观察房间",
+    "sessionKindSummarize": "刷新摘要"
   },
   "errorBoundary": {
     "title": "出错了",

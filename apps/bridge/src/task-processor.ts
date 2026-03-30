@@ -91,19 +91,11 @@ export async function processTask(params: {
         const completeBody: Record<string, unknown> = {
           bridgeToken,
           bridgeInstanceId,
-          finalText: completedText,
           action,
         };
         if (attachmentIds.length > 0) {
           completeBody.attachmentIds = attachmentIds;
         }
-        if (action.summaryText) {
-          completeBody.summaryText = action.summaryText;
-        }
-        if (Array.isArray(action.mentionedDisplayNames) && action.mentionedDisplayNames.length > 0) {
-          completeBody.mentionedDisplayNames = action.mentionedDisplayNames;
-        }
-
         if (event.sessionId) {
           completeBody.backendThreadId = event.sessionId;
         }
@@ -123,7 +115,9 @@ export async function processTask(params: {
     await postJson(`/api/bridges/${bridgeId}/tasks/${task.id}/complete`, {
       bridgeToken,
       bridgeInstanceId,
-      finalText: finalText || "(no output)",
+      action: {
+        content: finalText || "(no output)",
+      },
     });
   } catch (error) {
     await postJson(`/api/bridges/${bridgeId}/tasks/${task.id}/fail`, {

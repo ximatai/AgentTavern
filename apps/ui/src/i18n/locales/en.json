@@ -434,13 +434,17 @@
     "runtimeReady": "Connected",
     "runtimePendingBridge": "Pending bind",
     "runtimeWaitingBridge": "Waiting Bridge",
+    "sessionType": "Task type",
     "sessionPending": "Queued",
     "sessionWaitingApproval": "Awaiting approval",
     "sessionRunning": "Running",
     "sessionCompleted": "Completed",
     "sessionRejected": "Rejected",
     "sessionFailed": "Failed",
-    "sessionCancelled": "Cancelled"
+    "sessionCancelled": "Cancelled",
+    "sessionKindReply": "Reply message",
+    "sessionKindObserve": "Observe room",
+    "sessionKindSummarize": "Refresh summary"
   },
   "errorBoundary": {
     "title": "Something went wrong",
