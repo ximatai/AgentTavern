@@ -564,8 +564,6 @@ async function runAgentSession(sessionId: string): Promise<void> {
 
   const runningSession = markSessionRunning(typedSession);
   let finalText = "";
-  let completedSummaryText: string | null = null;
-  let completedMentionedDisplayNames: string[] = [];
   let completedAction: AgentMessageAction | null = null;
   let failedError: string | null = null;
 
@@ -585,26 +583,11 @@ async function runAgentSession(sessionId: string): Promise<void> {
         break;
       }
 
-      if (event.type === "completed" && event.finalText) {
-        finalText += event.finalText;
-      }
-      if (event.type === "completed" && event.summaryText) {
-        completedSummaryText = event.summaryText;
-      }
-      if (event.type === "completed" && Array.isArray(event.mentionedDisplayNames)) {
-        completedMentionedDisplayNames = event.mentionedDisplayNames;
-      }
       if (event.type === "completed") {
         completedAction = completedEventToAction({
           event,
           streamedText: finalText,
         });
-        if (completedAction.summaryText === undefined && completedSummaryText) {
-          completedAction.summaryText = completedSummaryText;
-        }
-        if (completedAction.mentionedDisplayNames === undefined && completedMentionedDisplayNames.length > 0) {
-          completedAction.mentionedDisplayNames = completedMentionedDisplayNames;
-        }
       }
     }
   } catch (error) {
@@ -620,7 +603,7 @@ async function runAgentSession(sessionId: string): Promise<void> {
       typedRoom.secretaryMode === "coordinate_and_summarize"
     ? normalizeRoomSummaryOutput({
         visibleContent: completedAction?.content ?? finalText,
-        summaryText: completedAction?.summaryText ?? completedSummaryText,
+        summaryText: completedAction?.summaryText ?? null,
       })
     : { visibleContent: (completedAction?.content ?? finalText).trim(), summaryText: null };
   const committedText = parsedSummary.visibleContent.trim();
@@ -644,8 +627,7 @@ async function runAgentSession(sessionId: string): Promise<void> {
     action: {
       content: committedText,
       summaryText: parsedSummary.summaryText ?? undefined,
-      mentionedDisplayNames:
-        completedAction?.mentionedDisplayNames ?? completedMentionedDisplayNames,
+      mentionedDisplayNames: completedAction?.mentionedDisplayNames,
       attachments: generatedAttachments,
     },
     ...(committedText || generatedAttachments.length > 0
