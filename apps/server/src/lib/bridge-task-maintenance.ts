@@ -14,6 +14,7 @@ function toAgentSession(row: {
   id: string;
   roomId: string;
   agentMemberId: string;
+  kind: string;
   triggerMessageId: string;
   requesterMemberId: string;
   approvalId: string | null;

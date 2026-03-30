@@ -255,6 +255,7 @@ export const agentSessions = sqliteTable("agent_sessions", {
   agentMemberId: text("agent_member_id")
     .notNull()
     .references(() => members.id),
+  kind: text("kind").notNull().default("message_reply"),
   triggerMessageId: text("trigger_message_id")
     .notNull()
     .references(() => messages.id),
@@ -330,6 +331,7 @@ export const bridgeTasks = sqliteTable("bridge_tasks", {
   requesterMemberId: text("requester_member_id")
     .notNull()
     .references(() => members.id),
+  kind: text("kind").notNull().default("message_reply"),
   backendType: text("backend_type").notNull(),
   backendThreadId: text("backend_thread_id").notNull(),
   cwd: text("cwd"),

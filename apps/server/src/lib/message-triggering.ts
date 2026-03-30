@@ -2,6 +2,7 @@ import { and, desc, eq, or } from "drizzle-orm";
 
 import type {
   AgentSession,
+  AgentSessionKind,
   Approval,
   Member,
   Message,
@@ -39,6 +40,7 @@ const ROOM_SECRETARY_COOLDOWN_MS = Number(
 function createPendingSession(params: {
   roomId: string;
   agentMemberId: string;
+  kind: AgentSessionKind;
   triggerMessageId: string;
   requesterMemberId: string;
   approvalId: string | null;
@@ -48,6 +50,7 @@ function createPendingSession(params: {
     id: createId("as"),
     roomId: params.roomId,
     agentMemberId: params.agentMemberId,
+    kind: params.kind,
     triggerMessageId: params.triggerMessageId,
     requesterMemberId: params.requesterMemberId,
     approvalId: params.approvalId,
@@ -61,6 +64,7 @@ function createPendingSession(params: {
 function createResolvedSession(params: {
   roomId: string;
   agentMemberId: string;
+  kind: AgentSessionKind;
   triggerMessageId: string;
   requesterMemberId: string;
   approvalId: string;
@@ -70,6 +74,7 @@ function createResolvedSession(params: {
     id: createId("as"),
     roomId: params.roomId,
     agentMemberId: params.agentMemberId,
+    kind: params.kind,
     triggerMessageId: params.triggerMessageId,
     requesterMemberId: params.requesterMemberId,
     approvalId: params.approvalId,
@@ -136,6 +141,7 @@ function handleIndependentAgentMention(params: {
     createPendingSession({
       roomId: params.roomId,
       agentMemberId: params.target.id,
+      kind: "message_reply",
       triggerMessageId: params.messageId,
       requesterMemberId: params.senderMemberId,
       approvalId: null,
@@ -176,6 +182,7 @@ function handleAssistantMention(params: {
       createPendingSession({
         roomId: params.roomId,
         agentMemberId: params.target.id,
+        kind: "message_reply",
         triggerMessageId: params.message.id,
         requesterMemberId: params.senderMemberId,
         approvalId: null,
@@ -201,6 +208,7 @@ function handleAssistantMention(params: {
       createPendingSession({
         roomId: params.roomId,
         agentMemberId: params.target.id,
+        kind: "message_reply",
         triggerMessageId: params.message.id,
         requesterMemberId: params.senderMemberId,
         approvalId: null,
@@ -237,6 +245,7 @@ function handleAssistantMention(params: {
       createResolvedSession({
         roomId: params.roomId,
         agentMemberId: params.target.id,
+        kind: "message_reply",
         triggerMessageId: params.message.id,
         requesterMemberId: params.senderMemberId,
         approvalId: offlineApproval.id,
@@ -283,10 +292,11 @@ function handleAssistantMention(params: {
   scheduleApprovalTimeout(approval);
   const queuedSessionIds = insertPendingSession(
     createPendingSession({
-      roomId: params.roomId,
-      agentMemberId: params.target.id,
-      triggerMessageId: params.message.id,
-      requesterMemberId: params.senderMemberId,
+        roomId: params.roomId,
+        agentMemberId: params.target.id,
+        kind: "message_reply",
+        triggerMessageId: params.message.id,
+        requesterMemberId: params.senderMemberId,
       approvalId: approval.id,
       approvalRequired: true,
     }),
@@ -486,6 +496,7 @@ export function processMessageTriggers(params: {
         createPendingSession({
           roomId: params.roomId,
           agentMemberId: secretary.id,
+          kind: "room_observe",
           triggerMessageId: params.message.id,
           requesterMemberId: params.sender.id,
           approvalId: null,

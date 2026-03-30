@@ -9,6 +9,7 @@ import {
 import type {
   AgentBinding,
   AgentSession,
+  AgentSessionKind,
   BridgeTask,
   Member,
   Message,
@@ -157,6 +158,7 @@ function toAgentSession(row: {
   id: string;
   roomId: string;
   agentMemberId: string;
+  kind: string;
   triggerMessageId: string;
   requesterMemberId: string;
   approvalId: string | null;
@@ -187,6 +189,7 @@ function buildPrompt(input: {
   agent: Member;
   requester: Member;
   triggerMessage: Message;
+  sessionKind: AgentSessionKind;
   contextMessages: AgentRunInput["contextMessages"];
 }): string {
   const roomMembers = db
@@ -219,9 +222,11 @@ function buildPrompt(input: {
       ? `You are ${input.agent.displayName}, the secretary agent in the room "${input.room.name}".`
       : `You are ${input.agent.displayName}, a member in the room "${input.room.name}".`,
     `Requester: ${input.requester.displayName}.`,
-    isSecretary
+    input.sessionKind === "room_observe"
       ? "Observe the room, decide whether to respond, and only speak when coordination is genuinely helpful."
-      : "Reply as a chat participant in plain text.",
+      : input.sessionKind === "summary_refresh"
+        ? "Refresh the room summary artifact and only add a visible chat reply if it is genuinely useful."
+        : "Reply as a chat participant in plain text.",
     isSecretary
       ? [
           "Secretary policy:",
@@ -279,6 +284,7 @@ function enqueueBridgeTask(params: {
     roomId: params.session.roomId,
     agentMemberId: params.session.agentMemberId,
     requesterMemberId: params.session.requesterMemberId,
+    kind: params.session.kind,
     backendType: params.binding.backendType,
     backendThreadId: params.binding.backendThreadId,
     cwd: params.binding.cwd,
@@ -442,6 +448,7 @@ async function runAgentSession(sessionId: string): Promise<void> {
       agent: typedAgent,
       requester: typedRequester,
       triggerMessage: typedTriggerMessage,
+      sessionKind: typedSession.kind,
       contextMessages,
     }),
     contextMessages,

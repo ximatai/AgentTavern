@@ -14,6 +14,7 @@ function createTask(overrides?: Partial<BridgeTask>): BridgeTask {
     roomId: "room_1",
     agentMemberId: "mem_agent",
     requesterMemberId: "mem_requester",
+    kind: "message_reply",
     backendType: "codex_cli",
     backendThreadId: "thread_1",
     cwd: "/tmp/task-cwd",

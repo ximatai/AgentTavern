@@ -363,6 +363,7 @@ test("room secretary observes human room messages without an explicit mention", 
     (value) => value?.status === "completed",
   );
   assert.equal(session?.agentMemberId, "mem_secretary_observer");
+  assert.equal(session?.kind, "room_observe");
 
   const roomMessages = db
     .select()
@@ -3354,6 +3355,7 @@ test("mentioning an independent agent triggers execution and commits a reply", a
     .all();
 
   assert.equal(session?.status, "completed");
+  assert.equal(session?.kind, "message_reply");
   assert.equal(mention?.status, "triggered");
   assert.ok(
     roomMessages.some(

@@ -146,7 +146,7 @@ export async function pollAndProcessTask(params: {
   }
 
   logger?.log(
-    `[bridge] pulled task=${result.task.id} backend=${result.task.backendType} session=${result.task.sessionId}`,
+    `[bridge] pulled task=${result.task.id} kind=${result.task.kind} backend=${result.task.backendType} session=${result.task.sessionId}`,
   );
 
   await processTask({

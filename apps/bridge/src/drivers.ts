@@ -1,4 +1,4 @@
-import type { AgentBackendType } from "@agent-tavern/shared";
+import type { AgentBackendType, BridgeTaskKind } from "@agent-tavern/shared";
 import {
   createClaudeCodeAdapter,
   createCodexCliAdapter,
@@ -13,6 +13,7 @@ export type BridgeTask = {
   roomId: string;
   agentMemberId: string;
   requesterMemberId: string;
+  kind: BridgeTaskKind;
   backendType: AgentBackendType;
   backendThreadId: string;
   cwd: string | null;

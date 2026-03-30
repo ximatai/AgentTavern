@@ -66,6 +66,7 @@ export type AgentSessionStatus =
   | "rejected"
   | "failed"
   | "cancelled";
+export type AgentSessionKind = "message_reply" | "room_observe" | "summary_refresh";
 
 export type ApprovalStatus = "pending" | "approved" | "rejected" | "expired";
 
@@ -98,6 +99,7 @@ export type BridgeTaskStatus =
   | "accepted"
   | "completed"
   | "failed";
+export type BridgeTaskKind = "message_reply" | "room_observe" | "summary_refresh";
 
 export type Principal = {
   id: string;
@@ -224,6 +226,7 @@ export type AgentSession = {
   id: string;
   roomId: string;
   agentMemberId: string;
+  kind: AgentSessionKind;
   triggerMessageId: string;
   requesterMemberId: string;
   approvalId: string | null;
@@ -253,6 +256,7 @@ export type BridgeTask = {
   roomId: string;
   agentMemberId: string;
   requesterMemberId: string;
+  kind: BridgeTaskKind;
   backendType: AgentBackendType;
   backendThreadId: string;
   cwd: string | null;
