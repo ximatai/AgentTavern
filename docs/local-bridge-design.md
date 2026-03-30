@@ -171,7 +171,8 @@
 5. Bridge 在本机调用对应 driver
 6. driver 在本机恢复或启动 Agent
 7. Bridge 将 `delta / completed / failed` 回传服务端
-8. 服务端广播给房间并固化最终消息
+8. `completed` 结果优先通过统一 message `action` 协议回传
+9. 服务端广播给房间并固化最终消息
 
 当前已落地的 HTTP 动作：
 
@@ -181,6 +182,7 @@
 - `task pull`
 - `task accept`
 - `task delta`
+- `task attachments`
 - `task complete`
 - `task fail`
 
@@ -211,6 +213,8 @@
 - 当前部分 CLI driver 仍带有过渡实现性质，长期目标仍是更稳定的本地 session / thread 恢复
 - 助理 skill 在接受邀请成功后，会尽量按本机 bridge 身份自动 attach
 - `join-agent-tavern` skill 的仓库内源文件基线已建立，仓库内路径为 `tools/skills/join-agent-tavern`
+- Bridge 当前主完成协议已收敛到统一 message `action`
+- agent 生成附件时，Bridge 需要先走 `task attachments` 上传，再在 `task complete` 中使用 `attachmentIds` 引用
 
 ## 9. Bridge 任务恢复设计
 

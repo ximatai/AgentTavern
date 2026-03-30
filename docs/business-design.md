@@ -129,6 +129,8 @@ AgentTavern 是一个面向局域网的多人聊天室系统。
 - `name`
 - `invite_token`
 - `status`
+- `secretary_member_id`
+- `secretary_mode`
 - `created_at`
 
 规则：
@@ -137,6 +139,9 @@ AgentTavern 是一个面向局域网的多人聊天室系统。
 - 两人私聊不单独建模，本质上仍是聊天室
 - 两人房后续可继续拉入更多成员，升级成多人房
 - 聊天室允许通过邀请链接加入，也允许从大厅直接拉入在线的一等公民
+- 房间可以可选配置一个 `secretary`
+- `secretary` 必须是当前房间内的 independent agent
+- `secretary_mode` 当前支持 `off | coordinate | coordinate_and_summarize`
 
 ### Member
 
@@ -175,6 +180,25 @@ AgentTavern 是一个面向局域网的多人聊天室系统。
 - `source_private_assistant_id` 用于标识该房间助理是否来自 owner 的私有助理资产
 - 已经绑定到某个 owner 的 `backendThreadId` 不允许被其他 owner 复用
 - 同一私有助理资产可有多个房间 projection，但运行时同一时刻只允许一个进行中的执行会话
+- independent agent 默认被动，仅在被 `@`、被 reply，或被 secretary 协调链路触发时执行
+- assistant 永远被动，不参与房间自治观察
+
+### Room Secretary
+
+关键定位：
+
+- `room secretary` 是房间级特殊 independent agent
+- 它是当前唯一允许“观察房间普通消息并自主决定是否协调”的角色
+
+规则：
+
+- secretary 更接近协调者，而不是默认回答者
+- secretary 可以：
+  - 保持沉默
+  - 发一条短协调消息
+  - `@` 其他 member 继续推进
+  - 在 summarize 模式下维护 room summary artifact
+- secretary 不改变 assistant 的审批边界
 
 ### Message
 
@@ -447,9 +471,11 @@ MVP 规则：
 - 消息中出现 `@成员显示名` 时触发解析
 - `@` 匹配直接使用聊天室内最终唯一的 `display_name`
 - 当前 `display_name` 以无空格形式约束，保证 mention 可直接匹配
+- reply 到某个 Agent 消息时，也可作为隐式触发入口
 - 命中独立 Agent 时直接创建 `AgentSession`
 - 命中助理 Agent 时进入审批流程
 - owner 自己命中自己的助理 Agent 时直接创建 `AgentSession`
+- 配置了 secretary 的房间里，普通 human 消息还会进入 secretary observe 链路
 
 ### 审批规则
 
@@ -459,6 +485,7 @@ MVP 规则：
 - owner 不在线时，本次调用失败
 - owner 自己 `@` 自己的助理时跳过审批
 - 审批结果写入聊天室系统消息
+- secretary 的自主协调不走审批
 
 ## 6. 执行规则
 

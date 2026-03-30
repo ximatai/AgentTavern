@@ -608,7 +608,12 @@ Bridge 提交最终输出。
 {
   "bridgeToken": "xxxx",
   "bridgeInstanceId": "binst_xxx",
-  "finalText": "final output"
+  "action": {
+    "content": "final output",
+    "summaryText": "optional room summary",
+    "mentionedDisplayNames": ["Planner"]
+  },
+  "attachmentIds": ["att_xxx"]
 }
 ```
 
@@ -618,6 +623,30 @@ Bridge 提交最终输出。
 - complete 需要校验实例归属
 - 成功后对应消息固化为 `agent_text`
 - 成功后对应 `AgentSession` 进入 `completed`
+- `action` 是当前主协议，支持 `content / summaryText / mentionedDisplayNames`
+- 生成附件需要先通过 `/attachments` 上传，再在 `attachmentIds` 中引用
+- `/complete` 不接受直接内联 `action.attachments` 作为最终落库方式
+- 兼容字段 `finalText / summaryText / mentionedDisplayNames` 仍保留，但已不是主路径
+
+#### `PATCH /api/rooms/:roomId/secretary`
+
+配置房间秘书。
+
+```json
+{
+  "actorMemberId": "mem_xxx",
+  "wsToken": "ws_xxx",
+  "secretaryMemberId": "mem_agent_secretary",
+  "secretaryMode": "coordinate"
+}
+```
+
+规则：
+
+- 只允许当前房间内的 independent agent 担任 secretary
+- `secretaryMode` 支持 `off | coordinate | coordinate_and_summarize`
+- `coordinate` 允许 secretary 观察普通人类消息并做协调
+- `coordinate_and_summarize` 额外允许 secretary 维护房间摘要 artifact
 
 #### `POST /api/bridges/:bridgeId/tasks/:taskId/fail`
 
