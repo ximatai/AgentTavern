@@ -628,9 +628,10 @@ test("room secretary in summarize mode stores hidden summary blocks separately f
         command: "node",
         args: [
           "-e",
-          "process.stdin.resume();process.stdin.on('end',()=>process.stdout.write('I will ask @Planner next.\\n\\n[[ROOM_SUMMARY]]\\nNeed planner draft and owner confirmation.\\n[[/ROOM_SUMMARY]]'));",
+          "process.stdout.write(JSON.stringify({ type: 'completed', finalText: 'I will ask @Planner next.', summaryText: 'Need planner draft and owner confirmation.' }) + '\\n');",
         ],
         inputFormat: "text",
+        outputFormat: "jsonl",
       }),
       presenceStatus: "online",
       membershipStatus: "active",
@@ -738,9 +739,10 @@ test("room summary artifact is injected into later agent prompts", async () => {
         command: "node",
         args: [
           "-e",
-          "process.stdin.resume();process.stdin.on('end',()=>process.stdout.write('[[ROOM_SUMMARY]]\\nProject is blocked on the planner draft.\\n[[/ROOM_SUMMARY]]'));",
+          "process.stdout.write(JSON.stringify({ type: 'completed', summaryText: 'Project is blocked on the planner draft.' }) + '\\n');",
         ],
         inputFormat: "text",
+        outputFormat: "jsonl",
       }),
       presenceStatus: "online",
       membershipStatus: "active",
@@ -5220,7 +5222,7 @@ test("bridge-backed summarizing secretary can update summary without posting a v
       body: JSON.stringify({
         bridgeToken: "bridge_secretary_summary_token",
         bridgeInstanceId: "binst_bridge_secretary_summary",
-        finalText: "[[ROOM_SUMMARY]]\nWaiting for final milestone draft from Planner.\n[[/ROOM_SUMMARY]]",
+        summaryText: "Waiting for final milestone draft from Planner.",
       }),
     },
   );

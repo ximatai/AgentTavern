@@ -89,6 +89,9 @@ export async function processTask(params: {
         if (attachmentIds.length > 0) {
           completeBody.attachmentIds = attachmentIds;
         }
+        if (event.summaryText) {
+          completeBody.summaryText = event.summaryText;
+        }
 
         if (event.sessionId) {
           completeBody.backendThreadId = event.sessionId;

@@ -21,7 +21,7 @@ import {
   createDraftAttachmentFromBuffer,
   resolveDraftAttachments,
 } from "../lib/message-attachments";
-import { extractRoomSummaryBlock } from "../lib/room-summary";
+import { normalizeRoomSummaryOutput } from "../lib/room-summary";
 import { broadcastToRoom } from "../realtime";
 
 const bridgeTaskRoutes = new Hono();
@@ -315,6 +315,10 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
   const finalText = typeof body?.finalText === "string" ? body.finalText.trim() : "";
   const backendThreadId =
     typeof body?.backendThreadId === "string" ? body.backendThreadId.trim() : "";
+  const summaryText =
+    typeof body?.summaryText === "string" && body.summaryText.trim()
+      ? body.summaryText.trim()
+      : null;
   const attachmentIds = Array.isArray(body?.attachmentIds)
     ? body.attachmentIds.flatMap((value: unknown) =>
         typeof value === "string" && value.trim() ? [value.trim()] : [],
@@ -375,7 +379,10 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
   const parsedSummary =
     room.secretaryMemberId === session.agentMemberId &&
       room.secretaryMode === "coordinate_and_summarize"
-      ? extractRoomSummaryBlock(finalText)
+      ? normalizeRoomSummaryOutput({
+          visibleContent: finalText,
+          summaryText,
+        })
       : { visibleContent: finalText, summaryText: null };
   const visibleFinalText = parsedSummary.visibleContent.trim();
 
@@ -447,7 +454,8 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
     const committed = commitSessionMessage({
       session: toAgentSession(session),
       messageId: task.outputMessageId,
-      content: visibleFinalText + (parsedSummary.summaryText ? `\n\n[[ROOM_SUMMARY]]\n${parsedSummary.summaryText}\n[[/ROOM_SUMMARY]]` : ""),
+      content: visibleFinalText,
+      summaryText: parsedSummary.summaryText,
       attachments,
       replyToMessageId: session.triggerMessageId,
     });

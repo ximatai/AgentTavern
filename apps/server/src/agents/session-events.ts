@@ -11,7 +11,7 @@ import type {
 import { db } from "../db/client";
 import { agentSessions, rooms } from "../db/schema";
 import { insertMessage } from "../lib/message-records";
-import { extractRoomSummaryBlock, upsertRoomSummary } from "../lib/room-summary";
+import { normalizeRoomSummaryOutput, upsertRoomSummary } from "../lib/room-summary";
 import { submitMessageInternal } from "../lib/message-submission";
 import {
   createAgentFailedSystemData,
@@ -145,6 +145,7 @@ export function commitSessionMessage(params: {
   session: AgentSession;
   messageId: string;
   content: string;
+  summaryText?: string | null;
   attachments?: MessageAttachment[];
   replyToMessageId: string;
 }): { session: AgentSession; queuedSessionIds: string[] } {
@@ -153,7 +154,10 @@ export function commitSessionMessage(params: {
     room?.secretaryMemberId === params.session.agentMemberId &&
     room.secretaryMode === "coordinate_and_summarize";
   const parsedContent = summaryEligible
-    ? extractRoomSummaryBlock(params.content)
+    ? normalizeRoomSummaryOutput({
+        visibleContent: params.content,
+        summaryText: params.summaryText,
+      })
     : { visibleContent: params.content.trim(), summaryText: null };
 
   const { message: committedMessage, queuedSessionIds } = submitMessageInternal({

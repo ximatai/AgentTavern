@@ -28,6 +28,24 @@ export function extractRoomSummaryBlock(content: string): {
   };
 }
 
+export function normalizeRoomSummaryOutput(params: {
+  visibleContent: string;
+  summaryText?: string | null;
+}): {
+  visibleContent: string;
+  summaryText: string | null;
+} {
+  const directSummary = params.summaryText?.trim() || null;
+  if (directSummary !== null) {
+    return {
+      visibleContent: params.visibleContent.trim(),
+      summaryText: directSummary,
+    };
+  }
+
+  return extractRoomSummaryBlock(params.visibleContent);
+}
+
 export function getRoomSummary(roomId: string): RoomSummary | null {
   const row = db
     .select()

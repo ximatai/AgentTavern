@@ -24,6 +24,7 @@ export type AgentStreamEvent =
   | {
       type: "completed";
       finalText?: string;
+      summaryText?: string;
       sessionId?: string;
       attachments?: AgentGeneratedAttachment[];
     }

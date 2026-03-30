@@ -48,3 +48,41 @@ test("createLocalProcessAdapter supports jsonl output with generated attachments
     },
   ]);
 });
+
+test("createLocalProcessAdapter supports jsonl structured room summaries", async () => {
+  const adapter = createLocalProcessAdapter({
+    command: "node",
+    args: [
+      "-e",
+      [
+        "const lines = [",
+        "  JSON.stringify({ type: 'completed', finalText: 'I will ask @Planner next.', summaryText: 'Need planner draft and owner confirmation.' })",
+        "];",
+        "process.stdout.write(lines.join('\\n'));",
+      ].join(" "),
+    ],
+    outputFormat: "jsonl",
+  });
+
+  const events = [];
+  for await (const event of adapter.run({
+    roomId: "room_1",
+    agentMemberId: "agent_1",
+    agentDisplayName: "Local Agent",
+    requesterMemberId: "user_1",
+    requesterDisplayName: "Requester",
+    triggerMessageId: "msg_1",
+    prompt: "summarize",
+    contextMessages: [],
+  })) {
+    events.push(event);
+  }
+
+  assert.deepEqual(events, [
+    {
+      type: "completed",
+      finalText: "I will ask @Planner next.",
+      summaryText: "Need planner draft and owner confirmation.",
+    },
+  ]);
+});

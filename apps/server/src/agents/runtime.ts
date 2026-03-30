@@ -30,7 +30,7 @@ import { resolveBindingForMember } from "../lib/agent-binding-resolution";
 import { expireStalePendingBridgeTasks } from "../lib/bridge-task-maintenance";
 import { createId } from "../lib/id";
 import { insertMessage } from "../lib/message-records";
-import { extractRoomSummaryBlock, getRoomSummary } from "../lib/room-summary";
+import { getRoomSummary, normalizeRoomSummaryOutput } from "../lib/room-summary";
 import {
   createAgentBusySystemData,
   createBridgeAttachRequiredSystemData,
@@ -507,6 +507,7 @@ async function runAgentSession(sessionId: string): Promise<void> {
 
   const runningSession = markSessionRunning(typedSession);
   let finalText = "";
+  let completedSummaryText: string | null = null;
   let failedError: string | null = null;
 
   try {
@@ -528,6 +529,9 @@ async function runAgentSession(sessionId: string): Promise<void> {
       if (event.type === "completed" && event.finalText) {
         finalText += event.finalText;
       }
+      if (event.type === "completed" && event.summaryText) {
+        completedSummaryText = event.summaryText;
+      }
     }
   } catch (error) {
     failedError = error instanceof Error ? error.message : "Agent execution failed.";
@@ -540,7 +544,10 @@ async function runAgentSession(sessionId: string): Promise<void> {
 
   const parsedSummary = isSecretarySession(typedRoom, runningSession) &&
       typedRoom.secretaryMode === "coordinate_and_summarize"
-    ? extractRoomSummaryBlock(finalText)
+    ? normalizeRoomSummaryOutput({
+        visibleContent: finalText,
+        summaryText: completedSummaryText,
+      })
     : { visibleContent: finalText.trim(), summaryText: null };
   const committedText = parsedSummary.visibleContent.trim();
   const canCompleteSilently = allowsSilentCompletion(runningSession);
@@ -566,7 +573,8 @@ async function runAgentSession(sessionId: string): Promise<void> {
   const committed = commitSessionMessage({
     session: runningSession,
     messageId: outputMessageId,
-    content: finalText,
+    content: committedText,
+    summaryText: parsedSummary.summaryText,
     replyToMessageId: typedTriggerMessage.id,
   });
   for (const queuedSessionId of committed.queuedSessionIds) {

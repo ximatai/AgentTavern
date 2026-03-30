@@ -201,6 +201,39 @@ test("processTask uploads generated attachments before completing", async () => 
   });
 });
 
+test("processTask forwards structured summary text on completion", async () => {
+  const task = createTask({ backendType: "opencode", kind: "room_observe" });
+  const { calls, postJson } = createPostJsonRecorder();
+  const drivers = new Map<AgentBackendType, BridgeDriver>([
+    [
+      "opencode",
+      createDriver("opencode", async function* () {
+        yield {
+          type: "completed",
+          finalText: "I will ask @Planner next.",
+          summaryText: "Need planner draft and owner confirmation.",
+        };
+      }),
+    ],
+  ]);
+
+  await processTask({
+    bridgeId: "brg_1",
+    bridgeToken: "tok_1",
+    bridgeInstanceId: "binst_1",
+    task,
+    postJson,
+    drivers,
+  });
+
+  assert.deepEqual(calls.at(-1)?.body, {
+    bridgeToken: "tok_1",
+    bridgeInstanceId: "binst_1",
+    finalText: "I will ask @Planner next.",
+    summaryText: "Need planner draft and owner confirmation.",
+  });
+});
+
 test("processTask fails when no driver is configured", async () => {
   const task = createTask();
   const { calls, postJson } = createPostJsonRecorder();
