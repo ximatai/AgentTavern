@@ -26,12 +26,16 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
   const [loading, setLoading] = useState(false);
 
   const isLoggedIn = !!principal;
-  const selectedKind = Form.useWatch("kind", form) ?? principal?.kind ?? "human";
+  const selectedKind = principal?.kind ?? "human";
+  const loginKeyLabel = selectedKind === "agent" ? t("login.agentKeyLabel") : t("login.emailLabel");
+  const loginKeyPlaceholder =
+    selectedKind === "agent" ? t("login.agentKeyPlaceholder") : t("login.emailPlaceholder");
+  const loginKeyRequired =
+    selectedKind === "agent" ? t("login.agentKeyRequired") : t("login.emailRequired");
 
   useEffect(() => {
     if (open && isLoggedIn && principal) {
       form.setFieldsValue({
-        kind: principal.kind,
         globalDisplayName: principal.globalDisplayName,
         loginKey: principal.loginKey,
         backendType: principal.backendType ?? "claude_code",
@@ -39,11 +43,8 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
       });
     } else if (open) {
       form.setFieldsValue({
-        kind: "human",
         loginKey: "",
         globalDisplayName: "",
-        backendType: "claude_code",
-        backendThreadId: "",
       });
     }
   }, [open, isLoggedIn, principal, form]);
@@ -51,14 +52,18 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
   const handleSubmit = useCallback(async () => {
     try {
       const values = await form.validateFields();
+      const kind = principal?.kind ?? "human";
       setLoading(true);
-      const kind = values.kind as "human" | "agent";
       await bootstrap({
         kind,
         loginKey: values.loginKey,
         globalDisplayName: values.globalDisplayName,
-        backendType: kind === "agent" ? (values.backendType as "codex_cli" | "claude_code") : null,
-        backendThreadId: kind === "agent" ? values.backendThreadId : null,
+        backendType:
+          kind === "agent"
+            ? ((values.backendType ?? principal?.backendType) as "codex_cli" | "claude_code")
+            : null,
+        backendThreadId:
+          kind === "agent" ? (values.backendThreadId ?? principal?.backendThreadId ?? "") : null,
       });
       await refreshLobbyPresence();
       toast().success(t("login.loginSuccess"));
@@ -70,7 +75,7 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
     } finally {
       setLoading(false);
     }
-  }, [form, bootstrap, onClose, t]);
+  }, [form, bootstrap, onClose, principal, refreshLobbyPresence, t]);
 
   const handleLogout = useCallback(() => {
     logout();
@@ -96,6 +101,7 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
       confirmLoading={loading}
       okText={isLoggedIn ? t("login.saveIdentity") : t("login.loginButton")}
       cancelText={t("common.cancel")}
+      forceRender
       destroyOnHidden
       footer={(_, { OkBtn, CancelBtn }) => (
         <div style={{ display: "flex", justifyContent: "space-between" }}>
@@ -119,35 +125,21 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
       )}
     >
       <Form form={form} layout="vertical">
-        <Form.Item
-          name="kind"
-          label={t("login.identityKindLabel")}
-          rules={[{ required: true, message: t("login.identityKindRequired") }]}
-        >
-          <Radio.Group disabled={isLoggedIn}>
-            <Radio.Button value="human">{t("login.kindHuman")}</Radio.Button>
-            <Radio.Button value="agent">{t("login.kindAgent")}</Radio.Button>
-          </Radio.Group>
-        </Form.Item>
+        {isLoggedIn ? (
+          <Form.Item label={t("login.identityKindLabel")}>
+            <Radio.Group disabled value={principal.kind}>
+              <Radio.Button value="human">{t("login.kindHuman")}</Radio.Button>
+              <Radio.Button value="agent">{t("login.kindAgent")}</Radio.Button>
+            </Radio.Group>
+          </Form.Item>
+        ) : null}
         <Form.Item
           name="loginKey"
-          label={selectedKind === "agent" ? t("login.agentKeyLabel") : t("login.emailLabel")}
-          rules={[
-            {
-              required: true,
-              message:
-                selectedKind === "agent"
-                  ? t("login.agentKeyRequired")
-                  : t("login.emailRequired"),
-            },
-          ]}
+          label={loginKeyLabel}
+          rules={[{ required: true, message: loginKeyRequired }]}
         >
           <Input
-            placeholder={
-              selectedKind === "agent"
-                ? t("login.agentKeyPlaceholder")
-                : t("login.emailPlaceholder")
-            }
+            placeholder={loginKeyPlaceholder}
             disabled={isLoggedIn}
           />
         </Form.Item>
@@ -160,7 +152,7 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
         >
           <Input placeholder={t("login.displayNamePlaceholder")} />
         </Form.Item>
-        {selectedKind === "agent" ? (
+        {isLoggedIn && selectedKind === "agent" ? (
           <>
             <Form.Item
               name="backendType"

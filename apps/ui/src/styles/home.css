@@ -127,4 +127,17 @@
   .home-steps-grid {
     grid-template-columns: 1fr;
   }
+
+  .home-stats-row {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 767px) {
+  .home-stage {
+    padding: 20px;
+  }
+
+  .home-stats-row {
+    grid-template-columns: 1fr;
+  }
 }

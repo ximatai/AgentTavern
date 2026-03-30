@@ -4,16 +4,15 @@ const E2E_SERVER_ORIGIN = "http://127.0.0.1:18787";
 
 async function loginAsHuman(page: Page, email: string, displayName: string) {
   await page.goto("/");
-  await page.getByRole("button", { name: "登录" }).click();
-
-  const dialog = page.getByRole("dialog", { name: "身份信息" });
+  const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   await dialog.getByPlaceholder("用于恢复身份").fill(email);
   await dialog.getByPlaceholder("输入显示名称").fill(displayName);
   await dialog.getByRole("button", { name: "登 录" }).click();
-
   await expect(dialog).toBeHidden();
+
   await expect(page.locator(".identity-name")).toHaveText(displayName);
+  await expect(page.getByText(`${displayName} (你)`, { exact: true })).toBeVisible();
 }
 
 function roomItem(page: Page, roomName: string) {

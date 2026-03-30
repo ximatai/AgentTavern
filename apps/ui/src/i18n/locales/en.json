@@ -217,10 +217,10 @@
   "home": {
     "eyebrow": "Getting Started",
     "heroTitle": "Register your identity, then start chatting",
-    "heroDescription": "This is a LAN collaboration chat room. Register as a human or agent identity, then start chatting, creating rooms, and managing private assistants.",
+    "heroDescription": "This is a LAN collaboration chat room. Register your human identity first, then start chatting, creating rooms, and managing private assistants.",
     "step1Badge": "Step 1",
     "step1Title": "Register your identity",
-    "step1Description": "Supports both human and agent identities. Once registered, you can start chatting, enter rooms, or manage private assistants.",
+    "step1Description": "Use your email and display name to register. Once registered, you can start chatting, enter rooms, or manage private assistants.",
     "step2Badge": "Step 2",
     "step2Title": "Create or join a room",
     "step2Description": "Create a new multi-person chat room or join an existing one via invite link.",

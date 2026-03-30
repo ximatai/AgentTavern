@@ -58,6 +58,7 @@ export function usePrincipalWebSocket() {
           return;
         }
         reconnectAttemptRef.current = 0;
+        void useRoomStore.getState().refreshLobbyPresence();
       });
 
       socket.addEventListener("close", () => {

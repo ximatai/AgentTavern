@@ -38,7 +38,6 @@ export function HomeStage() {
 
   return (
     <div className="home-stage">
-      {/* Hero Card */}
       <Card className="home-hero-card" variant="borderless">
         <Text type="secondary" className="home-eyebrow">
           {t("home.eyebrow")}
@@ -51,7 +50,6 @@ export function HomeStage() {
         </Paragraph>
       </Card>
 
-      {/* Step Cards */}
       <div className="home-steps-grid">
         <Card className="home-step-card" variant="borderless">
           <Tag color="warning" className="home-step-badge">
@@ -76,7 +74,6 @@ export function HomeStage() {
         </Card>
       </div>
 
-      {/* Stats Row */}
       <div className="home-stats-row">
         <Card className="home-stat-card" variant="borderless">
           <UserOutlined className="home-stat-icon" />

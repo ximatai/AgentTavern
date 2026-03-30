@@ -39,6 +39,12 @@ function IdentitySection() {
   const principal = usePrincipalStore((s) => s.principal);
   const [loginOpen, setLoginOpen] = useState(false);
 
+  useEffect(() => {
+    if (!principal) {
+      setLoginOpen(true);
+    }
+  }, [principal]);
+
   if (!principal) {
     return (
       <>
