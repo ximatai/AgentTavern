@@ -60,6 +60,7 @@ export function usePrincipalWebSocket() {
         }
         reconnectAttemptRef.current = 0;
         recoveringTokenRef.current = false;
+        void useRoomStore.getState().refreshLobbyPresence();
       });
 
       socket.addEventListener("close", (event) => {

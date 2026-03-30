@@ -218,6 +218,10 @@
     padding: 20px;
   }
 
+  .home-stats-row {
+    grid-template-columns: 1fr;
+  }
+
   .home-lobby-item {
     flex-direction: column;
     align-items: stretch;

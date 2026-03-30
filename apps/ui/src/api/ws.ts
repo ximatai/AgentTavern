@@ -1,7 +1,9 @@
 import type { RealtimeEvent } from "@agent-tavern/shared";
 
 function resolveWsBaseUrl(): string {
-  const explicitBase = import.meta.env.VITE_WS_BASE_URL as string | undefined;
+  const explicitBase =
+    (import.meta.env.VITE_WS_BASE_URL as string | undefined) ??
+    (import.meta.env.VITE_WS_TARGET as string | undefined);
   if (explicitBase) {
     return explicitBase.replace(/\/$/, "");
   }
