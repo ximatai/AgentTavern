@@ -7,9 +7,7 @@ import type { AgentMessageAction } from "@agent-tavern/agent-sdk";
 import { db } from "../db/client";
 import { agentBindings, agentSessions, bridgeTasks, localBridges, members, rooms } from "../db/schema";
 import {
-  commitSessionMessageAction,
-  completeSessionSilently,
-  completeSessionWithSummary,
+  completeSessionAction,
   createStreamDeltaEvent,
   failSession,
   markSessionRunning,
@@ -486,35 +484,23 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
     }
   }
 
-  if (!visibleFinalText && attachmentIds.length === 0) {
-    if (parsedSummary.summaryText && allowSilentCompletion) {
-      completeSessionWithSummary({
-        session: toAgentSession(session),
-        summaryText: parsedSummary.summaryText,
-      });
-    } else if (allowSilentCompletion) {
-      completeSessionSilently(toAgentSession(session));
-    } else {
-      return c.json(
-        { error: "finalText or attachmentIds are required unless this is a non-reply secretary task" },
-        400,
-      );
-    }
-  } else {
-    const committed = commitSessionMessageAction({
-      session: toAgentSession(session),
-      messageId: task.outputMessageId,
-      action: {
-        content: visibleFinalText,
-        summaryText: parsedSummary.summaryText ?? undefined,
-        mentionedDisplayNames,
-        attachments,
-      },
-      replyToMessageId: session.triggerMessageId,
-    });
-    for (const queuedSessionId of committed.queuedSessionIds) {
-      queueAgentSession(queuedSessionId);
-    }
+  const committed = completeSessionAction({
+    session: toAgentSession(session),
+    action: {
+      content: visibleFinalText,
+      summaryText: parsedSummary.summaryText ?? undefined,
+      mentionedDisplayNames,
+      attachments,
+    },
+    ...(visibleFinalText || attachments.length > 0
+      ? {
+          messageId: task.outputMessageId,
+          replyToMessageId: session.triggerMessageId,
+        }
+      : {}),
+  });
+  for (const queuedSessionId of committed.queuedSessionIds) {
+    queueAgentSession(queuedSessionId);
   }
 
   return c.json({

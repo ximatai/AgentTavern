@@ -49,9 +49,7 @@ import { toDomainMessage } from "../lib/message-records";
 import { toPublicMessage } from "../lib/public";
 import { broadcastToRoom } from "../realtime";
 import {
-  commitSessionMessageAction,
-  completeSessionSilently,
-  completeSessionWithSummary,
+  completeSessionAction,
   createStreamDeltaEvent,
   failSession,
   markSessionRunning,
@@ -655,27 +653,13 @@ async function runAgentSession(sessionId: string): Promise<void> {
       })
     : [];
 
-  if (!committedText && generatedAttachments.length === 0) {
-    if (parsedSummary.summaryText && isSecretarySession(typedRoom, runningSession) && canCompleteSilently) {
-      completeSessionWithSummary({
-        session: runningSession,
-        summaryText: parsedSummary.summaryText,
-      });
-      return;
-    }
-
-    if (canCompleteSilently) {
-      completeSessionSilently(runningSession);
-      return;
-    }
-
+  if (!committedText && generatedAttachments.length === 0 && !canCompleteSilently) {
     failSession(runningSession, `${typedAgent.displayName} returned an empty response.`);
     return;
   }
 
-  const committed = commitSessionMessageAction({
+  const committed = completeSessionAction({
     session: runningSession,
-    messageId: outputMessageId,
     action: {
       content: committedText,
       summaryText: parsedSummary.summaryText ?? undefined,
@@ -683,7 +667,12 @@ async function runAgentSession(sessionId: string): Promise<void> {
         completedAction?.mentionedDisplayNames ?? completedMentionedDisplayNames,
       attachments: generatedAttachments,
     },
-    replyToMessageId: typedTriggerMessage.id,
+    ...(committedText || generatedAttachments.length > 0
+      ? {
+          messageId: outputMessageId,
+          replyToMessageId: typedTriggerMessage.id,
+        }
+      : {}),
   });
   for (const queuedSessionId of committed.queuedSessionIds) {
     queueAgentSession(queuedSessionId);

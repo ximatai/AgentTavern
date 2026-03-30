@@ -245,6 +245,47 @@ export function commitSessionMessageAction(params: {
   });
 }
 
+export function completeSessionAction(params: {
+  session: AgentSession;
+  action: AgentCommittedMessageAction;
+  messageId?: string;
+  replyToMessageId?: string;
+}): { session: AgentSession; queuedSessionIds: string[] } {
+  const visibleContent = params.action.content?.trim() ?? "";
+  const hasAttachments = Array.isArray(params.action.attachments) && params.action.attachments.length > 0;
+
+  if (visibleContent || hasAttachments) {
+    if (!params.messageId || !params.replyToMessageId) {
+      throw new Error("messageId and replyToMessageId are required when committing a visible agent message");
+    }
+
+    return commitSessionMessageAction({
+      session: params.session,
+      messageId: params.messageId,
+      action: {
+        ...params.action,
+        content: visibleContent,
+      },
+      replyToMessageId: params.replyToMessageId,
+    });
+  }
+
+  if (params.action.summaryText?.trim()) {
+    upsertRoomSummary({
+      roomId: params.session.roomId,
+      summaryText: params.action.summaryText.trim(),
+      generatedByMemberId: params.session.agentMemberId,
+      sourceMessageId: null,
+      createdAt: now(),
+    });
+  }
+
+  return {
+    session: completeSessionSilently(params.session),
+    queuedSessionIds: [],
+  };
+}
+
 export function completeSessionSilently(session: AgentSession): AgentSession {
   const completedSession: AgentSession = {
     ...session,
@@ -273,15 +314,12 @@ export function completeSessionWithSummary(params: {
   session: AgentSession;
   summaryText: string;
 }): AgentSession {
-  upsertRoomSummary({
-    roomId: params.session.roomId,
-    summaryText: params.summaryText,
-    generatedByMemberId: params.session.agentMemberId,
-    sourceMessageId: null,
-    createdAt: now(),
-  });
-
-  return completeSessionSilently(params.session);
+  return completeSessionAction({
+    session: params.session,
+    action: {
+      summaryText: params.summaryText,
+    },
+  }).session;
 }
 
 export function failSession(
