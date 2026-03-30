@@ -318,8 +318,13 @@ function shouldQueueSecretaryObservation(params: {
   sender: Member;
   message: Message;
   explicitMentionNames: Set<string>;
+  hasOtherAgentTrigger: boolean;
 }): Member | null {
   if (params.sender.type !== "human" || params.message.messageType !== "user_text") {
+    return null;
+  }
+
+  if (params.explicitMentionNames.size > 0 || params.hasOtherAgentTrigger) {
     return null;
   }
 
@@ -472,6 +477,7 @@ export function processMessageTriggers(params: {
     sender: params.sender,
     message: params.message,
     explicitMentionNames,
+    hasOtherAgentTrigger: queuedSessionIds.length > 0,
   });
 
   if (secretary) {

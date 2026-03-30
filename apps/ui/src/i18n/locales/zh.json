@@ -413,6 +413,7 @@
     "independentAgents": "独立 Agent",
     "noIndependentAgents": "暂无独立 Agent。",
     "canBeMentioned": "可被直接 @ 并执行",
+    "secretary": "秘书",
     "assistantTree": "助理树",
     "noAssistants": "暂无助理成员。",
     "belongTo": "归属于 {{name}}",

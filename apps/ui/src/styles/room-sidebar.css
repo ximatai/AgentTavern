@@ -297,6 +297,11 @@
   color: var(--accent, #22D3EE);
 }
 
+.rs-role-badge-secretary {
+  background: rgba(45, 212, 191, 0.14);
+  color: #2dd4bf;
+}
+
 /* ── Runtime Status Pills ── */
 .rs-runtime-pill {
   font-family: Inter, sans-serif;

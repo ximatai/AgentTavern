@@ -467,6 +467,120 @@ test("room secretary can silently complete an observe run", async () => {
   assert.equal(roomMessages[0]?.senderMemberId, "mem_human_secretary_silent");
 });
 
+test("room secretary does not add a second session when another agent is explicitly targeted", async () => {
+  const roomId = "room_secretary_no_duplicate_trigger";
+  const createdAt = new Date("2026-03-25T00:14:00.000Z").toISOString();
+
+  db.insert(rooms).values({
+    id: roomId,
+    name: "Secretary No Duplicate Room",
+    inviteToken: createInviteToken(),
+    status: "active",
+    secretaryMemberId: "mem_secretary_guard",
+    secretaryMode: "coordinate",
+    createdAt,
+  }).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_human_secretary_guard",
+      roomId,
+      principalId: null,
+      type: "human",
+      roleKind: "none",
+      displayName: "Alice",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt,
+    },
+    {
+      id: "mem_secretary_guard",
+      roomId,
+      principalId: null,
+      type: "agent",
+      roleKind: "independent",
+      displayName: "Scribe",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: "local_process",
+      adapterConfig: JSON.stringify({
+        command: "node",
+        args: [
+          "-e",
+          "process.stdin.setEncoding('utf8');let text='';process.stdin.on('data',chunk=>text+=chunk);process.stdin.on('end',()=>process.stdout.write('secretary should not run'));",
+        ],
+        inputFormat: "text",
+      }),
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt,
+    },
+    {
+      id: "mem_target_agent",
+      roomId,
+      principalId: null,
+      type: "agent",
+      roleKind: "independent",
+      displayName: "Planner",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: "local_process",
+      adapterConfig: JSON.stringify({
+        command: "node",
+        args: [
+          "-e",
+          "process.stdin.setEncoding('utf8');let text='';process.stdin.on('data',chunk=>text+=chunk);process.stdin.on('end',()=>process.stdout.write('planner reply'));",
+        ],
+        inputFormat: "text",
+      }),
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt,
+    },
+  ]).run();
+
+  const wsToken = issueWsToken("mem_human_secretary_guard", roomId);
+  const response = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_human_secretary_guard",
+      wsToken,
+      content: "@Planner can you draft the next step?",
+    }),
+  });
+
+  assert.equal(response.status, 201);
+
+  const completedSessions = await waitFor(
+    () =>
+      db
+        .select()
+        .from(agentSessions)
+        .where(eq(agentSessions.roomId, roomId))
+        .all(),
+    (value) => value.some((item) => item.status === "completed"),
+  );
+
+  assert.equal(completedSessions.length, 1);
+  assert.equal(completedSessions[0]?.agentMemberId, "mem_target_agent");
+
+  const roomMessages = db
+    .select()
+    .from(messages)
+    .where(eq(messages.roomId, roomId))
+    .all();
+  assert.ok(roomMessages.some((message) => /planner reply/i.test(message.content)));
+  assert.ok(!roomMessages.some((message) => /secretary should not run/i.test(message.content)));
+});
+
 test("a nickname can be reused after the previous principal leaves the room", async () => {
   const roomId = "room_join_reuse_after_leave";
   const inviteToken = createInviteToken();

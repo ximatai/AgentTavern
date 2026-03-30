@@ -413,6 +413,7 @@
     "independentAgents": "Independent Agents",
     "noIndependentAgents": "No independent agents.",
     "canBeMentioned": "Can be @mentioned and executed",
+    "secretary": "Secretary",
     "assistantTree": "Assistant Tree",
     "noAssistants": "No assistants.",
     "belongTo": "Belongs to {{name}}",

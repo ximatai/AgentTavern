@@ -177,6 +177,7 @@ export function RoomSidebar() {
     () => members.filter((m) => m.type === "agent" && m.roleKind === "independent"),
     [members],
   );
+  const secretaryMemberId = room?.secretaryMemberId ?? null;
 
   const runningSessionSummaries = useMemo(
     () =>
@@ -626,6 +627,11 @@ export function RoomSidebar() {
                   <span className="rs-role-badge rs-role-badge-agent">
                     Agent
                   </span>
+                  {member.id === secretaryMemberId ? (
+                    <span className="rs-role-badge rs-role-badge-secretary">
+                      {t("roomSidebar.secretary")}
+                    </span>
+                  ) : null}
                   {getRuntimeLabel(member, t) && (
                     <span
                       className={`rs-runtime-pill rs-runtime-pill-${member.runtimeStatus}`}

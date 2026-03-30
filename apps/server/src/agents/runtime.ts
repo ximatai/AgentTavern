@@ -187,18 +187,50 @@ function buildPrompt(input: {
   triggerMessage: Message;
   contextMessages: AgentRunInput["contextMessages"];
 }): string {
+  const roomMembers = db
+    .select()
+    .from(members)
+    .where(eq(members.roomId, input.room.id))
+    .all()
+    .filter((member) => (member.membershipStatus ?? "active") === "active");
   const context = input.contextMessages
     .map((message) => `[${message.createdAt}] ${message.senderName}: ${message.content}`)
     .join("\n");
+  const memberRoster = roomMembers
+    .map((member) => {
+      const typeLabel =
+        member.type === "agent"
+          ? member.roleKind === "assistant"
+            ? "assistant agent"
+            : member.id === input.room.secretaryMemberId
+              ? "secretary agent"
+              : "independent agent"
+          : "human";
+      return `- ${member.displayName} (${typeLabel})`;
+    })
+    .join("\n");
+  const isSecretary = input.room.secretaryMemberId === input.agent.id && input.room.secretaryMode !== "off";
 
   return [
-    input.room.secretaryMemberId === input.agent.id && input.room.secretaryMode !== "off"
+    isSecretary
       ? `You are ${input.agent.displayName}, the secretary agent in the room "${input.room.name}".`
       : `You are ${input.agent.displayName}, a member in the room "${input.room.name}".`,
     `Requester: ${input.requester.displayName}.`,
-    input.room.secretaryMemberId === input.agent.id && input.room.secretaryMode !== "off"
+    isSecretary
       ? "Observe the room, decide whether to respond, and only speak when coordination is genuinely helpful."
       : "Reply as a chat participant in plain text.",
+    isSecretary
+      ? [
+          "Secretary policy:",
+          "- Stay silent if the room is already progressing normally.",
+          "- Prefer short coordination messages over long answers.",
+          "- If another member or agent should act, mention them directly with @Name.",
+          "- Do not answer on behalf of a specialist agent when a short handoff is better.",
+          "- If no response is necessary, return an empty result.",
+        ].join("\n")
+      : "You may mention other room members with @Name when collaboration needs it.",
+    "Active room members:",
+    memberRoster || "(unknown members)",
     "Recent room context:",
     context || "(no context)",
     "Current trigger message:",
