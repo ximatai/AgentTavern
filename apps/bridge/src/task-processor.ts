@@ -4,6 +4,10 @@ import type { AgentStreamEvent } from "@agent-tavern/agent-sdk";
 
 import type { BridgeDriver, BridgeTask } from "./drivers";
 
+function allowsSilentCompletion(task: BridgeTask): boolean {
+  return task.kind === "room_observe" || task.kind === "summary_refresh";
+}
+
 export type BridgeRegistration = {
   bridgeId: string;
   bridgeToken: string;
@@ -69,7 +73,8 @@ export async function processTask(params: {
             fallbackText: "(no output)",
           }),
         );
-        const completedText = action.content ?? "(no output)";
+        const trimmedContent =
+          typeof action.content === "string" && action.content.trim() ? action.content : undefined;
         const attachmentIds: string[] = [];
 
         if (Array.isArray(action.attachments)) {
@@ -92,7 +97,11 @@ export async function processTask(params: {
           bridgeToken,
           bridgeInstanceId,
           action: {
-            ...(typeof action.content === "string" ? { content: action.content } : {}),
+            ...((trimmedContent ?? (!allowsSilentCompletion(task) ? "(no output)" : undefined))
+              ? {
+                  content: trimmedContent ?? "(no output)",
+                }
+              : {}),
             ...(typeof action.summaryText === "string" ? { summaryText: action.summaryText } : {}),
             ...(Array.isArray(action.mentionedDisplayNames) && action.mentionedDisplayNames.length > 0
               ? { mentionedDisplayNames: action.mentionedDisplayNames }

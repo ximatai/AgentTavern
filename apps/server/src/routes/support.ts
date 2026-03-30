@@ -193,7 +193,8 @@ export function upsertAuthorization(params: {
 }): AgentAuthorization {
   const timestamp = now();
   const expiresAt = resolveAuthorizationExpiry(params.grantDuration);
-  const remainingUses = params.grantDuration === "once" ? 1 : null;
+  const remainingUses = params.grantDuration === "once" ? 0 : null;
+  const revokedAt = params.grantDuration === "once" ? timestamp : null;
   const existing = db
     .select()
     .from(agentAuthorizations)
@@ -215,6 +216,7 @@ export function upsertAuthorization(params: {
         grantDuration: params.grantDuration,
         remainingUses,
         expiresAt,
+        revokedAt,
         updatedAt: timestamp,
       })
       .where(eq(agentAuthorizations.id, existing.id))
@@ -225,6 +227,7 @@ export function upsertAuthorization(params: {
       grantDuration: params.grantDuration,
       remainingUses,
       expiresAt,
+      revokedAt,
       updatedAt: timestamp,
     };
   }
@@ -238,7 +241,7 @@ export function upsertAuthorization(params: {
     grantDuration: params.grantDuration,
     remainingUses,
     expiresAt,
-    revokedAt: null,
+    revokedAt,
     createdAt: timestamp,
     updatedAt: timestamp,
   };

@@ -185,9 +185,16 @@ def main() -> int:
         print(json.dumps(result, ensure_ascii=True))
         return 0
 
+    assistant_id = str(
+        data.get("privateAssistantId")
+        or data.get("acceptedPrivateAssistantId")
+        or data.get("id")
+        or ""
+    ).strip()
+
     attach_payload = {
         "bridgeToken": bridge_identity["bridgeToken"],
-        "privateAssistantId": data.get("privateAssistantId", ""),
+        "privateAssistantId": assistant_id,
         "cwd": selected_cwd,
     }
     if not attach_payload["privateAssistantId"]:
