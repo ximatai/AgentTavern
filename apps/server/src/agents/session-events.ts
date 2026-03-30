@@ -7,6 +7,7 @@ import type {
   RealtimeEvent,
   SystemMessageData,
 } from "@agent-tavern/shared";
+import type { AgentMessageAction } from "@agent-tavern/agent-sdk";
 
 import { db } from "../db/client";
 import { agentSessions, rooms } from "../db/schema";
@@ -221,6 +222,27 @@ export function commitSessionMessage(params: {
   );
 
   return { session: completedSession, queuedSessionIds };
+}
+
+export type AgentCommittedMessageAction = Omit<AgentMessageAction, "attachments"> & {
+  attachments?: MessageAttachment[];
+};
+
+export function commitSessionMessageAction(params: {
+  session: AgentSession;
+  messageId: string;
+  action: AgentCommittedMessageAction;
+  replyToMessageId: string;
+}): { session: AgentSession; queuedSessionIds: string[] } {
+  return commitSessionMessage({
+    session: params.session,
+    messageId: params.messageId,
+    content: params.action.content ?? "",
+    summaryText: params.action.summaryText ?? null,
+    mentionedDisplayNames: params.action.mentionedDisplayNames,
+    attachments: params.action.attachments,
+    replyToMessageId: params.replyToMessageId,
+  });
 }
 
 export function completeSessionSilently(session: AgentSession): AgentSession {

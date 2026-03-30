@@ -49,7 +49,7 @@ import { toDomainMessage } from "../lib/message-records";
 import { toPublicMessage } from "../lib/public";
 import { broadcastToRoom } from "../realtime";
 import {
-  commitSessionMessage,
+  commitSessionMessageAction,
   completeSessionSilently,
   completeSessionWithSummary,
   createStreamDeltaEvent,
@@ -673,13 +673,16 @@ async function runAgentSession(sessionId: string): Promise<void> {
     return;
   }
 
-  const committed = commitSessionMessage({
+  const committed = commitSessionMessageAction({
     session: runningSession,
     messageId: outputMessageId,
-    content: committedText,
-    summaryText: parsedSummary.summaryText,
-    mentionedDisplayNames: completedAction?.mentionedDisplayNames ?? completedMentionedDisplayNames,
-    attachments: generatedAttachments,
+    action: {
+      content: committedText,
+      summaryText: parsedSummary.summaryText ?? undefined,
+      mentionedDisplayNames:
+        completedAction?.mentionedDisplayNames ?? completedMentionedDisplayNames,
+      attachments: generatedAttachments,
+    },
     replyToMessageId: typedTriggerMessage.id,
   });
   for (const queuedSessionId of committed.queuedSessionIds) {

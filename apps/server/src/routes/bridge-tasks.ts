@@ -7,7 +7,7 @@ import type { AgentMessageAction } from "@agent-tavern/agent-sdk";
 import { db } from "../db/client";
 import { agentBindings, agentSessions, bridgeTasks, localBridges, members, rooms } from "../db/schema";
 import {
-  commitSessionMessage,
+  commitSessionMessageAction,
   completeSessionSilently,
   completeSessionWithSummary,
   createStreamDeltaEvent,
@@ -501,13 +501,15 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
       );
     }
   } else {
-    const committed = commitSessionMessage({
+    const committed = commitSessionMessageAction({
       session: toAgentSession(session),
       messageId: task.outputMessageId,
-      content: visibleFinalText,
-      summaryText: parsedSummary.summaryText,
-      mentionedDisplayNames,
-      attachments,
+      action: {
+        content: visibleFinalText,
+        summaryText: parsedSummary.summaryText ?? undefined,
+        mentionedDisplayNames,
+        attachments,
+      },
       replyToMessageId: session.triggerMessageId,
     });
     for (const queuedSessionId of committed.queuedSessionIds) {
