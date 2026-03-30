@@ -156,6 +156,7 @@ function parseBridgeTaskCompletionBody(body: unknown): {
   backendThreadId: string;
   attachmentIds: string[];
   action: AgentMessageAction;
+  uploadedInlineAttachments: boolean;
 } {
   const record = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
   const action = parseAgentMessageAction(record.action);
@@ -169,6 +170,7 @@ function parseBridgeTaskCompletionBody(body: unknown): {
           typeof value === "string" && value.trim() ? [value.trim()] : [],
         )
       : [],
+    uploadedInlineAttachments: Array.isArray(action?.attachments) && action.attachments.length > 0,
     action: {
       content:
         action?.content?.trim() ||
@@ -392,6 +394,7 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
     backendThreadId,
     attachmentIds,
     action,
+    uploadedInlineAttachments,
   } = parseBridgeTaskCompletionBody(body);
 
   if (!bridgeToken || !bridgeInstanceId) {
@@ -403,6 +406,13 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
 
   if (attachmentIds.length > MAX_MESSAGE_ATTACHMENTS) {
     return c.json({ error: `up to ${MAX_MESSAGE_ATTACHMENTS} attachments are allowed` }, 400);
+  }
+
+  if (uploadedInlineAttachments) {
+    return c.json(
+      { error: "generated attachments must be uploaded first and referenced by attachmentIds" },
+      400,
+    );
   }
 
   const auth = loadAuthorizedBridge(bridgeId, bridgeToken, bridgeInstanceId);

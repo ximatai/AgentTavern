@@ -444,7 +444,8 @@
     "sessionCancelled": "Cancelled",
     "sessionKindReply": "Reply message",
     "sessionKindObserve": "Observe room",
-    "sessionKindSummarize": "Refresh summary"
+    "sessionKindSummarize": "Refresh summary",
+    "sessionKindUnknown": "Unknown (awaiting session metadata)"
   },
   "errorBoundary": {
     "title": "Something went wrong",

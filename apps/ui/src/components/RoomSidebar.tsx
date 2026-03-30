@@ -51,11 +51,12 @@ function sessionStatusKey(status: AgentSessionStatus): string {
   return map[status];
 }
 
-function sessionKindKey(kind: AgentSessionKind): string {
-  const map: Record<AgentSessionKind, string> = {
+function sessionKindKey(kind: AgentSessionKind | "unknown"): string {
+  const map: Record<AgentSessionKind | "unknown", string> = {
     message_reply: "roomSidebar.sessionKindReply",
     room_observe: "roomSidebar.sessionKindObserve",
     summary_refresh: "roomSidebar.sessionKindSummarize",
+    unknown: "roomSidebar.sessionKindUnknown",
   };
   return map[kind];
 }

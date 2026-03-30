@@ -202,13 +202,6 @@ test("processTask uploads generated attachments before completing", async () => 
     bridgeInstanceId: "binst_1",
     action: {
       content: "done with file",
-      attachments: [
-        {
-          name: "report.txt",
-          mimeType: "text/plain",
-          contentBase64: Buffer.from("report body").toString("base64"),
-        },
-      ],
     },
     attachmentIds: ["att_generated_1"],
   });

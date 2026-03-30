@@ -444,7 +444,8 @@
     "sessionCancelled": "已取消",
     "sessionKindReply": "回复消息",
     "sessionKindObserve": "观察房间",
-    "sessionKindSummarize": "刷新摘要"
+    "sessionKindSummarize": "刷新摘要",
+    "sessionKindUnknown": "未知（等待会话元信息）"
   },
   "errorBoundary": {
     "title": "出错了",

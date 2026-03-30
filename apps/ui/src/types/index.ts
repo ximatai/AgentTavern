@@ -1,4 +1,4 @@
-import type { AgentSession, PublicMessage } from "@agent-tavern/shared";
+import type { AgentSession, AgentSessionKind, PublicMessage } from "@agent-tavern/shared";
 
 export type SessionStream = PublicMessage & {
   sessionId: string;
@@ -9,7 +9,9 @@ export type SessionActor = {
   agentMemberId: string;
 };
 
-export type SessionSnapshot = AgentSession & {
+export type SessionSnapshot = Omit<AgentSession, "kind"> & {
+  kind: AgentSessionKind | "unknown";
+  kindIsProvisional?: boolean;
   lastError?: string | null;
   outputMessageId?: string | null;
 };

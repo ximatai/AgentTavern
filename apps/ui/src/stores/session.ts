@@ -32,11 +32,12 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     set((state) => ({
       sessionSnapshots: {
         ...state.sessionSnapshots,
-        [session.id]: {
-          ...session,
-          lastError: null,
-          outputMessageId: state.sessionSnapshots[session.id]?.outputMessageId ?? null,
-        },
+          [session.id]: {
+            ...session,
+            kindIsProvisional: false,
+            lastError: null,
+            outputMessageId: state.sessionSnapshots[session.id]?.outputMessageId ?? null,
+          },
       },
       sessionActors: {
         ...state.sessionActors,
@@ -51,11 +52,12 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     set((state) => ({
       sessionSnapshots: {
         ...state.sessionSnapshots,
-        [session.id]: {
-          ...session,
-          lastError: lastError ?? null,
-          outputMessageId: state.sessionSnapshots[session.id]?.outputMessageId ?? null,
-        },
+          [session.id]: {
+            ...session,
+            kindIsProvisional: false,
+            lastError: lastError ?? null,
+            outputMessageId: state.sessionSnapshots[session.id]?.outputMessageId ?? null,
+          },
       },
     }));
   },
@@ -75,7 +77,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             id: sessionId,
             roomId: "",
             agentMemberId: actor?.agentMemberId ?? "",
-            kind: "message_reply",
+            kind: "unknown",
+            kindIsProvisional: true,
             triggerMessageId: "",
             requesterMemberId: "",
             approvalId: null,
@@ -126,7 +129,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             id: sessionId,
             roomId: message.roomId,
             agentMemberId: message.senderMemberId,
-            kind: "message_reply",
+            kind: "unknown",
+            kindIsProvisional: true,
             triggerMessageId: message.replyToMessageId ?? message.id,
             requesterMemberId: "",
             approvalId: null,

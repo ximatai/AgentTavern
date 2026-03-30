@@ -91,7 +91,13 @@ export async function processTask(params: {
         const completeBody: Record<string, unknown> = {
           bridgeToken,
           bridgeInstanceId,
-          action,
+          action: {
+            ...(typeof action.content === "string" ? { content: action.content } : {}),
+            ...(typeof action.summaryText === "string" ? { summaryText: action.summaryText } : {}),
+            ...(Array.isArray(action.mentionedDisplayNames) && action.mentionedDisplayNames.length > 0
+              ? { mentionedDisplayNames: action.mentionedDisplayNames }
+              : {}),
+          },
         };
         if (attachmentIds.length > 0) {
           completeBody.attachmentIds = attachmentIds;

@@ -4858,6 +4858,165 @@ test("bridge tasks can upload agent-generated attachments and commit an attachme
   assert.equal(attachedRows[0]?.mimeType, "text/plain");
 });
 
+test("bridge task completion rejects inline generated attachments without uploaded attachmentIds", async () => {
+  const roomId = "room_bridge_inline_attachment_reject";
+  const createdAt = "2026-03-30T00:00:00.000Z";
+
+  seedRoom({
+    roomId,
+    name: "Inline Reject Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(principals).values([
+    {
+      id: "prn_bridge_inline_requester",
+      kind: "human",
+      loginKey: "human:inline-requester",
+      globalDisplayName: "Requester",
+      backendType: null,
+      backendThreadId: null,
+      status: "offline",
+      createdAt,
+    },
+    {
+      id: "prn_bridge_inline_agent",
+      kind: "agent",
+      loginKey: "agent:inline-agent",
+      globalDisplayName: "InlineAgent",
+      backendType: "codex_cli",
+      backendThreadId: "thread_inline_attachment",
+      status: "offline",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_bridge_inline_requester",
+      roomId,
+      principalId: "prn_bridge_inline_requester",
+      type: "human",
+      roleKind: "none",
+      displayName: "Requester",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "offline",
+      createdAt,
+    },
+    {
+      id: "mem_bridge_inline_agent",
+      roomId,
+      principalId: "prn_bridge_inline_agent",
+      type: "agent",
+      roleKind: "independent",
+      displayName: "InlineAgent",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: "codex_cli",
+      adapterConfig: null,
+      presenceStatus: "offline",
+      createdAt,
+    },
+  ]).run();
+  db
+    .insert(localBridges)
+    .values({
+      id: "brg_inline_attachment",
+      bridgeName: "Inline Attachment Bridge",
+      bridgeToken: "bridge_inline_attachment_token",
+      currentInstanceId: "binst_inline_attachment",
+      status: "online",
+      platform: "macOS",
+      version: "0.1.0",
+      metadata: null,
+      createdAt,
+      lastSeenAt: createdAt,
+      updatedAt: createdAt,
+    })
+    .run();
+  db
+    .insert(agentBindings)
+    .values({
+      id: "agb_inline_attachment",
+      principalId: "prn_bridge_inline_agent",
+      privateAssistantId: null,
+      bridgeId: "brg_inline_attachment",
+      backendType: "codex_cli",
+      backendThreadId: "thread_inline_attachment",
+      cwd: "/tmp/inline-attachment",
+      status: "active",
+      attachedAt: createdAt,
+      detachedAt: null,
+    })
+    .run();
+
+  const triggerResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_bridge_inline_requester",
+      wsToken: issueWsToken("mem_bridge_inline_requester", roomId),
+      content: "@InlineAgent please send the file",
+    }),
+  });
+  assert.equal(triggerResponse.status, 201);
+
+  const pullResponse = await app.request("http://localhost/api/bridges/brg_inline_attachment/tasks/pull", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      bridgeToken: "bridge_inline_attachment_token",
+      bridgeInstanceId: "binst_inline_attachment",
+    }),
+  });
+  assert.equal(pullResponse.status, 200);
+  const pulled = await pullResponse.json();
+  assert.ok(pulled.task);
+
+  const acceptResponse = await app.request(
+    `http://localhost/api/bridges/brg_inline_attachment/tasks/${pulled.task.id}/accept`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_inline_attachment_token",
+        bridgeInstanceId: "binst_inline_attachment",
+      }),
+    },
+  );
+  assert.equal(acceptResponse.status, 200);
+
+  const completeResponse = await app.request(
+    `http://localhost/api/bridges/brg_inline_attachment/tasks/${pulled.task.id}/complete`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_inline_attachment_token",
+        bridgeInstanceId: "binst_inline_attachment",
+        action: {
+          content: "file attached",
+          attachments: [
+            {
+              name: "report.txt",
+              mimeType: "text/plain",
+              contentBase64: Buffer.from("report body", "utf8").toString("base64"),
+            },
+          ],
+        },
+      }),
+    },
+  );
+  assert.equal(completeResponse.status, 400);
+  assert.match(
+    await completeResponse.text(),
+    /generated attachments must be uploaded first and referenced by attachmentIds/,
+  );
+});
+
 test("bridge task completion rejects agent-generated attachments exceeding total size limit", async () => {
   const roomId = "room_bridge_attachment_limit";
   const createdAt = new Date("2026-03-25T07:35:00.000Z").toISOString();
