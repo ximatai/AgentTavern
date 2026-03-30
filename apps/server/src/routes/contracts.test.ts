@@ -4403,6 +4403,167 @@ test("bridge tasks can upload agent-generated attachments and commit an attachme
   assert.equal(attachedRows[0]?.mimeType, "text/plain");
 });
 
+test("bridge-backed room secretary can silently complete an observe run", async () => {
+  const roomId = "room_bridge_secretary_silent";
+  const createdAt = new Date("2026-03-25T08:45:00.000Z").toISOString();
+  const freshSeenAt = new Date().toISOString();
+
+  db.insert(rooms).values({
+    id: roomId,
+    name: "Bridge Secretary Silent Room",
+    inviteToken: createInviteToken(),
+    status: "active",
+    secretaryMemberId: "mem_bridge_secretary_silent",
+    secretaryMode: "coordinate",
+    createdAt,
+  }).run();
+
+  db.insert(localBridges).values({
+    id: "brg_bridge_secretary_silent",
+    bridgeName: "Secretary Bridge",
+    bridgeToken: "bridge_secretary_silent_token",
+    currentInstanceId: "binst_bridge_secretary_silent",
+    status: "online",
+    platform: "macOS",
+    version: "0.1.0",
+    metadata: null,
+    lastSeenAt: freshSeenAt,
+    createdAt: freshSeenAt,
+    updatedAt: freshSeenAt,
+  }).run();
+
+  db.insert(principals).values({
+    id: "prn_bridge_secretary_silent",
+    kind: "agent",
+    loginKey: "agent:bridge-secretary-silent",
+    globalDisplayName: "BridgeSecretary",
+    backendType: "codex_cli",
+    backendThreadId: "thread_bridge_secretary_silent",
+    status: "offline",
+    createdAt,
+  }).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_human_bridge_secretary_requester",
+      roomId,
+      principalId: null,
+      type: "human",
+      roleKind: "none",
+      displayName: "Requester",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt,
+    },
+    {
+      id: "mem_bridge_secretary_silent",
+      roomId,
+      principalId: "prn_bridge_secretary_silent",
+      type: "agent",
+      roleKind: "independent",
+      displayName: "BridgeSecretary",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: "codex_cli",
+      adapterConfig: null,
+      presenceStatus: "offline",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(agentBindings).values({
+    id: "agb_bridge_secretary_silent",
+    principalId: "prn_bridge_secretary_silent",
+    privateAssistantId: null,
+    bridgeId: "brg_bridge_secretary_silent",
+    backendType: "codex_cli",
+    backendThreadId: "thread_bridge_secretary_silent",
+    cwd: "/tmp/bridge-secretary-silent",
+    status: "active",
+    attachedAt: createdAt,
+    detachedAt: null,
+  }).run();
+
+  const requesterToken = issueWsToken("mem_human_bridge_secretary_requester", roomId);
+  const messageResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_human_bridge_secretary_requester",
+      wsToken: requesterToken,
+      content: "Just noting that the draft was uploaded.",
+    }),
+  });
+
+  assert.equal(messageResponse.status, 201);
+
+  const pullResponse = await app.request("http://localhost/api/bridges/brg_bridge_secretary_silent/tasks/pull", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      bridgeToken: "bridge_secretary_silent_token",
+      bridgeInstanceId: "binst_bridge_secretary_silent",
+    }),
+  });
+
+  assert.equal(pullResponse.status, 200);
+  const pulled = await pullResponse.json();
+
+  const acceptResponse = await app.request(
+    `http://localhost/api/bridges/brg_bridge_secretary_silent/tasks/${pulled.task.id}/accept`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_secretary_silent_token",
+        bridgeInstanceId: "binst_bridge_secretary_silent",
+      }),
+    },
+  );
+
+  assert.equal(acceptResponse.status, 200);
+
+  const completeResponse = await app.request(
+    `http://localhost/api/bridges/brg_bridge_secretary_silent/tasks/${pulled.task.id}/complete`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_secretary_silent_token",
+        bridgeInstanceId: "binst_bridge_secretary_silent",
+      }),
+    },
+  );
+
+  assert.equal(completeResponse.status, 200);
+
+  const session = await waitFor(
+    () =>
+      db
+        .select()
+        .from(agentSessions)
+        .where(eq(agentSessions.roomId, roomId))
+        .get(),
+    (value) => value?.status === "completed",
+  );
+  assert.equal(session?.agentMemberId, "mem_bridge_secretary_silent");
+
+  const roomMessages = db
+    .select()
+    .from(messages)
+    .where(eq(messages.roomId, roomId))
+    .all();
+  assert.equal(roomMessages.length, 1);
+  assert.equal(roomMessages[0]?.senderMemberId, "mem_human_bridge_secretary_requester");
+});
+
 test("attached claude private assistant binding persists refreshed backendThreadId on completion", async () => {
   const roomId = "room_claude_assistant_bridge_task";
   const createdAt = new Date("2026-03-25T07:30:00.000Z").toISOString();
