@@ -73,26 +73,19 @@ export function ChatSidebar() {
   }
 
   const sortedRooms = useMemo(() => {
-    const mergedRooms =
-      room && !recentRooms.find((item) => item.roomId === room.id)
-        ? [
-            {
-              roomId: room.id,
-              name: room.name,
-              inviteToken: room.inviteToken,
-              visitedAt: new Date().toISOString(),
-            },
-            ...recentRooms,
-          ]
-        : recentRooms;
+    if (!room || recentRooms.find((item) => item.roomId === room.id)) {
+      return recentRooms;
+    }
 
-    if (!room) return mergedRooms;
-    const currentId = room.id;
-    return [...mergedRooms].sort((a, b) => {
-      if (a.roomId === currentId) return -1;
-      if (b.roomId === currentId) return 1;
-      return b.visitedAt.localeCompare(a.visitedAt);
-    });
+    return [
+      {
+        roomId: room.id,
+        name: room.name,
+        inviteToken: room.inviteToken,
+        visitedAt: new Date().toISOString(),
+      },
+      ...recentRooms,
+    ];
   }, [recentRooms, room]);
 
   return (

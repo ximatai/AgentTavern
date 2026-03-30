@@ -192,10 +192,6 @@ export const useRoomStore = create<RoomStore>()((set, get) => ({
 
     await get().hydrateRoom(joinResult.roomId);
     set({ self: joinResult });
-    set((state) => ({
-      recentRooms: rememberRoom(state.recentRooms, get().room),
-    }));
-    get().persistRecentRooms();
 
     return joinResult;
   },
