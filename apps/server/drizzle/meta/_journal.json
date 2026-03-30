@@ -148,6 +148,13 @@
       "when": 1774839600000,
       "tag": "0020_agent_task_kinds",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1774861800000,
+      "tag": "0021_openai_compatible_backend",
+      "breakpoints": true
     }
   ]
 }

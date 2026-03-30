@@ -14,6 +14,7 @@ export const principals = sqliteTable("principals", {
   globalDisplayName: text("global_display_name").notNull(),
   backendType: text("backend_type"),
   backendThreadId: text("backend_thread_id"),
+  backendConfig: text("backend_config"),
   status: text("status").notNull(),
   createdAt: text("created_at").notNull(),
 }, (table) => ({
@@ -74,6 +75,7 @@ export const privateAssistants = sqliteTable("private_assistants", {
   name: text("name").notNull(),
   backendType: text("backend_type").notNull(),
   backendThreadId: text("backend_thread_id"),
+  backendConfig: text("backend_config"),
   status: text("status").notNull(),
   createdAt: text("created_at").notNull(),
 }, (table) => ({
@@ -94,6 +96,7 @@ export const privateAssistantInvites = sqliteTable("private_assistant_invites", 
   name: text("name").notNull(),
   backendType: text("backend_type").notNull(),
   inviteToken: text("invite_token").notNull(),
+  backendConfig: text("backend_config"),
   status: text("status").notNull(),
   acceptedPrivateAssistantId: text("accepted_private_assistant_id").references(
     () => privateAssistants.id,
@@ -334,6 +337,7 @@ export const bridgeTasks = sqliteTable("bridge_tasks", {
   kind: text("kind").notNull().default("message_reply"),
   backendType: text("backend_type").notNull(),
   backendThreadId: text("backend_thread_id").notNull(),
+  backendConfig: text("backend_config"),
   cwd: text("cwd"),
   outputMessageId: text("output_message_id").notNull(),
   prompt: text("prompt").notNull(),

@@ -27,6 +27,8 @@ import {
   localBridges,
   members,
   messages,
+  principals,
+  privateAssistants,
   rooms,
 } from "../db/schema";
 import { resolveBindingForMember } from "../lib/agent-binding-resolution";
@@ -191,6 +193,32 @@ function resolveLocalAdapter(agent: Member): AgentAdapter | null {
   return createLocalProcessAdapter(config);
 }
 
+function resolveBridgeBackendConfig(agent: Member, binding: AgentBinding): string | null {
+  if (binding.backendType !== "openai_compatible") {
+    return null;
+  }
+
+  if (agent.sourcePrivateAssistantId) {
+    const assistant = db
+      .select({ backendConfig: privateAssistants.backendConfig })
+      .from(privateAssistants)
+      .where(eq(privateAssistants.id, agent.sourcePrivateAssistantId))
+      .get();
+    return assistant?.backendConfig ?? null;
+  }
+
+  if (agent.principalId) {
+    const principal = db
+      .select({ backendConfig: principals.backendConfig })
+      .from(principals)
+      .where(eq(principals.id, agent.principalId))
+      .get();
+    return principal?.backendConfig ?? null;
+  }
+
+  return null;
+}
+
 function buildPrompt(input: {
   room: Room;
   agent: Member;
@@ -337,6 +365,7 @@ function enqueueBridgeTask(params: {
   prompt: string;
   contextPayload: string;
   outputMessageId: string;
+  backendConfig: string | null;
 }): BridgeTask {
   const task: BridgeTask = {
     id: createId("btsk"),
@@ -348,6 +377,7 @@ function enqueueBridgeTask(params: {
     kind: params.session.kind,
     backendType: params.binding.backendType,
     backendThreadId: params.binding.backendThreadId,
+    backendConfig: params.backendConfig,
     cwd: params.binding.cwd,
     outputMessageId: params.outputMessageId,
     prompt: params.prompt,
@@ -524,12 +554,22 @@ async function runAgentSession(sessionId: string): Promise<void> {
       return;
     }
 
+    const backendConfig = resolveBridgeBackendConfig(typedAgent, typedBinding);
+    if (typedBinding.backendType === "openai_compatible" && !backendConfig) {
+      failSession(
+        typedSession,
+        `${typedAgent.displayName} does not have a valid openai-compatible backend configuration.`,
+      );
+      return;
+    }
+
     enqueueBridgeTask({
       session: typedSession,
       binding: typedBinding,
       prompt: input.prompt,
       contextPayload: JSON.stringify(input.contextMessages),
       outputMessageId,
+      backendConfig,
     });
 
     if (!isBridgeAvailable(typedBinding.bridgeId)) {

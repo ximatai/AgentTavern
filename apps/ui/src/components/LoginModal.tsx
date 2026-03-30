@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { Modal, Input, Form, Radio, Select, Typography } from "antd";
+import { Modal, Input, Form, Typography } from "antd";
 import { LogoutOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 
@@ -34,7 +34,6 @@ export function LoginModal({ open, onClose, inviteToken = null, afterBootstrap }
 
   const isLoggedIn = !!principal;
   const isHumanFirstRun = !isLoggedIn;
-  const selectedKind = Form.useWatch("kind", form) ?? principal?.kind ?? "human";
 
   useEffect(() => {
     let cancelled = false;
@@ -64,19 +63,13 @@ export function LoginModal({ open, onClose, inviteToken = null, afterBootstrap }
   useEffect(() => {
     if (open && isLoggedIn && principal) {
       form.setFieldsValue({
-        kind: principal.kind,
         globalDisplayName: principal.globalDisplayName,
         loginKey: principal.loginKey,
-        backendType: principal.backendType ?? "claude_code",
-        backendThreadId: principal.backendThreadId ?? "",
       });
     } else if (open) {
       form.setFieldsValue({
-        kind: "human",
         loginKey: "",
         globalDisplayName: "",
-        backendType: "claude_code",
-        backendThreadId: "",
       });
     }
   }, [open, isLoggedIn, principal, form]);
@@ -85,13 +78,13 @@ export function LoginModal({ open, onClose, inviteToken = null, afterBootstrap }
     try {
       const values = await form.validateFields();
       setLoading(true);
-      const kind = isHumanFirstRun ? "human" : (values.kind as "human" | "agent");
       await bootstrap({
-        kind,
+        kind: "human",
         loginKey: values.loginKey,
         globalDisplayName: values.globalDisplayName,
-        backendType: kind === "agent" ? (values.backendType as "codex_cli" | "claude_code" | "opencode") : null,
-        backendThreadId: kind === "agent" ? values.backendThreadId : null,
+        backendType: null,
+        backendThreadId: null,
+        backendConfig: null,
       });
       await refreshLobbyPresence();
       toast().success(t("login.loginSuccess"));
@@ -171,37 +164,18 @@ export function LoginModal({ open, onClose, inviteToken = null, afterBootstrap }
         </div>
       ) : null}
       <Form form={form} layout="vertical">
-        {!isHumanFirstRun ? (
-          <Form.Item
-            name="kind"
-            label={t("login.identityKindLabel")}
-            rules={[{ required: true, message: t("login.identityKindRequired") }]}
-          >
-            <Radio.Group disabled={isLoggedIn}>
-              <Radio.Button value="human">{t("login.kindHuman")}</Radio.Button>
-              <Radio.Button value="agent">{t("login.kindAgent")}</Radio.Button>
-            </Radio.Group>
-          </Form.Item>
-        ) : null}
         <Form.Item
           name="loginKey"
-          label={selectedKind === "agent" ? t("login.agentKeyLabel") : t("login.emailLabel")}
+          label={t("login.emailLabel")}
           rules={[
             {
               required: true,
-              message:
-                selectedKind === "agent"
-                  ? t("login.agentKeyRequired")
-                  : t("login.emailRequired"),
+              message: t("login.emailRequired"),
             },
           ]}
         >
           <Input
-            placeholder={
-              selectedKind === "agent"
-                ? t("login.agentKeyPlaceholder")
-                : t("login.emailPlaceholder")
-            }
+            placeholder={t("login.emailPlaceholder")}
             disabled={isLoggedIn}
           />
         </Form.Item>
@@ -214,35 +188,6 @@ export function LoginModal({ open, onClose, inviteToken = null, afterBootstrap }
         >
           <Input placeholder={t("login.displayNamePlaceholder")} />
         </Form.Item>
-        {!isHumanFirstRun && selectedKind === "agent" ? (
-          <>
-            <Form.Item
-              name="backendType"
-              label={t("login.backendTypeLabel")}
-              rules={[{ required: true, message: t("login.backendTypeRequired") }]}
-              initialValue="claude_code"
-            >
-              <Select
-                disabled={isLoggedIn}
-                options={[
-                  { value: "claude_code", label: t("login.backendClaudeCode") },
-                  { value: "codex_cli", label: t("login.backendCodexCli") },
-                  { value: "opencode", label: t("login.backendOpenCode") },
-                ]}
-              />
-            </Form.Item>
-            <Form.Item
-              name="backendThreadId"
-              label={t("login.threadIdLabel")}
-              rules={[{ required: true, message: t("login.threadIdRequired") }]}
-            >
-              <Input
-                placeholder={t("login.threadIdPlaceholder")}
-                disabled={isLoggedIn}
-              />
-            </Form.Item>
-          </>
-        ) : null}
       </Form>
       {!isHumanFirstRun ? (
         <div style={{ color: "#94A3B8", fontSize: 13, marginTop: 8 }}>

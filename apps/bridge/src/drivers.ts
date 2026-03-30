@@ -2,10 +2,12 @@ import type { AgentBackendType, BridgeTaskKind } from "@agent-tavern/shared";
 import {
   createClaudeCodeAdapter,
   createCodexCliAdapter,
+  createOpenAICompatibleAdapter,
   createOpenCodeAdapter,
   type AgentRunInput,
   type AgentStreamEvent,
 } from "@agent-tavern/agent-sdk";
+import type { OpenAICompatibleBackendConfig } from "@agent-tavern/shared";
 
 export type BridgeTask = {
   id: string;
@@ -16,6 +18,7 @@ export type BridgeTask = {
   kind: BridgeTaskKind;
   backendType: AgentBackendType;
   backendThreadId: string;
+  backendConfig: string | null;
   cwd: string | null;
   outputMessageId: string;
   prompt: string;
@@ -138,11 +141,73 @@ function createOpenCodeBridgeDriver(): BridgeDriver {
   };
 }
 
+function parseOpenAICompatibleConfig(raw: string | null): OpenAICompatibleBackendConfig | null {
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (typeof parsed.baseUrl !== "string" || typeof parsed.model !== "string") {
+      return null;
+    }
+
+    const headers = parsed.headers && typeof parsed.headers === "object" && !Array.isArray(parsed.headers)
+      ? Object.fromEntries(
+          Object.entries(parsed.headers).flatMap(([key, value]) =>
+            typeof value === "string" ? [[key, value]] : [],
+          ),
+        )
+      : undefined;
+
+    return {
+      baseUrl: parsed.baseUrl,
+      model: parsed.model,
+      ...(typeof parsed.apiKey === "string" ? { apiKey: parsed.apiKey } : {}),
+      ...(headers && Object.keys(headers).length > 0 ? { headers } : {}),
+      ...(typeof parsed.temperature === "number" ? { temperature: parsed.temperature } : {}),
+      ...(typeof parsed.maxTokens === "number" ? { maxTokens: parsed.maxTokens } : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function createOpenAICompatibleBridgeDriver(): BridgeDriver {
+  return {
+    backendType: "openai_compatible",
+    async *run(task: BridgeTask) {
+      const config = parseOpenAICompatibleConfig(task.backendConfig);
+      if (!config) {
+        yield {
+          type: "failed",
+          error: "openai_compatible backend is missing a valid backendConfig",
+        };
+        return;
+      }
+
+      const adapter = createOpenAICompatibleAdapter(config);
+
+      yield* adapter.run({
+        roomId: task.roomId,
+        agentMemberId: task.agentMemberId,
+        agentDisplayName: task.agentMemberId,
+        requesterMemberId: task.requesterMemberId,
+        requesterDisplayName: task.requesterMemberId,
+        triggerMessageId: task.sessionId,
+        prompt: task.prompt,
+        contextMessages: parseContextPayload(task.contextPayload),
+      });
+    },
+  };
+}
+
 export function createDriverRegistry(): Map<AgentBackendType, BridgeDriver> {
   const drivers: BridgeDriver[] = [
     createCodexBridgeDriver(),
     createClaudeCodeBridgeDriver(),
     createOpenCodeBridgeDriver(),
+    createOpenAICompatibleBridgeDriver(),
   ];
   return new Map(drivers.map((driver) => [driver.backendType, driver]));
 }

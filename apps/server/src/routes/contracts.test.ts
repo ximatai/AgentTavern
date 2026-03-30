@@ -1595,6 +1595,70 @@ test("claude agent principal bootstrap exposes runtime-capable lobby presence an
   disconnectAgent();
 });
 
+test("openai-compatible agent principal bootstrap stores backendConfig and auto-generates backendThreadId", async () => {
+  const agentResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "agent",
+      loginKey: "agent:lmstudio-openai",
+      globalDisplayName: "LocalOpenAI",
+      backendType: "openai_compatible",
+      backendConfig: {
+        baseUrl: "http://127.0.0.1:1234/v1/",
+        model: "qwen2.5-7b-instruct",
+      },
+    }),
+  });
+
+  assert.equal(agentResponse.status, 200);
+  const agent = await agentResponse.json();
+  assert.equal(agent.backendType, "openai_compatible");
+  assert.match(agent.backendThreadId, /^oai_/);
+  assert.deepEqual(agent.backendConfig, {
+    baseUrl: "http://127.0.0.1:1234/v1",
+    model: "qwen2.5-7b-instruct",
+  });
+
+  const storedPrincipal = db
+    .select()
+    .from(principals)
+    .where(eq(principals.id, agent.principalId))
+    .get();
+  assert.equal(storedPrincipal?.backendType, "openai_compatible");
+  assert.equal(
+    storedPrincipal?.backendConfig,
+    JSON.stringify({
+      baseUrl: "http://127.0.0.1:1234/v1",
+      model: "qwen2.5-7b-instruct",
+    }),
+  );
+
+  const binding = db
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.principalId, agent.principalId))
+    .get();
+  assert.equal(binding?.backendType, "openai_compatible");
+  assert.equal(binding?.backendThreadId, agent.backendThreadId);
+
+  const disconnectAgent = markPrincipalOnline(agent.principalId, agent.principalToken);
+
+  const lobbyResponse = await app.request("http://localhost/api/presence/lobby");
+  assert.equal(lobbyResponse.status, 200);
+  const lobby = await lobbyResponse.json();
+  const lobbyAgent = lobby.principals.find((item: { id: string }) => item.id === agent.principalId);
+  assert.ok(lobbyAgent);
+  assert.equal(lobbyAgent.backendType, "openai_compatible");
+  assert.deepEqual(lobbyAgent.backendConfig, {
+    baseUrl: "http://127.0.0.1:1234/v1",
+    model: "qwen2.5-7b-instruct",
+  });
+  assert.equal(lobbyAgent.runtimeStatus, "pending_bridge");
+
+  disconnectAgent();
+});
+
 test("agent principal bootstrap rejects a bound backendThreadId without leaving a principal record", async () => {
   const createdAt = new Date("2026-03-25T00:30:00.000Z").toISOString();
 
@@ -1999,6 +2063,62 @@ test("principal can invite a private codex assistant, accept it, and adopt it in
   const assistantHistory = projectionMessages.find((message) => message.senderMemberId === adoptedMember.id);
   assert.equal(assistantHistory?.senderDisplayName, "账本助理");
   assert.equal(assistantHistory?.senderPresenceStatus, "offline");
+});
+
+test("principal can directly connect an openai-compatible private assistant from the web ui", async () => {
+  const bootstrapResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "owner-web-assistant@example.com",
+      globalDisplayName: "Web Owner",
+    }),
+  });
+  const principal = await bootstrapResponse.json();
+
+  const createResponse = await app.request("http://localhost/api/me/assistants", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      principalId: principal.principalId,
+      principalToken: principal.principalToken,
+      name: "本地模型助理",
+      backendType: "openai_compatible",
+      backendConfig: {
+        baseUrl: "http://127.0.0.1:1234/v1/",
+        model: "qwen-local",
+      },
+    }),
+  });
+
+  assert.equal(createResponse.status, 201);
+  const assistant = await createResponse.json();
+  assert.equal(assistant.backendType, "openai_compatible");
+  assert.match(assistant.backendThreadId, /^oai_/);
+  assert.equal(
+    assistant.backendConfig,
+    JSON.stringify({
+      baseUrl: "http://127.0.0.1:1234/v1",
+      model: "qwen-local",
+    }),
+  );
+
+  const listedResponse = await app.request(
+    `http://localhost/api/me/assistants?principalId=${principal.principalId}&principalToken=${principal.principalToken}`,
+  );
+  assert.equal(listedResponse.status, 200);
+  const listedAssistants = await listedResponse.json();
+  assert.equal(listedAssistants.length, 1);
+  assert.equal(listedAssistants[0].id, assistant.id);
+
+  const storedBinding = db
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.privateAssistantId, assistant.id))
+    .get();
+  assert.equal(storedBinding?.backendType, "openai_compatible");
+  assert.equal(storedBinding?.backendThreadId, assistant.backendThreadId);
 });
 
 test("uploads draft attachments and sends an attachment-only message", async () => {

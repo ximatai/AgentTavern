@@ -17,6 +17,7 @@ function createTask(overrides?: Partial<BridgeTask>): BridgeTask {
     kind: "message_reply",
     backendType: "codex_cli",
     backendThreadId: "thread_1",
+    backendConfig: null,
     cwd: "/tmp/task-cwd",
     outputMessageId: "msg_1",
     prompt: "help",

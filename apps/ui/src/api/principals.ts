@@ -1,3 +1,5 @@
+import type { AgentBackendType, OpenAICompatibleBackendConfig } from "@agent-tavern/shared";
+
 import { request } from "./client";
 
 export type PrincipalSession = {
@@ -6,8 +8,9 @@ export type PrincipalSession = {
   kind: "human" | "agent";
   loginKey: string;
   globalDisplayName: string;
-  backendType: "codex_cli" | "claude_code" | "local_process" | "opencode" | null;
+  backendType: AgentBackendType | null;
   backendThreadId: string | null;
+  backendConfig: OpenAICompatibleBackendConfig | null;
   status: "online" | "offline";
 };
 
@@ -21,8 +24,9 @@ async function bootstrapPrincipal(params: {
   kind: "human" | "agent";
   loginKey: string;
   globalDisplayName: string;
-  backendType: "codex_cli" | "claude_code" | "local_process" | "opencode" | null;
+  backendType: AgentBackendType | null;
   backendThreadId: string | null;
+  backendConfig?: OpenAICompatibleBackendConfig | null;
 }): Promise<PrincipalSession> {
   return request<PrincipalSession>("/api/principals/bootstrap", {
     method: "POST",

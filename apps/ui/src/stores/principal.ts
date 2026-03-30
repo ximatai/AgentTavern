@@ -1,3 +1,5 @@
+import type { AgentBackendType, OpenAICompatibleBackendConfig } from "@agent-tavern/shared";
+
 import { create } from "zustand";
 
 import { bootstrapPrincipal as bootstrapAPI } from "../api/principals";
@@ -18,8 +20,9 @@ interface PrincipalActions {
     kind: "human" | "agent";
     loginKey: string;
     globalDisplayName: string;
-    backendType: "codex_cli" | "claude_code" | "local_process" | "opencode" | null;
+    backendType: AgentBackendType | null;
     backendThreadId: string | null;
+    backendConfig?: OpenAICompatibleBackendConfig | null;
   }) => Promise<PrincipalSession>;
   logout: () => void;
   restoreFromStorage: () => Promise<void>;
@@ -79,6 +82,7 @@ export const usePrincipalStore = create<PrincipalStore>()((set, get) => ({
         globalDisplayName: parsed.globalDisplayName,
         backendType: parsed.backendType,
         backendThreadId: parsed.backendThreadId,
+        backendConfig: parsed.backendConfig,
       });
       set({
         principal: refreshed,

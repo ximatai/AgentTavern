@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Modal, Button, Typography, Tag } from "antd";
-import { RobotOutlined, TeamOutlined } from "@ant-design/icons";
+import { ApiOutlined, RobotOutlined, TeamOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 
 import { toast } from "../lib/feedback";
@@ -21,7 +21,12 @@ function backendTypeLabel(type: string, t: (key: string) => string): string {
   if (type === "codex_cli") return t("assistantPanel.backendCodex");
   if (type === "claude_code") return t("assistantPanel.backendClaudeCode");
   if (type === "opencode") return t("assistantPanel.backendOpenCode");
+  if (type === "openai_compatible") return t("login.backendOpenAICompatible");
   return type;
+}
+
+function sourceIcon(type: string) {
+  return type === "openai_compatible" ? <ApiOutlined /> : <RobotOutlined />;
 }
 
 interface RoomAssistantModalProps {
@@ -142,7 +147,12 @@ export function RoomAssistantModal({ open, onClose }: RoomAssistantModalProps) {
                 return (
                   <div key={assistant.id} className="am-list-item">
                     <div className="am-item-left">
-                      <div className="am-item-name">{assistant.name}</div>
+                      <div className="am-item-name-row">
+                        <span className="am-source-icon" aria-hidden="true">
+                          {sourceIcon(assistant.backendType)}
+                        </span>
+                        <div className="am-item-name">{assistant.name}</div>
+                      </div>
                       <div className="am-item-meta">
                         <Tag className="am-backend-tag">{backendTypeLabel(assistant.backendType, t)}</Tag>
                         <Text type="secondary" className="am-item-status">

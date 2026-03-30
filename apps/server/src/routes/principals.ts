@@ -16,13 +16,33 @@ import {
   revokeWsTokensForMember,
   verifyPrincipalToken,
 } from "../realtime";
-import { isSupportedAgentBackendType, now } from "./support";
+import {
+  isSupportedAgentBackendType,
+  normalizeAgentBackendConfig,
+  normalizeAgentBackendThreadId,
+  now,
+} from "./support";
 
 const principalRoutes = new Hono();
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update" | "delete">;
 
 function isPrincipalKind(value: unknown): value is PrincipalKind {
   return value === "human" || value === "agent";
+}
+
+function toPublicBackendConfig(raw: string | null): Record<string, unknown> | null {
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function ensureAgentPrincipalBinding(principal: Principal, database: DbExecutor = db): void {
@@ -83,19 +103,31 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
   const globalDisplayName =
     typeof body?.globalDisplayName === "string" ? body.globalDisplayName.trim() : "";
   const backendType = typeof body?.backendType === "string" ? body.backendType.trim() : "";
-  const backendThreadId =
+  const requestedBackendThreadId =
     typeof body?.backendThreadId === "string" ? body.backendThreadId.trim() : "";
+  const resolvedBackendType = kind === "agent" && isSupportedAgentBackendType(backendType)
+    ? backendType
+    : null;
+  const backendThreadId = normalizeAgentBackendThreadId(resolvedBackendType, requestedBackendThreadId);
+  const {
+    backendConfig,
+    error: backendConfigError,
+  } = normalizeAgentBackendConfig(resolvedBackendType, body?.backendConfig);
 
   if (!loginKey || !globalDisplayName) {
     return c.json({ error: "kind, loginKey and globalDisplayName are required" }, 400);
   }
 
-  if (kind === "agent" && !isSupportedAgentBackendType(backendType)) {
+  if (kind === "agent" && !resolvedBackendType) {
     return c.json({ error: "agent principal requires a supported backendType" }, 400);
   }
 
   if (kind === "agent" && !backendThreadId) {
     return c.json({ error: "agent principal requires backendThreadId" }, 400);
+  }
+
+  if (kind === "agent" && backendConfigError) {
+    return c.json({ error: backendConfigError }, 400);
   }
 
   const existing = db
@@ -110,6 +142,9 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
       const oldGlobalDisplayName = existing.globalDisplayName;
       const updated = db.transaction((tx) => {
         if (kind === "agent") {
+          if (!backendThreadId) {
+            throw new Error("backendThreadId is required");
+          }
           const conflictingBinding = tx
             .select()
             .from(agentBindings)
@@ -123,15 +158,17 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
 
         if (
           existing.globalDisplayName !== globalDisplayName ||
-          existing.backendType !== (kind === "agent" ? backendType : null) ||
-          existing.backendThreadId !== (kind === "agent" ? backendThreadId : null)
+          existing.backendType !== (kind === "agent" ? resolvedBackendType : null) ||
+          existing.backendThreadId !== (kind === "agent" ? backendThreadId : null) ||
+          (existing.backendConfig ?? null) !== (kind === "agent" ? backendConfig : null)
         ) {
           tx
             .update(principals)
             .set({
               globalDisplayName,
-              backendType: kind === "agent" ? backendType : null,
+              backendType: kind === "agent" ? resolvedBackendType : null,
               backendThreadId: kind === "agent" ? backendThreadId : null,
+              backendConfig: kind === "agent" ? backendConfig : null,
             })
             .where(eq(principals.id, existing.id))
             .run();
@@ -200,6 +237,7 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
         globalDisplayName: updated.globalDisplayName,
         backendType: updated.backendType ?? null,
         backendThreadId: updated.backendThreadId ?? null,
+        backendConfig: toPublicBackendConfig(updated.backendConfig ?? null),
         status: updated.status,
       });
     } catch (error) {
@@ -216,8 +254,9 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
     kind,
     loginKey,
     globalDisplayName,
-    backendType: kind === "agent" ? backendType : null,
+    backendType: kind === "agent" ? resolvedBackendType : null,
     backendThreadId: kind === "agent" ? backendThreadId : null,
+    backendConfig: kind === "agent" ? backendConfig : null,
     status: "offline",
     createdAt: now(),
   };
@@ -225,6 +264,9 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
   try {
     db.transaction((tx) => {
       if (kind === "agent") {
+        if (!backendThreadId) {
+          throw new Error("backendThreadId is required");
+        }
         const conflictingBinding = tx
           .select()
           .from(agentBindings)
@@ -255,6 +297,7 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
     globalDisplayName: principal.globalDisplayName,
     backendType: principal.backendType ?? null,
     backendThreadId: principal.backendThreadId ?? null,
+    backendConfig: toPublicBackendConfig(principal.backendConfig ?? null),
     status: principal.status,
   });
 });
@@ -375,6 +418,7 @@ principalRoutes.get("/api/presence/lobby", (c) => {
             globalDisplayName: principal.globalDisplayName,
             backendType: principal.backendType ?? null,
             backendThreadId: principal.backendThreadId ?? null,
+            backendConfig: toPublicBackendConfig(principal.backendConfig ?? null),
             status: visibleInLobby ? "online" : principal.status,
             createdAt: principal.createdAt,
             runtimeStatus,

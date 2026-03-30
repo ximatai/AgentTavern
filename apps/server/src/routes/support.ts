@@ -6,6 +6,7 @@ import type {
   ApprovalGrantDuration,
   Approval,
   Message,
+  OpenAICompatibleBackendConfig,
   RealtimeEvent,
 } from "@agent-tavern/shared";
 
@@ -37,7 +38,89 @@ export function isValidDisplayName(displayName: string): boolean {
 }
 
 export function isSupportedAgentBackendType(value: unknown): value is AgentBackendType {
-  return value === "local_process" || value === "codex_cli" || value === "claude_code" || value === "opencode";
+  return (
+    value === "local_process" ||
+    value === "codex_cli" ||
+    value === "claude_code" ||
+    value === "opencode" ||
+    value === "openai_compatible"
+  );
+}
+
+export function normalizeAgentBackendThreadId(
+  backendType: AgentBackendType | null,
+  backendThreadId: string,
+): string | null {
+  if (!backendType) {
+    return null;
+  }
+
+  if (backendThreadId) {
+    return backendThreadId;
+  }
+
+  if (backendType === "openai_compatible") {
+    return createId("oai");
+  }
+
+  return null;
+}
+
+export function normalizeAgentBackendConfig(
+  backendType: AgentBackendType | null,
+  value: unknown,
+): { backendConfig: string | null; error: string | null } {
+  if (!backendType || backendType === "local_process") {
+    return { backendConfig: null, error: null };
+  }
+
+  if (backendType !== "openai_compatible") {
+    return { backendConfig: null, error: null };
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { backendConfig: null, error: "openai_compatible backend requires backendConfig" };
+  }
+
+  const record = value as Record<string, unknown>;
+  const baseUrl = typeof record.baseUrl === "string" ? record.baseUrl.trim() : "";
+  const model = typeof record.model === "string" ? record.model.trim() : "";
+  const apiKey = typeof record.apiKey === "string" && record.apiKey.trim()
+    ? record.apiKey.trim()
+    : undefined;
+  const headers = record.headers && typeof record.headers === "object" && !Array.isArray(record.headers)
+    ? Object.fromEntries(
+        Object.entries(record.headers).flatMap(([key, headerValue]) =>
+          typeof headerValue === "string" && key.trim()
+            ? [[key.trim(), headerValue]]
+            : [],
+        ),
+      )
+    : undefined;
+  const temperature = typeof record.temperature === "number" ? record.temperature : undefined;
+  const maxTokens = typeof record.maxTokens === "number" ? record.maxTokens : undefined;
+
+  if (!baseUrl || !model) {
+    return { backendConfig: null, error: "openai_compatible backendConfig requires baseUrl and model" };
+  }
+
+  let normalizedBaseUrl: string;
+  try {
+    normalizedBaseUrl = new URL(baseUrl).toString().replace(/\/$/, "");
+  } catch {
+    return { backendConfig: null, error: "openai_compatible backendConfig.baseUrl must be a valid URL" };
+  }
+
+  const normalized: OpenAICompatibleBackendConfig = {
+    baseUrl: normalizedBaseUrl,
+    model,
+    ...(apiKey ? { apiKey } : {}),
+    ...(headers && Object.keys(headers).length > 0 ? { headers } : {}),
+    ...(temperature !== undefined ? { temperature } : {}),
+    ...(maxTokens !== undefined ? { maxTokens } : {}),
+  };
+
+  return { backendConfig: JSON.stringify(normalized), error: null };
 }
 
 export function isApprovalGrantDuration(value: unknown): value is ApprovalGrantDuration {

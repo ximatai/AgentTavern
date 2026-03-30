@@ -77,7 +77,21 @@ export type ApprovalGrantDuration =
   | "1_hour"
   | "forever";
 
-export type AgentBackendType = "local_process" | "codex_cli" | "claude_code" | "opencode";
+export type OpenAICompatibleBackendConfig = {
+  baseUrl: string;
+  model: string;
+  apiKey?: string;
+  headers?: Record<string, string>;
+  temperature?: number;
+  maxTokens?: number;
+};
+
+export type AgentBackendType =
+  | "local_process"
+  | "codex_cli"
+  | "claude_code"
+  | "opencode"
+  | "openai_compatible";
 
 export type PrivateAssistantInviteStatus =
   | "pending"
@@ -108,6 +122,7 @@ export type Principal = {
   globalDisplayName: string;
   backendType?: AgentBackendType | null;
   backendThreadId?: string | null;
+  backendConfig?: string | null;
   status: PresenceStatus;
   createdAt: string;
 };
@@ -118,6 +133,7 @@ export type PrivateAssistant = {
   name: string;
   backendType: AgentBackendType;
   backendThreadId: string | null;
+  backendConfig?: string | null;
   status: AgentBindingStatus;
   createdAt: string;
 };
@@ -128,6 +144,7 @@ export type PrivateAssistantInvite = {
   name: string;
   backendType: AgentBackendType;
   inviteToken: string;
+  backendConfig?: string | null;
   status: PrivateAssistantInviteStatus;
   acceptedPrivateAssistantId: string | null;
   createdAt: string;
@@ -259,6 +276,7 @@ export type BridgeTask = {
   kind: BridgeTaskKind;
   backendType: AgentBackendType;
   backendThreadId: string;
+  backendConfig?: string | null;
   cwd: string | null;
   outputMessageId: string;
   prompt: string;

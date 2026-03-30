@@ -17,6 +17,8 @@ import { toPublicMember } from "../lib/public";
 import { broadcastToPrincipal, broadcastToRoom, verifyPrincipalToken, verifyWsToken } from "../realtime";
 import {
   isSupportedAgentBackendType,
+  normalizeAgentBackendConfig,
+  normalizeAgentBackendThreadId,
   isUniqueConstraintError,
   isValidDisplayName,
   now,
@@ -120,6 +122,112 @@ privateAssistantRoutes.get("/api/me/assistants/invites", (c) => {
   );
 });
 
+privateAssistantRoutes.post("/api/me/assistants", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const principalId = typeof body?.principalId === "string" ? body.principalId.trim() : "";
+  const principalToken =
+    typeof body?.principalToken === "string" ? body.principalToken.trim() : "";
+  const name = typeof body?.name === "string" ? body.name.trim() : "";
+  const backendType = isSupportedAgentBackendType(body?.backendType) ? body.backendType : null;
+  const {
+    backendConfig,
+    error: backendConfigError,
+  } = normalizeAgentBackendConfig(backendType, body?.backendConfig);
+  const backendThreadId = normalizeAgentBackendThreadId(backendType, "");
+
+  if (!principalId || !principalToken || !name || !backendType) {
+    return c.json({ error: "principalId, principalToken, name and backendType are required" }, 400);
+  }
+
+  if (!verifyPrincipalToken(principalToken, principalId)) {
+    return c.json({ error: "invalid principal token" }, 403);
+  }
+
+  if (!isValidDisplayName(name)) {
+    return c.json({ error: "name must not contain spaces or @" }, 400);
+  }
+
+  if (backendType !== "openai_compatible") {
+    return c.json({ error: "only openai_compatible backend supports direct web setup" }, 400);
+  }
+
+  if (backendConfigError) {
+    return c.json({ error: backendConfigError }, 400);
+  }
+
+  if (!backendThreadId) {
+    return c.json({ error: "backendThreadId is required" }, 400);
+  }
+
+  const existingAssistant = db
+    .select()
+    .from(privateAssistants)
+    .where(
+      and(
+        eq(privateAssistants.ownerPrincipalId, principalId),
+        eq(privateAssistants.name, name),
+      ),
+    )
+    .get();
+
+  if (existingAssistant) {
+    return c.json({ error: "private assistant name already exists for this principal" }, 409);
+  }
+
+  const existingPendingInvite = db
+    .select()
+    .from(privateAssistantInvites)
+    .where(
+      and(
+        eq(privateAssistantInvites.ownerPrincipalId, principalId),
+        eq(privateAssistantInvites.name, name),
+        eq(privateAssistantInvites.status, "pending"),
+      ),
+    )
+    .get();
+
+  if (existingPendingInvite) {
+    return c.json({ error: "private assistant name already has a pending invite" }, 409);
+  }
+
+  const assistant: PrivateAssistant = {
+    id: createId("pa"),
+    ownerPrincipalId: principalId,
+    name,
+    backendType,
+    backendThreadId,
+    backendConfig,
+    status: "pending_bridge",
+    createdAt: now(),
+  };
+
+  try {
+    db.insert(privateAssistants).values(assistant).run();
+    ensurePrivateAssistantBinding(assistant);
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      db.delete(privateAssistants).where(eq(privateAssistants.id, assistant.id)).run();
+      return c.json({ error: "private assistant name already exists for this principal" }, 409);
+    }
+
+    if (error instanceof Error && error.message === "backendThreadId already bound") {
+      db.delete(privateAssistants).where(eq(privateAssistants.id, assistant.id)).run();
+      return c.json({ error: "backendThreadId already bound" }, 409);
+    }
+
+    throw error;
+  }
+
+  broadcastToPrincipal(principalId, {
+    type: "private_assistants.changed",
+    principalId,
+    timestamp: now(),
+    payload: { reason: "assistant_created" },
+  });
+
+  return c.json(assistant, 201);
+});
+
 privateAssistantRoutes.post("/api/me/assistants/invites", async (c) => {
   const body = await c.req.json().catch(() => null);
   const principalId = typeof body?.principalId === "string" ? body.principalId.trim() : "";
@@ -127,6 +235,10 @@ privateAssistantRoutes.post("/api/me/assistants/invites", async (c) => {
     typeof body?.principalToken === "string" ? body.principalToken.trim() : "";
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   const backendType = isSupportedAgentBackendType(body?.backendType) ? body.backendType : null;
+  const {
+    backendConfig,
+    error: backendConfigError,
+  } = normalizeAgentBackendConfig(backendType, body?.backendConfig);
 
   if (!principalId || !principalToken || !name || !backendType) {
     return c.json({ error: "principalId, principalToken, name and backendType are required" }, 400);
@@ -142,6 +254,10 @@ privateAssistantRoutes.post("/api/me/assistants/invites", async (c) => {
 
   if (backendType === "local_process") {
     return c.json({ error: "local_process backend is not supported for private assistants" }, 400);
+  }
+
+  if (backendConfigError) {
+    return c.json({ error: backendConfigError }, 400);
   }
 
   const existingAssistant = db
@@ -187,6 +303,7 @@ privateAssistantRoutes.post("/api/me/assistants/invites", async (c) => {
     ownerPrincipalId: principalId,
     name,
     backendType: backendType as AgentBackendType,
+    backendConfig,
     status: "pending",
     inviteToken: createInviteToken(),
     acceptedPrivateAssistantId: null,
@@ -255,7 +372,10 @@ privateAssistantRoutes.post("/api/private-assistant-invites/:inviteToken/accept"
 
   const body = await c.req.json().catch(() => null);
   const backendThreadId =
-    typeof body?.backendThreadId === "string" ? body.backendThreadId.trim() : "";
+    normalizeAgentBackendThreadId(
+      invite.backendType,
+      typeof body?.backendThreadId === "string" ? body.backendThreadId.trim() : "",
+    ) ?? "";
 
   if (!backendThreadId) {
     return c.json({ error: "backendThreadId is required" }, 400);
@@ -292,6 +412,7 @@ privateAssistantRoutes.post("/api/private-assistant-invites/:inviteToken/accept"
     name: invite.name,
     backendType: invite.backendType,
     backendThreadId,
+    backendConfig: invite.backendConfig ?? null,
     status: "pending_bridge",
     createdAt: now(),
   };

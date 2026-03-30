@@ -1,0 +1,172 @@
+import type {
+  AgentAdapter,
+  AgentRunInput,
+  AgentStreamEvent,
+} from "./index";
+import type { OpenAICompatibleBackendConfig } from "@agent-tavern/shared";
+
+export type OpenAICompatibleAdapterConfig = OpenAICompatibleBackendConfig & {
+  maxRuntimeMs?: number;
+};
+
+export type OpenAICompatibleFetch = typeof fetch;
+
+type OpenAICompatibleChunk = {
+  id?: string;
+  choices?: Array<{
+    delta?: {
+      content?: string | Array<{ type?: string; text?: string }>;
+    };
+    finish_reason?: string | null;
+  }>;
+};
+
+function extractDeltaText(chunk: OpenAICompatibleChunk): string {
+  const content = chunk.choices?.[0]?.delta?.content;
+
+  if (typeof content === "string") {
+    return content;
+  }
+
+  if (Array.isArray(content)) {
+    return content
+      .flatMap((part) => (part?.type === "text" && typeof part.text === "string" ? [part.text] : []))
+      .join("");
+  }
+
+  return "";
+}
+
+function buildErrorMessage(status: number, bodyText: string): string {
+  const trimmed = bodyText.trim();
+  return trimmed
+    ? `openai-compatible backend request failed (${status}): ${trimmed}`
+    : `openai-compatible backend request failed (${status})`;
+}
+
+export function createOpenAICompatibleAdapter(
+  config: OpenAICompatibleAdapterConfig,
+  fetchFn: OpenAICompatibleFetch = fetch,
+): AgentAdapter {
+  return {
+    async *run(input: AgentRunInput): AsyncIterable<AgentStreamEvent> {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), config.maxRuntimeMs ?? 300_000);
+
+      try {
+        const headers: Record<string, string> = {
+          "content-type": "application/json",
+          accept: "text/event-stream",
+          ...config.headers,
+        };
+
+        if (config.apiKey) {
+          headers.authorization = `Bearer ${config.apiKey}`;
+        }
+
+        const response = await fetchFn(`${config.baseUrl}/chat/completions`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            model: config.model,
+            stream: true,
+            messages: [
+              {
+                role: "user",
+                content: input.prompt,
+              },
+            ],
+            ...(config.temperature !== undefined ? { temperature: config.temperature } : {}),
+            ...(config.maxTokens !== undefined ? { max_tokens: config.maxTokens } : {}),
+          }),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => "");
+          yield { type: "failed", error: buildErrorMessage(response.status, errorText) };
+          return;
+        }
+
+        if (!response.body) {
+          yield { type: "failed", error: "openai-compatible backend returned no response body" };
+          return;
+        }
+
+        const decoder = new TextDecoder();
+        const reader = response.body.getReader();
+        let buffer = "";
+        let streamedAny = false;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+
+          while (true) {
+            const lineBreak = buffer.indexOf("\n");
+            if (lineBreak < 0) {
+              break;
+            }
+
+            const rawLine = buffer.slice(0, lineBreak);
+            buffer = buffer.slice(lineBreak + 1);
+            const line = rawLine.trim();
+
+            if (!line.startsWith("data:")) {
+              continue;
+            }
+
+            const data = line.slice(5).trim();
+            if (!data) {
+              continue;
+            }
+            if (data === "[DONE]") {
+              yield { type: "completed" };
+              return;
+            }
+
+            let parsed: OpenAICompatibleChunk;
+            try {
+              parsed = JSON.parse(data) as OpenAICompatibleChunk;
+            } catch {
+              yield {
+                type: "failed",
+                error: `openai-compatible backend emitted invalid JSON: ${data.slice(0, 200)}`,
+              };
+              return;
+            }
+
+            const text = extractDeltaText(parsed);
+            if (text) {
+              streamedAny = true;
+              yield { type: "delta", text };
+            }
+
+            if (parsed.choices?.[0]?.finish_reason) {
+              yield { type: "completed" };
+              return;
+            }
+          }
+
+          if (done) {
+            break;
+          }
+        }
+
+        yield streamedAny ? { type: "completed" } : { type: "completed", finalText: "" };
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          yield { type: "failed", error: "openai-compatible backend request timed out" };
+          return;
+        }
+
+        yield {
+          type: "failed",
+          error: error instanceof Error ? error.message : "openai-compatible backend request failed",
+        };
+      } finally {
+        clearTimeout(timeout);
+      }
+    },
+  };
+}
