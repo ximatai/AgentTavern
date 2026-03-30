@@ -4440,7 +4440,9 @@ test("attached codex binding can be pulled and completed through bridge task end
       body: JSON.stringify({
         bridgeToken: "bridge_codex_task_token",
         bridgeInstanceId: "binst_codex_task",
-        finalText: "final bridge output",
+        action: {
+          content: "final bridge output",
+        },
       }),
     },
   );
@@ -4455,7 +4457,9 @@ test("attached codex binding can be pulled and completed through bridge task end
       body: JSON.stringify({
         bridgeToken: "bridge_codex_task_token",
         bridgeInstanceId: "binst_codex_task",
-        finalText: "duplicate output",
+        action: {
+          content: "duplicate output",
+        },
       }),
     },
   );
@@ -5512,7 +5516,9 @@ test("attached claude private assistant binding persists refreshed backendThread
       body: JSON.stringify({
         bridgeToken: "bridge_claude_task_token",
         bridgeInstanceId: "binst_claude_task",
-        finalText: "final claude assistant output",
+        action: {
+          content: "final claude assistant output",
+        },
         backendThreadId: "11111111-2222-3333-4444-555555555555",
       }),
     },
