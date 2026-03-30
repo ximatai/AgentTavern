@@ -221,6 +221,32 @@
   gap: 2px;
 }
 
+.rs-summary-card {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(45, 212, 191, 0.08);
+  border: 1px solid rgba(45, 212, 191, 0.18);
+}
+
+.rs-summary-label {
+  display: inline-flex;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #5eead4;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.rs-summary-card p {
+  margin: 0;
+  font-family: Inter, sans-serif;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--font-secondary, #94A3B8);
+}
+
 .rs-member-row {
   display: flex;
   align-items: center;

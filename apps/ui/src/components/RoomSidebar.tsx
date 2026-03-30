@@ -113,6 +113,7 @@ const GRANT_OPTIONS: Array<{ value: ApprovalGrantDuration; label: string }> = [
 export function RoomSidebar() {
   const { t } = useTranslation();
   const room = useRoomStore((s) => s.room);
+  const roomSummary = useRoomStore((s) => s.roomSummary);
   const self = useRoomStore((s) => s.self);
   const members = useRoomStore((s) => s.members);
   const pendingApprovals = useApprovalStore((s) => s.pendingApprovals);
@@ -535,6 +536,12 @@ export function RoomSidebar() {
           ))}
 
         </div>
+        {roomSummary ? (
+          <div className="rs-summary-card">
+            <span className="rs-summary-label">{t("roomSidebar.roomSummary")}</span>
+            <p>{roomSummary.summaryText}</p>
+          </div>
+        ) : null}
       </section>
 
       {/* ── Section 2: Room Members ── */}

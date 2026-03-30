@@ -165,10 +165,12 @@ function handleEvent(event: RealtimeEvent): void {
     case "agent.message.committed": {
       const { sessionId, message } = event.payload;
       useSessionStore.getState().commitMessage(sessionId, message);
+      void useRoomStore.getState().refreshRoomSummary();
       break;
     }
     case "agent.session.completed": {
       useSessionStore.getState().updateSession(event.payload.session, null);
+      void useRoomStore.getState().refreshRoomSummary();
       break;
     }
     case "agent.session.failed": {

@@ -8,6 +8,7 @@ import { agentBindings, agentSessions, bridgeTasks, localBridges, members, rooms
 import {
   commitSessionMessage,
   completeSessionSilently,
+  completeSessionWithSummary,
   createStreamDeltaEvent,
   failSession,
   markSessionRunning,
@@ -19,6 +20,7 @@ import {
   createDraftAttachmentFromBuffer,
   resolveDraftAttachments,
 } from "../lib/message-attachments";
+import { extractRoomSummaryBlock } from "../lib/room-summary";
 import { broadcastToRoom } from "../realtime";
 
 const bridgeTaskRoutes = new Hono();
@@ -365,8 +367,14 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
 
   const allowSilentCompletion =
     room.secretaryMemberId === session.agentMemberId && room.secretaryMode !== "off";
+  const parsedSummary =
+    room.secretaryMemberId === session.agentMemberId &&
+      room.secretaryMode === "coordinate_and_summarize"
+      ? extractRoomSummaryBlock(finalText)
+      : { visibleContent: finalText, summaryText: null };
+  const visibleFinalText = parsedSummary.visibleContent.trim();
 
-  if (!finalText && attachmentIds.length === 0 && !allowSilentCompletion) {
+  if (!visibleFinalText && attachmentIds.length === 0 && !parsedSummary.summaryText && !allowSilentCompletion) {
     return c.json(
       { error: "finalText or attachmentIds are required unless this is a room secretary session" },
       400,
@@ -405,13 +413,20 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
     }
   }
 
-  if (!finalText && attachmentIds.length === 0) {
-    completeSessionSilently(toAgentSession(session));
+  if (!visibleFinalText && attachmentIds.length === 0) {
+    if (parsedSummary.summaryText) {
+      completeSessionWithSummary({
+        session: toAgentSession(session),
+        summaryText: parsedSummary.summaryText,
+      });
+    } else {
+      completeSessionSilently(toAgentSession(session));
+    }
   } else {
     const committed = commitSessionMessage({
       session: toAgentSession(session),
       messageId: task.outputMessageId,
-      content: finalText,
+      content: visibleFinalText + (parsedSummary.summaryText ? `\n\n[[ROOM_SUMMARY]]\n${parsedSummary.summaryText}\n[[/ROOM_SUMMARY]]` : ""),
       attachments,
       replyToMessageId: session.triggerMessageId,
     });

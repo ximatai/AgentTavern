@@ -391,6 +391,7 @@
     "collabStatus": "Collaboration Status",
     "activeItems": "items",
     "noActivity": "No collaboration activity to watch.",
+    "roomSummary": "Room summary",
     "waitingOwner": "is waiting for owner approval",
     "requester": "Requester",
     "agent": "Agent",

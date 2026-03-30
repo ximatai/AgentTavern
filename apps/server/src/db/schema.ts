@@ -153,6 +153,22 @@ export const messageAttachments = sqliteTable("message_attachments", {
   messageIdIdx: index("message_attachments_message_id_idx").on(table.messageId),
 }));
 
+export const roomSummaries = sqliteTable("room_summaries", {
+  roomId: text("room_id")
+    .primaryKey()
+    .references(() => rooms.id),
+  summaryText: text("summary_text").notNull(),
+  generatedByMemberId: text("generated_by_member_id")
+    .notNull()
+    .references(() => members.id),
+  sourceMessageId: text("source_message_id").references(() => messages.id),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => ({
+  generatedByMemberIdIdx: index("room_summaries_generated_by_member_id_idx").on(table.generatedByMemberId),
+  sourceMessageIdIdx: index("room_summaries_source_message_id_idx").on(table.sourceMessageId),
+}));
+
 export const mentions = sqliteTable("mentions", {
   id: text("id").primaryKey(),
   messageId: text("message_id")

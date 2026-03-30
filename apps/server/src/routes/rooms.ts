@@ -9,6 +9,7 @@ import { createId, createInviteToken } from "../lib/id";
 import { resolveBindingForPrincipal } from "../lib/agent-binding-resolution";
 import { resolveMemberRuntimeStatus } from "../lib/member-runtime";
 import { toPublicMember } from "../lib/public";
+import { getRoomSummary } from "../lib/room-summary";
 import {
   broadcastToPrincipal,
   broadcastToRoom,
@@ -503,6 +504,17 @@ roomRoutes.get("/api/rooms/:roomId", (c) => {
   }
 
   return c.json(room);
+});
+
+roomRoutes.get("/api/rooms/:roomId/summary", (c) => {
+  const roomId = c.req.param("roomId");
+  const room = db.select().from(rooms).where(eq(rooms.id, roomId)).get();
+
+  if (!room) {
+    return c.json({ error: "room not found" }, 404);
+  }
+
+  return c.json({ summary: getRoomSummary(roomId) });
 });
 
 roomRoutes.get("/api/invites/:inviteToken", (c) => {

@@ -1,4 +1,4 @@
-import type { PublicMember, PublicMessage, Room, RoomSecretaryMode } from "@agent-tavern/shared";
+import type { PublicMember, PublicMessage, Room, RoomSecretaryMode, RoomSummary } from "@agent-tavern/shared";
 
 import { request } from "./client";
 
@@ -33,6 +33,10 @@ export type RoomInviteRecord = {
   inviteUrl: string;
 };
 
+export type RoomSummaryResponse = {
+  summary: RoomSummary | null;
+};
+
 export type UpdateRoomSecretaryParams = {
   roomId: string;
   actorMemberId: string;
@@ -43,6 +47,10 @@ export type UpdateRoomSecretaryParams = {
 
 async function getRoom(roomId: string): Promise<Room> {
   return request<Room>(`/api/rooms/${roomId}`);
+}
+
+async function getRoomSummary(roomId: string): Promise<RoomSummaryResponse> {
+  return request<RoomSummaryResponse>(`/api/rooms/${roomId}/summary`);
 }
 
 async function createRoom(name: string): Promise<{
@@ -133,6 +141,7 @@ async function updateRoomSecretary(params: UpdateRoomSecretaryParams): Promise<R
 
 export {
   getRoom,
+  getRoomSummary,
   getRoomInvite,
   createRoom,
   joinRoom,

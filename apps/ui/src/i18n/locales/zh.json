@@ -391,6 +391,7 @@
     "collabStatus": "协作状态",
     "activeItems": "条动态",
     "noActivity": "当前没有需要关注的协作状态。",
+    "roomSummary": "房间摘要",
     "waitingOwner": "正在等待 owner 放行",
     "requester": "请求人",
     "agent": "智能体",

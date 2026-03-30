@@ -1,11 +1,12 @@
 import { create } from "zustand";
-import type { PublicMember, Room } from "@agent-tavern/shared";
+import type { PublicMember, Room, RoomSummary } from "@agent-tavern/shared";
 
 import {
   createRoom as createRoomAPI,
   createDirectRoom as createDirectRoomAPI,
   getJoinedRooms as getJoinedRoomsAPI,
   getRoom,
+  getRoomSummary as getRoomSummaryAPI,
   getRoomMembers,
   getRoomMessages,
   joinExistingRoom as joinExistingRoomAPI,
@@ -49,6 +50,7 @@ function recentRoomsStorageKey(
 
 interface RoomState {
   room: Room | null;
+  roomSummary: RoomSummary | null;
   self: JoinResult | null;
   members: PublicMember[];
   lobbyPrincipals: LobbyPrincipal[];
@@ -72,6 +74,7 @@ interface RoomActions {
     secretaryMode: Room["secretaryMode"];
     secretaryMemberId?: string | null;
   }) => Promise<void>;
+  refreshRoomSummary: () => Promise<void>;
   refreshMembers: () => Promise<void>;
   addOrUpdateMember: (member: PublicMember) => void;
   removeMember: (memberId: string) => void;
@@ -122,18 +125,20 @@ function mergeJoinedRooms(
 
 export const useRoomStore = create<RoomStore>()((set, get) => ({
   room: null,
+  roomSummary: null,
   self: null,
   members: [],
   lobbyPrincipals: [],
   recentRooms: [],
 
   hydrateRoom: async (roomId: string) => {
-    const [roomData, membersData, messagesData] = await Promise.all([
+    const [roomData, summaryData, membersData, messagesData] = await Promise.all([
       getRoom(roomId),
+      getRoomSummaryAPI(roomId),
       getRoomMembers(roomId),
       getRoomMessages(roomId),
     ]);
-    set({ room: roomData, members: membersData });
+    set({ room: roomData, roomSummary: summaryData.summary, members: membersData });
     useMessageStore.getState().setMessages(messagesData);
     get().markRoomRead(roomId, messagesData.at(-1)?.createdAt ?? new Date().toISOString());
     useSessionStore.getState().reset();
@@ -253,6 +258,17 @@ export const useRoomStore = create<RoomStore>()((set, get) => ({
     });
 
     set({ room: updatedRoom });
+  },
+
+  refreshRoomSummary: async () => {
+    const room = get().room;
+    if (!room) return;
+    try {
+      const summaryData = await getRoomSummaryAPI(room.id);
+      set({ roomSummary: summaryData.summary });
+    } catch {
+      // Ignore transient failures.
+    }
   },
 
   refreshMembers: async () => {
@@ -405,6 +421,7 @@ export const useRoomStore = create<RoomStore>()((set, get) => ({
   reset: () => {
     set({
       room: null,
+      roomSummary: null,
       self: null,
       members: [],
       lobbyPrincipals: [],

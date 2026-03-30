@@ -30,12 +30,13 @@ runMigrations();
 
 const { app } = appModule;
 const { db } = dbClient;
-const {
-  principals,
-  rooms,
-  members,
-  messages,
-  mentions,
+  const {
+    principals,
+    rooms,
+    members,
+    messages,
+    roomSummaries,
+    mentions,
   approvals,
   agentSessions,
   agentBindings,
@@ -579,6 +580,248 @@ test("room secretary does not add a second session when another agent is explici
     .all();
   assert.ok(roomMessages.some((message) => /planner reply/i.test(message.content)));
   assert.ok(!roomMessages.some((message) => /secretary should not run/i.test(message.content)));
+});
+
+test("room secretary in summarize mode stores hidden summary blocks separately from visible chat text", async () => {
+  const roomId = "room_secretary_summary_local";
+  const createdAt = new Date("2026-03-25T00:16:00.000Z").toISOString();
+
+  db.insert(rooms).values({
+    id: roomId,
+    name: "Secretary Summary Room",
+    inviteToken: createInviteToken(),
+    status: "active",
+    secretaryMemberId: "mem_secretary_summary",
+    secretaryMode: "coordinate_and_summarize",
+    createdAt,
+  }).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_human_secretary_summary",
+      roomId,
+      principalId: null,
+      type: "human",
+      roleKind: "none",
+      displayName: "Alice",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt,
+    },
+    {
+      id: "mem_secretary_summary",
+      roomId,
+      principalId: null,
+      type: "agent",
+      roleKind: "independent",
+      displayName: "Scribe",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: "local_process",
+      adapterConfig: JSON.stringify({
+        command: "node",
+        args: [
+          "-e",
+          "process.stdin.resume();process.stdin.on('end',()=>process.stdout.write('I will ask @Planner next.\\n\\n[[ROOM_SUMMARY]]\\nNeed planner draft and owner confirmation.\\n[[/ROOM_SUMMARY]]'));",
+        ],
+        inputFormat: "text",
+      }),
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt,
+    },
+  ]).run();
+
+  const wsToken = issueWsToken("mem_human_secretary_summary", roomId);
+  const response = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_human_secretary_summary",
+      wsToken,
+      content: "We need to decide the next milestone.",
+    }),
+  });
+
+  assert.equal(response.status, 201);
+
+  await waitFor(
+    () =>
+      db
+        .select()
+        .from(agentSessions)
+        .where(eq(agentSessions.roomId, roomId))
+        .get(),
+    (value) => value?.status === "completed",
+  );
+
+  const roomMessages = db
+    .select()
+    .from(messages)
+    .where(eq(messages.roomId, roomId))
+    .all();
+  const secretaryMessage = roomMessages.find((message) => message.senderMemberId === "mem_secretary_summary");
+  assert.equal(secretaryMessage?.content, "I will ask @Planner next.");
+
+  const storedSummary = db
+    .select()
+    .from(roomSummaries)
+    .where(eq(roomSummaries.roomId, roomId))
+    .get();
+  assert.equal(storedSummary?.summaryText, "Need planner draft and owner confirmation.");
+  assert.equal(storedSummary?.generatedByMemberId, "mem_secretary_summary");
+  assert.equal(storedSummary?.sourceMessageId, secretaryMessage?.id ?? null);
+
+  const summaryResponse = await app.request(`http://localhost/api/rooms/${roomId}/summary`);
+  assert.equal(summaryResponse.status, 200);
+  assert.deepEqual(await summaryResponse.json(), {
+    summary: {
+      roomId,
+      summaryText: "Need planner draft and owner confirmation.",
+      generatedByMemberId: "mem_secretary_summary",
+      sourceMessageId: secretaryMessage?.id ?? null,
+      createdAt: storedSummary?.createdAt,
+      updatedAt: storedSummary?.updatedAt,
+    },
+  });
+});
+
+test("room summary artifact is injected into later agent prompts", async () => {
+  const roomId = "room_summary_prompt_injection";
+  const createdAt = new Date("2026-03-25T00:18:00.000Z").toISOString();
+
+  db.insert(rooms).values({
+    id: roomId,
+    name: "Summary Prompt Injection Room",
+    inviteToken: createInviteToken(),
+    status: "active",
+    secretaryMemberId: "mem_secretary_summary_seed",
+    secretaryMode: "coordinate_and_summarize",
+    createdAt,
+  }).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_requester_summary_prompt",
+      roomId,
+      principalId: null,
+      type: "human",
+      roleKind: "none",
+      displayName: "Requester",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt,
+    },
+    {
+      id: "mem_secretary_summary_seed",
+      roomId,
+      principalId: null,
+      type: "agent",
+      roleKind: "independent",
+      displayName: "Scribe",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: "local_process",
+      adapterConfig: JSON.stringify({
+        command: "node",
+        args: [
+          "-e",
+          "process.stdin.resume();process.stdin.on('end',()=>process.stdout.write('[[ROOM_SUMMARY]]\\nProject is blocked on the planner draft.\\n[[/ROOM_SUMMARY]]'));",
+        ],
+        inputFormat: "text",
+      }),
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt,
+    },
+    {
+      id: "mem_planner_summary_prompt",
+      roomId,
+      principalId: null,
+      type: "agent",
+      roleKind: "independent",
+      displayName: "Planner",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: "local_process",
+      adapterConfig: JSON.stringify({
+        command: "node",
+        args: [
+          "-e",
+          "process.stdin.setEncoding('utf8');let text='';process.stdin.on('data',chunk=>text+=chunk);process.stdin.on('end',()=>process.stdout.write(text.includes('Project is blocked on the planner draft.') ? 'summary seen' : 'summary missing'));",
+        ],
+        inputFormat: "text",
+      }),
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt,
+    },
+  ]).run();
+
+  const requesterToken = issueWsToken("mem_requester_summary_prompt", roomId);
+
+  const seedResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_requester_summary_prompt",
+      wsToken: requesterToken,
+      content: "Please keep the plan summary current.",
+    }),
+  });
+  assert.equal(seedResponse.status, 201);
+
+  await waitFor(
+    () =>
+      db
+        .select()
+        .from(roomSummaries)
+        .where(eq(roomSummaries.roomId, roomId))
+        .get(),
+    (value) => value?.summaryText === "Project is blocked on the planner draft.",
+  );
+
+  const plannerResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_requester_summary_prompt",
+      wsToken: requesterToken,
+      content: "@Planner can you take over?",
+    }),
+  });
+  assert.equal(plannerResponse.status, 201);
+
+  await waitFor(
+    () =>
+      db
+        .select()
+        .from(agentSessions)
+        .where(eq(agentSessions.roomId, roomId))
+        .all()
+        .filter((session) => session.agentMemberId === "mem_planner_summary_prompt"),
+    (value) => value.some((session) => session.status === "completed"),
+  );
+
+  const roomMessages = db
+    .select()
+    .from(messages)
+    .where(eq(messages.roomId, roomId))
+    .all();
+  assert.ok(roomMessages.some((message) => /summary seen/i.test(message.content)));
 });
 
 test("a nickname can be reused after the previous principal leaves the room", async () => {
@@ -4676,6 +4919,172 @@ test("bridge-backed room secretary can silently complete an observe run", async 
     .all();
   assert.equal(roomMessages.length, 1);
   assert.equal(roomMessages[0]?.senderMemberId, "mem_human_bridge_secretary_requester");
+});
+
+test("bridge-backed summarizing secretary can update summary without posting a visible message", async () => {
+  const roomId = "room_bridge_secretary_summary_only";
+  const createdAt = new Date("2026-03-25T08:47:00.000Z").toISOString();
+  const freshSeenAt = new Date().toISOString();
+
+  db.insert(rooms).values({
+    id: roomId,
+    name: "Bridge Secretary Summary Only Room",
+    inviteToken: createInviteToken(),
+    status: "active",
+    secretaryMemberId: "mem_bridge_secretary_summary",
+    secretaryMode: "coordinate_and_summarize",
+    createdAt,
+  }).run();
+
+  db.insert(localBridges).values({
+    id: "brg_bridge_secretary_summary",
+    bridgeName: "Secretary Summary Bridge",
+    bridgeToken: "bridge_secretary_summary_token",
+    currentInstanceId: "binst_bridge_secretary_summary",
+    status: "online",
+    platform: "macOS",
+    version: "0.1.0",
+    metadata: null,
+    lastSeenAt: freshSeenAt,
+    createdAt: freshSeenAt,
+    updatedAt: freshSeenAt,
+  }).run();
+
+  db.insert(principals).values({
+    id: "prn_bridge_secretary_summary",
+    kind: "agent",
+    loginKey: "agent:bridge-secretary-summary",
+    globalDisplayName: "BridgeSecretary",
+    backendType: "codex_cli",
+    backendThreadId: "thread_bridge_secretary_summary",
+    status: "offline",
+    createdAt,
+  }).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_human_bridge_secretary_summary",
+      roomId,
+      principalId: null,
+      type: "human",
+      roleKind: "none",
+      displayName: "Requester",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt,
+    },
+    {
+      id: "mem_bridge_secretary_summary",
+      roomId,
+      principalId: "prn_bridge_secretary_summary",
+      type: "agent",
+      roleKind: "independent",
+      displayName: "BridgeSecretary",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: "codex_cli",
+      adapterConfig: null,
+      presenceStatus: "offline",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(agentBindings).values({
+    id: "agb_bridge_secretary_summary",
+    principalId: "prn_bridge_secretary_summary",
+    privateAssistantId: null,
+    bridgeId: "brg_bridge_secretary_summary",
+    backendType: "codex_cli",
+    backendThreadId: "thread_bridge_secretary_summary",
+    cwd: "/tmp/bridge-secretary-summary",
+    status: "active",
+    attachedAt: createdAt,
+    detachedAt: null,
+  }).run();
+
+  const requesterToken = issueWsToken("mem_human_bridge_secretary_summary", roomId);
+  const messageResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_human_bridge_secretary_summary",
+      wsToken: requesterToken,
+      content: "Please keep track of the current plan.",
+    }),
+  });
+
+  assert.equal(messageResponse.status, 201);
+
+  const pullResponse = await app.request("http://localhost/api/bridges/brg_bridge_secretary_summary/tasks/pull", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      bridgeToken: "bridge_secretary_summary_token",
+      bridgeInstanceId: "binst_bridge_secretary_summary",
+    }),
+  });
+  assert.equal(pullResponse.status, 200);
+  const pulled = await pullResponse.json();
+
+  const acceptResponse = await app.request(
+    `http://localhost/api/bridges/brg_bridge_secretary_summary/tasks/${pulled.task.id}/accept`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_secretary_summary_token",
+        bridgeInstanceId: "binst_bridge_secretary_summary",
+      }),
+    },
+  );
+  assert.equal(acceptResponse.status, 200);
+
+  const completeResponse = await app.request(
+    `http://localhost/api/bridges/brg_bridge_secretary_summary/tasks/${pulled.task.id}/complete`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_secretary_summary_token",
+        bridgeInstanceId: "binst_bridge_secretary_summary",
+        finalText: "[[ROOM_SUMMARY]]\nWaiting for final milestone draft from Planner.\n[[/ROOM_SUMMARY]]",
+      }),
+    },
+  );
+  assert.equal(completeResponse.status, 200);
+
+  const session = await waitFor(
+    () =>
+      db
+        .select()
+        .from(agentSessions)
+        .where(eq(agentSessions.roomId, roomId))
+        .get(),
+    (value) => value?.status === "completed",
+  );
+  assert.equal(session?.agentMemberId, "mem_bridge_secretary_summary");
+
+  const roomMessages = db
+    .select()
+    .from(messages)
+    .where(eq(messages.roomId, roomId))
+    .all();
+  assert.equal(roomMessages.length, 1);
+
+  const storedSummary = db
+    .select()
+    .from(roomSummaries)
+    .where(eq(roomSummaries.roomId, roomId))
+    .get();
+  assert.equal(storedSummary?.summaryText, "Waiting for final milestone draft from Planner.");
+  assert.equal(storedSummary?.sourceMessageId, null);
 });
 
 test("attached claude private assistant binding persists refreshed backendThreadId on completion", async () => {

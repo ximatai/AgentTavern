@@ -29,6 +29,7 @@ import { resolveBindingForMember } from "../lib/agent-binding-resolution";
 import { expireStalePendingBridgeTasks } from "../lib/bridge-task-maintenance";
 import { createId } from "../lib/id";
 import { insertMessage } from "../lib/message-records";
+import { extractRoomSummaryBlock, getRoomSummary } from "../lib/room-summary";
 import {
   createAgentBusySystemData,
   createBridgeAttachRequiredSystemData,
@@ -41,6 +42,7 @@ import { broadcastToRoom } from "../realtime";
 import {
   commitSessionMessage,
   completeSessionSilently,
+  completeSessionWithSummary,
   createStreamDeltaEvent,
   failSession,
   markSessionRunning,
@@ -210,6 +212,7 @@ function buildPrompt(input: {
     })
     .join("\n");
   const isSecretary = input.room.secretaryMemberId === input.agent.id && input.room.secretaryMode !== "off";
+  const currentSummary = getRoomSummary(input.room.id)?.summaryText ?? null;
 
   return [
     isSecretary
@@ -229,8 +232,28 @@ function buildPrompt(input: {
           "- If no response is necessary, return an empty result.",
         ].join("\n")
       : "You may mention other room members with @Name when collaboration needs it.",
+    input.room.secretaryMode === "coordinate_and_summarize" && isSecretary
+      ? [
+          "Summary artifact policy:",
+          "- If the room state changed materially, append a hidden summary block.",
+          "- Use exactly this format:",
+          "[[ROOM_SUMMARY]]",
+          "One concise room summary for future context.",
+          "[[/ROOM_SUMMARY]]",
+          "- The visible chat message must stay outside that block.",
+          "- If only the summary needs updating, you may return just the summary block.",
+          "Current saved summary:",
+          currentSummary ?? "(none)",
+        ].join("\n")
+      : null,
     "Active room members:",
     memberRoster || "(unknown members)",
+    currentSummary
+      ? [
+          "Current room summary artifact:",
+          currentSummary,
+        ].join("\n")
+      : null,
     "Recent room context:",
     context || "(no context)",
     "Current trigger message:",
@@ -504,9 +527,21 @@ async function runAgentSession(sessionId: string): Promise<void> {
     return;
   }
 
-  const committedText = finalText.trim();
+  const parsedSummary = isSecretarySession(typedRoom, runningSession) &&
+      typedRoom.secretaryMode === "coordinate_and_summarize"
+    ? extractRoomSummaryBlock(finalText)
+    : { visibleContent: finalText.trim(), summaryText: null };
+  const committedText = parsedSummary.visibleContent.trim();
 
   if (!committedText) {
+    if (parsedSummary.summaryText && isSecretarySession(typedRoom, runningSession)) {
+      completeSessionWithSummary({
+        session: runningSession,
+        summaryText: parsedSummary.summaryText,
+      });
+      return;
+    }
+
     if (isSecretarySession(typedRoom, runningSession)) {
       completeSessionSilently(runningSession);
       return;
@@ -519,7 +554,7 @@ async function runAgentSession(sessionId: string): Promise<void> {
   const committed = commitSessionMessage({
     session: runningSession,
     messageId: outputMessageId,
-    content: committedText,
+    content: finalText,
     replyToMessageId: typedTriggerMessage.id,
   });
   for (const queuedSessionId of committed.queuedSessionIds) {

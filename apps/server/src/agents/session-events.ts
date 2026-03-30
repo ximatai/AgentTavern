@@ -9,8 +9,9 @@ import type {
 } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
-import { agentSessions } from "../db/schema";
+import { agentSessions, rooms } from "../db/schema";
 import { insertMessage } from "../lib/message-records";
+import { extractRoomSummaryBlock, upsertRoomSummary } from "../lib/room-summary";
 import { submitMessageInternal } from "../lib/message-submission";
 import {
   createAgentFailedSystemData,
@@ -147,6 +148,14 @@ export function commitSessionMessage(params: {
   attachments?: MessageAttachment[];
   replyToMessageId: string;
 }): { session: AgentSession; queuedSessionIds: string[] } {
+  const room = db.select().from(rooms).where(eq(rooms.id, params.session.roomId)).get();
+  const summaryEligible =
+    room?.secretaryMemberId === params.session.agentMemberId &&
+    room.secretaryMode === "coordinate_and_summarize";
+  const parsedContent = summaryEligible
+    ? extractRoomSummaryBlock(params.content)
+    : { visibleContent: params.content.trim(), summaryText: null };
+
   const { message: committedMessage, queuedSessionIds } = submitMessageInternal({
     roomId: params.session.roomId,
     sender: {
@@ -163,13 +172,23 @@ export function commitSessionMessage(params: {
       presenceStatus: "online",
       createdAt: now(),
     },
-    content: params.content,
+    content: parsedContent.visibleContent,
     attachments: params.attachments ?? [],
     replyToMessageId: params.replyToMessageId,
     messageId: params.messageId,
     draftAttachmentIds: params.attachments?.map((attachment) => attachment.id) ?? [],
     attachmentUploaderMemberId: params.session.agentMemberId,
   });
+
+  if (summaryEligible && parsedContent.summaryText) {
+    upsertRoomSummary({
+      roomId: params.session.roomId,
+      summaryText: parsedContent.summaryText,
+      generatedByMemberId: params.session.agentMemberId,
+      sourceMessageId: committedMessage.id,
+      createdAt: committedMessage.createdAt,
+    });
+  }
   broadcastToRoom(
     params.session.roomId,
     createMessageCommittedEvent(params.session.roomId, params.session.id, committedMessage),
@@ -224,6 +243,21 @@ export function completeSessionSilently(session: AgentSession): AgentSession {
   );
 
   return completedSession;
+}
+
+export function completeSessionWithSummary(params: {
+  session: AgentSession;
+  summaryText: string;
+}): AgentSession {
+  upsertRoomSummary({
+    roomId: params.session.roomId,
+    summaryText: params.summaryText,
+    generatedByMemberId: params.session.agentMemberId,
+    sourceMessageId: null,
+    createdAt: now(),
+  });
+
+  return completeSessionSilently(params.session);
 }
 
 export function failSession(

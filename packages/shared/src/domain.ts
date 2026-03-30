@@ -143,6 +143,15 @@ export type Room = {
   createdAt: string;
 };
 
+export type RoomSummary = {
+  roomId: string;
+  summaryText: string;
+  generatedByMemberId: string;
+  sourceMessageId: string | null;
+  updatedAt: string;
+  createdAt: string;
+};
+
 export type Member = {
   id: string;
   roomId: string;
