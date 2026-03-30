@@ -31,6 +31,58 @@ type StoredBridge = {
   updatedAt: string;
 };
 
+function autoAttachPendingBindingsToSoleOnlineBridge(bridge: StoredBridge): void {
+  const onlineBridges = db
+    .select()
+    .from(localBridges)
+    .where(eq(localBridges.status, "online"))
+    .all() as StoredBridge[];
+
+  if (onlineBridges.length !== 1 || onlineBridges[0]?.id !== bridge.id) {
+    return;
+  }
+
+  const pendingBindings = db
+    .select()
+    .from(agentBindings)
+    .where(and(isNull(agentBindings.bridgeId), eq(agentBindings.status, "pending_bridge")))
+    .all();
+
+  if (pendingBindings.length === 0) {
+    return;
+  }
+
+  for (const binding of pendingBindings) {
+    const timestamp = now();
+    const result = db
+      .update(agentBindings)
+      .set({
+        bridgeId: bridge.id,
+        status: "active",
+        attachedAt: timestamp,
+        detachedAt: null,
+      })
+      .where(
+        and(
+          eq(agentBindings.id, binding.id),
+          isNull(agentBindings.bridgeId),
+          eq(agentBindings.status, "pending_bridge"),
+        ),
+      )
+      .run();
+
+    if (result.changes === 0) {
+      continue;
+    }
+
+    broadcastBindingMemberUpdates({
+      principalId: binding.principalId,
+      privateAssistantId: binding.privateAssistantId,
+      bridge,
+    });
+  }
+}
+
 function broadcastBindingMemberUpdates(params: {
   principalId: string | null;
   privateAssistantId: string | null;
@@ -129,6 +181,14 @@ bridgeRoutes.post("/api/bridges/register", async (c) => {
       .where(eq(localBridges.id, bridge.id))
       .run();
 
+    const refreshedBridge = db
+      .select()
+      .from(localBridges)
+      .where(eq(localBridges.id, bridge.id))
+      .get() as StoredBridge;
+
+    autoAttachPendingBindingsToSoleOnlineBridge(refreshedBridge);
+
     return c.json({
       bridgeId: bridge.id,
       bridgeToken: bridge.bridgeToken,
@@ -153,6 +213,7 @@ bridgeRoutes.post("/api/bridges/register", async (c) => {
   };
 
   db.insert(localBridges).values(bridge).run();
+  autoAttachPendingBindingsToSoleOnlineBridge(bridge);
 
   return c.json(
     {
@@ -213,6 +274,14 @@ bridgeRoutes.post("/api/bridges/:bridgeId/heartbeat", async (c) => {
     })
     .where(eq(localBridges.id, bridgeId))
     .run();
+
+  const refreshedBridge = db
+    .select()
+    .from(localBridges)
+    .where(eq(localBridges.id, bridgeId))
+    .get() as StoredBridge;
+
+  autoAttachPendingBindingsToSoleOnlineBridge(refreshedBridge);
 
   return c.json({
     bridgeId,

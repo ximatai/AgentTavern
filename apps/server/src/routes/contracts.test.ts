@@ -2940,6 +2940,151 @@ test("bridge register creates a reusable bridge identity and heartbeat refreshes
   });
 });
 
+test("bridge heartbeat auto-attaches pending bindings when it is the sole online bridge", async () => {
+  const createdAt = new Date("2026-03-25T04:30:00.000Z").toISOString();
+
+  db.update(localBridges).set({ status: "offline" }).run();
+
+  db.insert(localBridges).values({
+    id: "brg_auto_attach",
+    bridgeName: "Auto Attach Bridge",
+    bridgeToken: "bridge_auto_attach_token",
+    currentInstanceId: "binst_auto_attach",
+    status: "online",
+    platform: "macOS",
+    version: "0.1.0",
+    metadata: null,
+    lastSeenAt: createdAt,
+    createdAt,
+    updatedAt: createdAt,
+  }).run();
+
+  db.insert(principals).values({
+    id: "prn_auto_attach",
+    kind: "agent",
+    loginKey: "agent:auto-attach",
+    globalDisplayName: "AutoAttachAgent",
+    backendType: "codex_cli",
+    backendThreadId: "thread_auto_attach",
+    status: "offline",
+    createdAt,
+  }).run();
+
+  db.insert(agentBindings).values({
+    id: "agb_auto_attach",
+    principalId: "prn_auto_attach",
+    privateAssistantId: null,
+    bridgeId: null,
+    backendType: "codex_cli",
+    backendThreadId: "thread_auto_attach",
+    cwd: null,
+    status: "pending_bridge",
+    attachedAt: createdAt,
+    detachedAt: null,
+  }).run();
+
+  const response = await app.request("http://localhost/api/bridges/brg_auto_attach/heartbeat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      bridgeToken: "bridge_auto_attach_token",
+      bridgeInstanceId: "binst_auto_attach",
+    }),
+  });
+
+  assert.equal(response.status, 200);
+
+  const binding = db
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.id, "agb_auto_attach"))
+    .get();
+
+  assert.equal(binding?.bridgeId, "brg_auto_attach");
+  assert.equal(binding?.status, "active");
+  assert.notEqual(binding?.attachedAt, createdAt);
+});
+
+test("bridge heartbeat does not auto-attach pending bindings when multiple bridges are online", async () => {
+  const createdAt = new Date("2026-03-25T04:45:00.000Z").toISOString();
+
+  db.update(localBridges).set({ status: "offline" }).run();
+
+  db.insert(localBridges).values([
+    {
+      id: "brg_auto_attach_a",
+      bridgeName: "Auto Attach Bridge A",
+      bridgeToken: "bridge_auto_attach_a_token",
+      currentInstanceId: "binst_auto_attach_a",
+      status: "online",
+      platform: "macOS",
+      version: "0.1.0",
+      metadata: null,
+      lastSeenAt: createdAt,
+      createdAt,
+      updatedAt: createdAt,
+    },
+    {
+      id: "brg_auto_attach_b",
+      bridgeName: "Auto Attach Bridge B",
+      bridgeToken: "bridge_auto_attach_b_token",
+      currentInstanceId: "binst_auto_attach_b",
+      status: "online",
+      platform: "macOS",
+      version: "0.1.0",
+      metadata: null,
+      lastSeenAt: createdAt,
+      createdAt,
+      updatedAt: createdAt,
+    },
+  ]).run();
+
+  db.insert(principals).values({
+    id: "prn_auto_attach_conflict",
+    kind: "agent",
+    loginKey: "agent:auto-attach-conflict",
+    globalDisplayName: "AutoAttachConflict",
+    backendType: "codex_cli",
+    backendThreadId: "thread_auto_attach_conflict",
+    status: "offline",
+    createdAt,
+  }).run();
+
+  db.insert(agentBindings).values({
+    id: "agb_auto_attach_conflict",
+    principalId: "prn_auto_attach_conflict",
+    privateAssistantId: null,
+    bridgeId: null,
+    backendType: "codex_cli",
+    backendThreadId: "thread_auto_attach_conflict",
+    cwd: null,
+    status: "pending_bridge",
+    attachedAt: createdAt,
+    detachedAt: null,
+  }).run();
+
+  const response = await app.request("http://localhost/api/bridges/brg_auto_attach_a/heartbeat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      bridgeToken: "bridge_auto_attach_a_token",
+      bridgeInstanceId: "binst_auto_attach_a",
+    }),
+  });
+
+  assert.equal(response.status, 200);
+
+  const binding = db
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.id, "agb_auto_attach_conflict"))
+    .get();
+
+  assert.equal(binding?.bridgeId, null);
+  assert.equal(binding?.status, "pending_bridge");
+  assert.equal(binding?.attachedAt, createdAt);
+});
+
 test("bridge can attach an existing agent binding by backendThreadId", async () => {
   const originalAttachedAt = new Date("2026-03-25T05:00:00.000Z").toISOString();
 
