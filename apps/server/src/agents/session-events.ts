@@ -193,10 +193,6 @@ export function commitSessionMessage(params: {
     params.session.roomId,
     createMessageCommittedEvent(params.session.roomId, params.session.id, committedMessage),
   );
-  broadcastToRoom(
-    params.session.roomId,
-    createMessageCreatedEvent(params.session.roomId, committedMessage),
-  );
 
   const completedSession: AgentSession = {
     ...params.session,

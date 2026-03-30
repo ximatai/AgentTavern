@@ -4760,6 +4760,170 @@ test("bridge tasks can upload agent-generated attachments and commit an attachme
   assert.equal(attachedRows[0]?.mimeType, "text/plain");
 });
 
+test("bridge task completion rejects agent-generated attachments exceeding total size limit", async () => {
+  const roomId = "room_bridge_attachment_limit";
+  const createdAt = new Date("2026-03-25T07:35:00.000Z").toISOString();
+
+  seedRoom({
+    roomId,
+    name: "Bridge Attachment Limit Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(localBridges).values({
+    id: "brg_bridge_attachment_limit",
+    bridgeName: "Bridge Attachment Limit",
+    bridgeToken: "bridge_attachment_limit_token",
+    currentInstanceId: "binst_bridge_attachment_limit",
+    status: "online",
+    platform: "macOS",
+    version: "0.1.0",
+    metadata: null,
+    lastSeenAt: createdAt,
+    createdAt,
+    updatedAt: createdAt,
+  }).run();
+
+  db.insert(principals).values({
+    id: "prn_bridge_attachment_limit",
+    kind: "agent",
+    loginKey: "agent:bridge-attachment-limit",
+    globalDisplayName: "AttachmentLimitAgent",
+    backendType: "codex_cli",
+    backendThreadId: "thread_bridge_attachment_limit",
+    status: "offline",
+    createdAt,
+  }).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_requester_bridge_attachment_limit",
+      roomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "RequesterAttachmentLimit",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_agent_bridge_attachment_limit",
+      roomId,
+      principalId: "prn_bridge_attachment_limit",
+      type: "agent",
+      roleKind: "independent",
+      displayName: "AttachmentLimitAgent",
+      ownerMemberId: null,
+      adapterType: "codex_cli",
+      adapterConfig: null,
+      presenceStatus: "offline",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(agentBindings).values({
+    id: "agb_bridge_attachment_limit",
+    principalId: "prn_bridge_attachment_limit",
+    privateAssistantId: null,
+    bridgeId: "brg_bridge_attachment_limit",
+    backendType: "codex_cli",
+    backendThreadId: "thread_bridge_attachment_limit",
+    cwd: "/tmp/bridge-attachment-limit",
+    status: "active",
+    attachedAt: createdAt,
+    detachedAt: null,
+  }).run();
+
+  const requesterToken = issueWsToken("mem_requester_bridge_attachment_limit", roomId);
+  const messageResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_requester_bridge_attachment_limit",
+      wsToken: requesterToken,
+      content: "@AttachmentLimitAgent send all reports",
+    }),
+  });
+
+  assert.equal(messageResponse.status, 201);
+
+  const pullResponse = await app.request("http://localhost/api/bridges/brg_bridge_attachment_limit/tasks/pull", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      bridgeToken: "bridge_attachment_limit_token",
+      bridgeInstanceId: "binst_bridge_attachment_limit",
+    }),
+  });
+
+  assert.equal(pullResponse.status, 200);
+  const pulled = await pullResponse.json();
+
+  const acceptResponse = await app.request(
+    `http://localhost/api/bridges/brg_bridge_attachment_limit/tasks/${pulled.task.id}/accept`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_attachment_limit_token",
+        bridgeInstanceId: "binst_bridge_attachment_limit",
+      }),
+    },
+  );
+  assert.equal(acceptResponse.status, 200);
+
+  const attachmentIds: string[] = [];
+  const oversizedPayload = Buffer.alloc(5 * 1024 * 1024, "a").toString("base64");
+
+  for (let index = 0; index < 5; index += 1) {
+    const uploadResponse = await app.request(
+      `http://localhost/api/bridges/brg_bridge_attachment_limit/tasks/${pulled.task.id}/attachments`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          bridgeToken: "bridge_attachment_limit_token",
+          bridgeInstanceId: "binst_bridge_attachment_limit",
+          name: `report-${index + 1}.txt`,
+          mimeType: "text/plain",
+          contentBase64: oversizedPayload,
+        }),
+      },
+    );
+
+    assert.equal(uploadResponse.status, 201);
+    const uploadResult = await uploadResponse.json();
+    attachmentIds.push(uploadResult.attachmentId);
+  }
+
+  const completeResponse = await app.request(
+    `http://localhost/api/bridges/brg_bridge_attachment_limit/tasks/${pulled.task.id}/complete`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_attachment_limit_token",
+        bridgeInstanceId: "binst_bridge_attachment_limit",
+        attachmentIds,
+      }),
+    },
+  );
+
+  assert.equal(completeResponse.status, 400);
+  assert.deepEqual(await completeResponse.json(), {
+    error: "attachments exceed 20971520 bytes in total",
+  });
+
+  const committedMessage = db
+    .select()
+    .from(messages)
+    .where(eq(messages.id, pulled.task.outputMessageId))
+    .get();
+  assert.equal(committedMessage, undefined);
+});
+
 test("bridge-backed room secretary can silently complete an observe run", async () => {
   const roomId = "room_bridge_secretary_silent";
   const createdAt = new Date("2026-03-25T08:45:00.000Z").toISOString();

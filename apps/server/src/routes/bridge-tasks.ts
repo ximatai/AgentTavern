@@ -17,6 +17,7 @@ import {
 import { queueAgentSession } from "../agents/runtime";
 import {
   MAX_MESSAGE_ATTACHMENTS,
+  MAX_TOTAL_ATTACHMENT_BYTES,
   createDraftAttachmentFromBuffer,
   resolveDraftAttachments,
 } from "../lib/message-attachments";
@@ -389,6 +390,17 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
 
   if (attachments === null) {
     return c.json({ error: "one or more attachments are invalid or unavailable" }, 409);
+  }
+
+  const totalAttachmentBytes = attachments.reduce(
+    (sum, attachment) => sum + attachment.sizeBytes,
+    0,
+  );
+  if (totalAttachmentBytes > MAX_TOTAL_ATTACHMENT_BYTES) {
+    return c.json(
+      { error: `attachments exceed ${MAX_TOTAL_ATTACHMENT_BYTES} bytes in total` },
+      400,
+    );
   }
 
   const completedAt = now();
