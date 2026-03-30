@@ -1,5 +1,6 @@
 import type { AgentBackendType } from "@agent-tavern/shared";
-import type { AgentMessageAction, AgentStreamEvent } from "@agent-tavern/agent-sdk";
+import { compactMessageAction, completedEventToAction } from "@agent-tavern/agent-sdk";
+import type { AgentStreamEvent } from "@agent-tavern/agent-sdk";
 
 import type { BridgeDriver, BridgeTask } from "./drivers";
 
@@ -19,37 +20,6 @@ export type PostJson = <T>(
   path: string,
   body: Record<string, unknown>,
 ) => Promise<T>;
-
-function toCompletedAction(event: Extract<AgentStreamEvent, { type: "completed" }>, streamedText: string): AgentMessageAction {
-  if (event.action) {
-    return {
-      content: event.action.content ?? event.finalText ?? (streamedText || "(no output)"),
-      summaryText: event.action.summaryText ?? event.summaryText,
-      mentionedDisplayNames: event.action.mentionedDisplayNames ?? event.mentionedDisplayNames,
-      attachments: event.action.attachments ?? event.attachments,
-    };
-  }
-
-  return {
-    content: event.finalText !== undefined ? event.finalText : (streamedText || "(no output)"),
-    summaryText: event.summaryText,
-    mentionedDisplayNames: event.mentionedDisplayNames,
-    attachments: event.attachments,
-  };
-}
-
-function compactAction(action: AgentMessageAction): AgentMessageAction {
-  return {
-    ...(typeof action.content === "string" ? { content: action.content } : {}),
-    ...(typeof action.summaryText === "string" ? { summaryText: action.summaryText } : {}),
-    ...(Array.isArray(action.mentionedDisplayNames) && action.mentionedDisplayNames.length > 0
-      ? { mentionedDisplayNames: [...action.mentionedDisplayNames] }
-      : {}),
-    ...(Array.isArray(action.attachments) && action.attachments.length > 0
-      ? { attachments: action.attachments.map((attachment) => ({ ...attachment })) }
-      : {}),
-  };
-}
 
 export async function processTask(params: {
   bridgeId: string;
@@ -92,7 +62,13 @@ export async function processTask(params: {
       }
 
       if (event.type === "completed") {
-        const action = compactAction(toCompletedAction(event, finalText));
+        const action = compactMessageAction(
+          completedEventToAction({
+            event,
+            streamedText: finalText,
+            fallbackText: "(no output)",
+          }),
+        );
         const completedText = action.content ?? "(no output)";
         const attachmentIds: string[] = [];
 

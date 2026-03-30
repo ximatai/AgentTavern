@@ -46,4 +46,5 @@ export interface AgentAdapter {
 export * from "./claude-code";
 export * from "./codex-cli";
 export * from "./local-process";
+export * from "./message-action";
 export * from "./opencode";

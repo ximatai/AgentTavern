@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, ne, or } from "drizzle-orm";
 
 import {
+  completedEventToAction,
   createLocalProcessAdapter,
   type AgentAdapter,
   type AgentMessageAction,
@@ -330,30 +331,6 @@ function createGeneratedAttachments(params: {
   return created;
 }
 
-function toCompletedAction(params: {
-  finalText: string;
-  summaryText: string | null;
-  mentionedDisplayNames: string[];
-  event: Extract<import("@agent-tavern/agent-sdk").AgentStreamEvent, { type: "completed" }>;
-}): AgentMessageAction {
-  if (params.event.action) {
-    return {
-      content: params.event.action.content ?? params.event.finalText ?? params.finalText,
-      summaryText: params.event.action.summaryText ?? params.summaryText ?? undefined,
-      mentionedDisplayNames:
-        params.event.action.mentionedDisplayNames ?? params.mentionedDisplayNames,
-      attachments: params.event.action.attachments ?? params.event.attachments,
-    };
-  }
-
-  return {
-    content: params.event.finalText ?? params.finalText,
-    summaryText: params.summaryText ?? undefined,
-    mentionedDisplayNames: params.mentionedDisplayNames,
-    attachments: params.event.attachments,
-  };
-}
-
 function enqueueBridgeTask(params: {
   session: AgentSession;
   binding: AgentBinding;
@@ -618,12 +595,16 @@ async function runAgentSession(sessionId: string): Promise<void> {
         completedMentionedDisplayNames = event.mentionedDisplayNames;
       }
       if (event.type === "completed") {
-        completedAction = toCompletedAction({
-          finalText,
-          summaryText: completedSummaryText,
-          mentionedDisplayNames: completedMentionedDisplayNames,
+        completedAction = completedEventToAction({
           event,
+          streamedText: finalText,
         });
+        if (completedAction.summaryText === undefined && completedSummaryText) {
+          completedAction.summaryText = completedSummaryText;
+        }
+        if (completedAction.mentionedDisplayNames === undefined && completedMentionedDisplayNames.length > 0) {
+          completedAction.mentionedDisplayNames = completedMentionedDisplayNames;
+        }
       }
     }
   } catch (error) {
