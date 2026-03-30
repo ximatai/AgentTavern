@@ -1,5 +1,5 @@
 import type { AgentBackendType } from "@agent-tavern/shared";
-import type { AgentStreamEvent } from "@agent-tavern/agent-sdk";
+import type { AgentMessageAction, AgentStreamEvent } from "@agent-tavern/agent-sdk";
 
 import type { BridgeDriver, BridgeTask } from "./drivers";
 
@@ -19,6 +19,37 @@ export type PostJson = <T>(
   path: string,
   body: Record<string, unknown>,
 ) => Promise<T>;
+
+function toCompletedAction(event: Extract<AgentStreamEvent, { type: "completed" }>, streamedText: string): AgentMessageAction {
+  if (event.action) {
+    return {
+      content: event.action.content ?? event.finalText ?? (streamedText || "(no output)"),
+      summaryText: event.action.summaryText ?? event.summaryText,
+      mentionedDisplayNames: event.action.mentionedDisplayNames ?? event.mentionedDisplayNames,
+      attachments: event.action.attachments ?? event.attachments,
+    };
+  }
+
+  return {
+    content: event.finalText !== undefined ? event.finalText : (streamedText || "(no output)"),
+    summaryText: event.summaryText,
+    mentionedDisplayNames: event.mentionedDisplayNames,
+    attachments: event.attachments,
+  };
+}
+
+function compactAction(action: AgentMessageAction): AgentMessageAction {
+  return {
+    ...(typeof action.content === "string" ? { content: action.content } : {}),
+    ...(typeof action.summaryText === "string" ? { summaryText: action.summaryText } : {}),
+    ...(Array.isArray(action.mentionedDisplayNames) && action.mentionedDisplayNames.length > 0
+      ? { mentionedDisplayNames: [...action.mentionedDisplayNames] }
+      : {}),
+    ...(Array.isArray(action.attachments) && action.attachments.length > 0
+      ? { attachments: action.attachments.map((attachment) => ({ ...attachment })) }
+      : {}),
+  };
+}
 
 export async function processTask(params: {
   bridgeId: string;
@@ -61,12 +92,12 @@ export async function processTask(params: {
       }
 
       if (event.type === "completed") {
-        const completedText =
-          event.finalText !== undefined ? event.finalText : finalText || "(no output)";
+        const action = compactAction(toCompletedAction(event, finalText));
+        const completedText = action.content ?? "(no output)";
         const attachmentIds: string[] = [];
 
-        if (Array.isArray(event.attachments)) {
-          for (const attachment of event.attachments) {
+        if (Array.isArray(action.attachments)) {
+          for (const attachment of action.attachments) {
             const uploaded = await postJson<{ attachmentId: string }>(
               `/api/bridges/${bridgeId}/tasks/${task.id}/attachments`,
               {
@@ -85,15 +116,16 @@ export async function processTask(params: {
           bridgeToken,
           bridgeInstanceId,
           finalText: completedText,
+          action,
         };
         if (attachmentIds.length > 0) {
           completeBody.attachmentIds = attachmentIds;
         }
-        if (event.summaryText) {
-          completeBody.summaryText = event.summaryText;
+        if (action.summaryText) {
+          completeBody.summaryText = action.summaryText;
         }
-        if (Array.isArray(event.mentionedDisplayNames) && event.mentionedDisplayNames.length > 0) {
-          completeBody.mentionedDisplayNames = event.mentionedDisplayNames;
+        if (Array.isArray(action.mentionedDisplayNames) && action.mentionedDisplayNames.length > 0) {
+          completeBody.mentionedDisplayNames = action.mentionedDisplayNames;
         }
 
         if (event.sessionId) {

@@ -1,6 +1,12 @@
 import { spawn } from "node:child_process";
 
-import type { AgentAdapter, AgentRunInput, AgentStreamEvent } from "./index";
+import type {
+  AgentAdapter,
+  AgentGeneratedAttachment,
+  AgentMessageAction,
+  AgentRunInput,
+  AgentStreamEvent,
+} from "./index";
 
 export type LocalProcessAdapterConfig = {
   command: string;
@@ -35,6 +41,8 @@ function isAgentStreamEvent(value: unknown): value is AgentStreamEvent {
   }
   if (event.type === "completed") {
     return (
+      event.action === undefined || isAgentMessageAction(event.action)
+    ) && (
       event.finalText === undefined || typeof event.finalText === "string"
     ) && (
       event.summaryText === undefined || typeof event.summaryText === "string"
@@ -49,6 +57,31 @@ function isAgentStreamEvent(value: unknown): value is AgentStreamEvent {
     );
   }
   return false;
+}
+
+function isAttachmentList(value: unknown): value is AgentGeneratedAttachment[] {
+  return Array.isArray(value) && value.every((attachment) =>
+    attachment &&
+    typeof attachment === "object" &&
+    typeof (attachment as Record<string, unknown>).name === "string" &&
+    typeof (attachment as Record<string, unknown>).mimeType === "string" &&
+    typeof (attachment as Record<string, unknown>).contentBase64 === "string");
+}
+
+function isAgentMessageAction(value: unknown): value is AgentMessageAction {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const action = value as Record<string, unknown>;
+  return (
+    (action.content === undefined || typeof action.content === "string") &&
+    (action.summaryText === undefined || typeof action.summaryText === "string") &&
+    (action.mentionedDisplayNames === undefined ||
+      (Array.isArray(action.mentionedDisplayNames) &&
+        action.mentionedDisplayNames.every((entry) => typeof entry === "string"))) &&
+    (action.attachments === undefined || isAttachmentList(action.attachments))
+  );
 }
 
 export function createLocalProcessAdapter(

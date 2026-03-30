@@ -124,3 +124,44 @@ test("createLocalProcessAdapter supports structured mention targets", async () =
     },
   ]);
 });
+
+test("createLocalProcessAdapter supports unified message actions", async () => {
+  const adapter = createLocalProcessAdapter({
+    command: "node",
+    args: [
+      "-e",
+      [
+        "const lines = [",
+        "  JSON.stringify({ type: 'completed', action: { content: 'Please take the next turn.', summaryText: 'Need planner draft.', mentionedDisplayNames: ['Planner'] } })",
+        "];",
+        "process.stdout.write(lines.join('\\n'));",
+      ].join(" "),
+    ],
+    outputFormat: "jsonl",
+  });
+
+  const events = [];
+  for await (const event of adapter.run({
+    roomId: "room_1",
+    agentMemberId: "agent_1",
+    agentDisplayName: "Local Agent",
+    requesterMemberId: "user_1",
+    requesterDisplayName: "Requester",
+    triggerMessageId: "msg_1",
+    prompt: "act",
+    contextMessages: [],
+  })) {
+    events.push(event);
+  }
+
+  assert.deepEqual(events, [
+    {
+      type: "completed",
+      action: {
+        content: "Please take the next turn.",
+        summaryText: "Need planner draft.",
+        mentionedDisplayNames: ["Planner"],
+      },
+    },
+  ]);
+});

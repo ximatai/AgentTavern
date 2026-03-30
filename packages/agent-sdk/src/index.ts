@@ -4,6 +4,13 @@ export type AgentGeneratedAttachment = {
   contentBase64: string;
 };
 
+export type AgentMessageAction = {
+  content?: string;
+  summaryText?: string;
+  mentionedDisplayNames?: string[];
+  attachments?: AgentGeneratedAttachment[];
+};
+
 export type AgentRunInput = {
   roomId: string;
   agentMemberId: string;
@@ -23,6 +30,7 @@ export type AgentStreamEvent =
   | { type: "delta"; text: string }
   | {
       type: "completed";
+      action?: AgentMessageAction;
       finalText?: string;
       summaryText?: string;
       mentionedDisplayNames?: string[];

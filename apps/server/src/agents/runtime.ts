@@ -3,6 +3,7 @@ import { and, desc, eq, inArray, ne, or } from "drizzle-orm";
 import {
   createLocalProcessAdapter,
   type AgentAdapter,
+  type AgentMessageAction,
   type AgentRunInput,
   type LocalProcessAdapterConfig,
 } from "@agent-tavern/agent-sdk";
@@ -274,6 +275,30 @@ function allowsSilentCompletion(session: AgentSession): boolean {
   return session.kind === "room_observe" || session.kind === "summary_refresh";
 }
 
+function toCompletedAction(params: {
+  finalText: string;
+  summaryText: string | null;
+  mentionedDisplayNames: string[];
+  event: Extract<import("@agent-tavern/agent-sdk").AgentStreamEvent, { type: "completed" }>;
+}): AgentMessageAction {
+  if (params.event.action) {
+    return {
+      content: params.event.action.content ?? params.event.finalText ?? params.finalText,
+      summaryText: params.event.action.summaryText ?? params.summaryText ?? undefined,
+      mentionedDisplayNames:
+        params.event.action.mentionedDisplayNames ?? params.mentionedDisplayNames,
+      attachments: params.event.action.attachments ?? params.event.attachments,
+    };
+  }
+
+  return {
+    content: params.event.finalText ?? params.finalText,
+    summaryText: params.summaryText ?? undefined,
+    mentionedDisplayNames: params.mentionedDisplayNames,
+    attachments: params.event.attachments,
+  };
+}
+
 function enqueueBridgeTask(params: {
   session: AgentSession;
   binding: AgentBinding;
@@ -509,6 +534,7 @@ async function runAgentSession(sessionId: string): Promise<void> {
   let finalText = "";
   let completedSummaryText: string | null = null;
   let completedMentionedDisplayNames: string[] = [];
+  let completedAction: AgentMessageAction | null = null;
   let failedError: string | null = null;
 
   try {
@@ -536,6 +562,14 @@ async function runAgentSession(sessionId: string): Promise<void> {
       if (event.type === "completed" && Array.isArray(event.mentionedDisplayNames)) {
         completedMentionedDisplayNames = event.mentionedDisplayNames;
       }
+      if (event.type === "completed") {
+        completedAction = toCompletedAction({
+          finalText,
+          summaryText: completedSummaryText,
+          mentionedDisplayNames: completedMentionedDisplayNames,
+          event,
+        });
+      }
     }
   } catch (error) {
     failedError = error instanceof Error ? error.message : "Agent execution failed.";
@@ -549,10 +583,10 @@ async function runAgentSession(sessionId: string): Promise<void> {
   const parsedSummary = isSecretarySession(typedRoom, runningSession) &&
       typedRoom.secretaryMode === "coordinate_and_summarize"
     ? normalizeRoomSummaryOutput({
-        visibleContent: finalText,
-        summaryText: completedSummaryText,
+        visibleContent: completedAction?.content ?? finalText,
+        summaryText: completedAction?.summaryText ?? completedSummaryText,
       })
-    : { visibleContent: finalText.trim(), summaryText: null };
+    : { visibleContent: (completedAction?.content ?? finalText).trim(), summaryText: null };
   const committedText = parsedSummary.visibleContent.trim();
   const canCompleteSilently = allowsSilentCompletion(runningSession);
 
@@ -579,7 +613,8 @@ async function runAgentSession(sessionId: string): Promise<void> {
     messageId: outputMessageId,
     content: committedText,
     summaryText: parsedSummary.summaryText,
-    mentionedDisplayNames: completedMentionedDisplayNames,
+    mentionedDisplayNames: completedAction?.mentionedDisplayNames ?? completedMentionedDisplayNames,
+    attachments: [],
     replyToMessageId: typedTriggerMessage.id,
   });
   for (const queuedSessionId of committed.queuedSessionIds) {

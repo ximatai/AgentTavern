@@ -2,6 +2,7 @@ import { and, asc, eq, lt, or } from "drizzle-orm";
 import { Hono } from "hono";
 
 import type { AgentSession } from "@agent-tavern/shared";
+import type { AgentMessageAction } from "@agent-tavern/agent-sdk";
 
 import { db } from "../db/client";
 import { agentBindings, agentSessions, bridgeTasks, localBridges, members, rooms } from "../db/schema";
@@ -109,6 +110,46 @@ function toAgentSession(row: {
 
 function allowsSilentCompletion(session: AgentSession): boolean {
   return session.kind === "room_observe" || session.kind === "summary_refresh";
+}
+
+function parseAgentMessageAction(value: unknown): AgentMessageAction | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const action = value as Record<string, unknown>;
+  const mentionedDisplayNames = Array.isArray(action.mentionedDisplayNames)
+    ? action.mentionedDisplayNames.flatMap((entry) =>
+        typeof entry === "string" && entry.trim() ? [entry.trim()] : [],
+      )
+    : undefined;
+  const attachments = Array.isArray(action.attachments)
+    ? action.attachments.flatMap((attachment) => {
+        if (!attachment || typeof attachment !== "object") {
+          return [];
+        }
+        const record = attachment as Record<string, unknown>;
+        if (
+          typeof record.name === "string" &&
+          typeof record.mimeType === "string" &&
+          typeof record.contentBase64 === "string"
+        ) {
+          return [{
+            name: record.name,
+            mimeType: record.mimeType,
+            contentBase64: record.contentBase64,
+          }];
+        }
+        return [];
+      })
+    : undefined;
+
+  return {
+    content: typeof action.content === "string" ? action.content : undefined,
+    summaryText: typeof action.summaryText === "string" ? action.summaryText : undefined,
+    mentionedDisplayNames,
+    attachments,
+  };
 }
 
 bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/pull", async (c) => {
@@ -309,21 +350,25 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
   const bridgeId = c.req.param("bridgeId");
   const taskId = c.req.param("taskId");
   const body = await c.req.json().catch(() => null);
+  const action = parseAgentMessageAction(body?.action);
   const bridgeToken = typeof body?.bridgeToken === "string" ? body.bridgeToken.trim() : "";
   const bridgeInstanceId =
     typeof body?.bridgeInstanceId === "string" ? body.bridgeInstanceId.trim() : "";
-  const finalText = typeof body?.finalText === "string" ? body.finalText.trim() : "";
+  const finalText =
+    action?.content?.trim() ||
+    (typeof body?.finalText === "string" ? body.finalText.trim() : "");
   const backendThreadId =
     typeof body?.backendThreadId === "string" ? body.backendThreadId.trim() : "";
-  const summaryText =
-    typeof body?.summaryText === "string" && body.summaryText.trim()
+  const summaryText = action?.summaryText?.trim()
+    ? action.summaryText.trim()
+    : typeof body?.summaryText === "string" && body.summaryText.trim()
       ? body.summaryText.trim()
       : null;
-  const mentionedDisplayNames = Array.isArray(body?.mentionedDisplayNames)
+  const mentionedDisplayNames = action?.mentionedDisplayNames ?? (Array.isArray(body?.mentionedDisplayNames)
     ? body.mentionedDisplayNames.flatMap((value: unknown) =>
         typeof value === "string" && value.trim() ? [value.trim()] : [],
       )
-    : [];
+    : []);
   const attachmentIds = Array.isArray(body?.attachmentIds)
     ? body.attachmentIds.flatMap((value: unknown) =>
         typeof value === "string" && value.trim() ? [value.trim()] : [],

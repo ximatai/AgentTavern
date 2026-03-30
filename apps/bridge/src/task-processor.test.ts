@@ -95,6 +95,9 @@ test("processTask accepts, streams deltas, and completes", async () => {
     bridgeToken: "tok_1",
     bridgeInstanceId: "binst_1",
     finalText: "hello world",
+    action: {
+      content: "hello world",
+    },
   });
 });
 
@@ -130,6 +133,9 @@ test("processTask persists backend thread id returned by the driver", async () =
     bridgeToken: "tok_1",
     bridgeInstanceId: "binst_1",
     finalText: "done",
+    action: {
+      content: "done",
+    },
     backendThreadId: "ses_updated",
   });
 });
@@ -197,6 +203,16 @@ test("processTask uploads generated attachments before completing", async () => 
     bridgeToken: "tok_1",
     bridgeInstanceId: "binst_1",
     finalText: "done with file",
+    action: {
+      content: "done with file",
+      attachments: [
+        {
+          name: "report.txt",
+          mimeType: "text/plain",
+          contentBase64: Buffer.from("report body").toString("base64"),
+        },
+      ],
+    },
     attachmentIds: ["att_generated_1"],
   });
 });
@@ -230,6 +246,10 @@ test("processTask forwards structured summary text on completion", async () => {
     bridgeToken: "tok_1",
     bridgeInstanceId: "binst_1",
     finalText: "I will ask @Planner next.",
+    action: {
+      content: "I will ask @Planner next.",
+      summaryText: "Need planner draft and owner confirmation.",
+    },
     summaryText: "Need planner draft and owner confirmation.",
   });
 });
@@ -263,6 +283,52 @@ test("processTask forwards structured mention targets on completion", async () =
     bridgeToken: "tok_1",
     bridgeInstanceId: "binst_1",
     finalText: "Please take the next turn.",
+    action: {
+      content: "Please take the next turn.",
+      mentionedDisplayNames: ["Planner"],
+    },
+    mentionedDisplayNames: ["Planner"],
+  });
+});
+
+test("processTask forwards unified message actions on completion", async () => {
+  const task = createTask({ backendType: "opencode", kind: "room_observe" });
+  const { calls, postJson } = createPostJsonRecorder();
+  const drivers = new Map<AgentBackendType, BridgeDriver>([
+    [
+      "opencode",
+      createDriver("opencode", async function* () {
+        yield {
+          type: "completed",
+          action: {
+            content: "Please take the next turn.",
+            summaryText: "Need planner draft.",
+            mentionedDisplayNames: ["Planner"],
+          },
+        };
+      }),
+    ],
+  ]);
+
+  await processTask({
+    bridgeId: "brg_1",
+    bridgeToken: "tok_1",
+    bridgeInstanceId: "binst_1",
+    task,
+    postJson,
+    drivers,
+  });
+
+  assert.deepEqual(calls.at(-1)?.body, {
+    bridgeToken: "tok_1",
+    bridgeInstanceId: "binst_1",
+    finalText: "Please take the next turn.",
+    action: {
+      content: "Please take the next turn.",
+      summaryText: "Need planner draft.",
+      mentionedDisplayNames: ["Planner"],
+    },
+    summaryText: "Need planner draft.",
     mentionedDisplayNames: ["Planner"],
   });
 });
