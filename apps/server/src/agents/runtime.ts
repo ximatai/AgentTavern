@@ -270,6 +270,10 @@ function isSecretarySession(room: Room, session: AgentSession): boolean {
   return room.secretaryMemberId === session.agentMemberId && room.secretaryMode !== "off";
 }
 
+function allowsSilentCompletion(session: AgentSession): boolean {
+  return session.kind === "room_observe" || session.kind === "summary_refresh";
+}
+
 function enqueueBridgeTask(params: {
   session: AgentSession;
   binding: AgentBinding;
@@ -539,9 +543,10 @@ async function runAgentSession(sessionId: string): Promise<void> {
     ? extractRoomSummaryBlock(finalText)
     : { visibleContent: finalText.trim(), summaryText: null };
   const committedText = parsedSummary.visibleContent.trim();
+  const canCompleteSilently = allowsSilentCompletion(runningSession);
 
   if (!committedText) {
-    if (parsedSummary.summaryText && isSecretarySession(typedRoom, runningSession)) {
+    if (parsedSummary.summaryText && isSecretarySession(typedRoom, runningSession) && canCompleteSilently) {
       completeSessionWithSummary({
         session: runningSession,
         summaryText: parsedSummary.summaryText,
@@ -549,7 +554,7 @@ async function runAgentSession(sessionId: string): Promise<void> {
       return;
     }
 
-    if (isSecretarySession(typedRoom, runningSession)) {
+    if (canCompleteSilently) {
       completeSessionSilently(runningSession);
       return;
     }

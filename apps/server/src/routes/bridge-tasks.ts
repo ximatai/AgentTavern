@@ -107,6 +107,10 @@ function toAgentSession(row: {
   return row as AgentSession;
 }
 
+function allowsSilentCompletion(session: AgentSession): boolean {
+  return session.kind === "room_observe" || session.kind === "summary_refresh";
+}
+
 bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/pull", async (c) => {
   const bridgeId = c.req.param("bridgeId");
   const body = await c.req.json().catch(() => null);
@@ -367,8 +371,7 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
     return c.json({ error: "room not found" }, 404);
   }
 
-  const allowSilentCompletion =
-    room.secretaryMemberId === session.agentMemberId && room.secretaryMode !== "off";
+  const allowSilentCompletion = allowsSilentCompletion(toAgentSession(session));
   const parsedSummary =
     room.secretaryMemberId === session.agentMemberId &&
       room.secretaryMode === "coordinate_and_summarize"
@@ -376,9 +379,9 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
       : { visibleContent: finalText, summaryText: null };
   const visibleFinalText = parsedSummary.visibleContent.trim();
 
-  if (!visibleFinalText && attachmentIds.length === 0 && !parsedSummary.summaryText && !allowSilentCompletion) {
+  if (!visibleFinalText && attachmentIds.length === 0 && !allowSilentCompletion) {
     return c.json(
-      { error: "finalText or attachmentIds are required unless this is a room secretary session" },
+      { error: "finalText or attachmentIds are required unless this is a non-reply secretary task" },
       400,
     );
   }
@@ -427,13 +430,18 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
   }
 
   if (!visibleFinalText && attachmentIds.length === 0) {
-    if (parsedSummary.summaryText) {
+    if (parsedSummary.summaryText && allowSilentCompletion) {
       completeSessionWithSummary({
         session: toAgentSession(session),
         summaryText: parsedSummary.summaryText,
       });
-    } else {
+    } else if (allowSilentCompletion) {
       completeSessionSilently(toAgentSession(session));
+    } else {
+      return c.json(
+        { error: "finalText or attachmentIds are required unless this is a non-reply secretary task" },
+        400,
+      );
     }
   } else {
     const committed = commitSessionMessage({
