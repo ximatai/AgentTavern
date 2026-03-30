@@ -2890,7 +2890,7 @@ test("timed authorization lets the requester reuse the same assistant without a 
   assert.equal(authorization?.remainingUses, null);
 });
 
-test("single-use authorization is consumed after one reuse", async () => {
+test("single-use authorization requires a fresh approval on the next request", async () => {
   const roomId = "room_authorization_once";
   const createdAt = new Date("2026-03-25T02:45:00.000Z").toISOString();
 
@@ -3007,15 +3007,16 @@ test("single-use authorization is consumed after one reuse", async () => {
 
   assert.equal(secondResponse.status, 201);
 
-  await waitFor(
+  const secondApprovalSet = await waitFor(
     () =>
       db
         .select()
-        .from(agentSessions)
-        .where(eq(agentSessions.roomId, roomId))
+        .from(approvals)
+        .where(eq(approvals.roomId, roomId))
         .all(),
-    (value) => value.filter((session) => session.status === "completed").length >= 2,
+    (value) => value.length >= 2,
   );
+  assert.equal(secondApprovalSet.length, 2);
 
   const thirdResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
     method: "POST",
@@ -3036,7 +3037,7 @@ test("single-use authorization is consumed after one reuse", async () => {
         .from(approvals)
         .where(eq(approvals.roomId, roomId))
         .all(),
-    (value) => value.length >= 2,
+    (value) => value.length >= 3,
   );
   const authorization = db
     .select()
@@ -3044,7 +3045,7 @@ test("single-use authorization is consumed after one reuse", async () => {
     .where(eq(agentAuthorizations.roomId, roomId))
     .get();
 
-  assert.equal(finalApproval.length, 2);
+  assert.equal(finalApproval.length, 3);
   assert.equal(authorization?.remainingUses, 0);
   assert.notEqual(authorization?.revokedAt, null);
 });

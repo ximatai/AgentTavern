@@ -152,7 +152,15 @@
     "approvalDetail": "审批详情",
     "requester": "申请人",
     "requestTime": "申请时间",
-    "reason": "原因"
+    "reason": "原因",
+    "detailRequired": "{{agent}} 正在等待所有者审批。",
+    "detailGranted": "已允许 {{agent}} 响应 {{requester}} 的请求（{{grant}}）。",
+    "detailRejected": "已拒绝 {{agent}} 响应 {{requester}} 的请求。",
+    "detailExpired": "审批请求已超时。",
+    "detailOwnerOffline": "{{agent}} 当前无法启动，因为所有者不在线。",
+    "expand": "展开详情",
+    "collapse": "收起",
+    "viewDetails": "查看详情"
   },
   "assistant": {
     "title": "助手",

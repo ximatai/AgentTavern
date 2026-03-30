@@ -94,10 +94,29 @@ export function MessageList() {
     return [...messages].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }, [messages]);
 
-  const showDayDivider = useMemo(() => {
-    if (sortedMessages.length === 0) return false;
-    return isToday(sortedMessages[0].createdAt);
+  const visibleMessages = useMemo(() => {
+    const resolvedApprovalIds = new Set(
+      sortedMessages.flatMap((message) =>
+        message.messageType === "approval_result" && message.systemData?.approvalId
+          ? [message.systemData.approvalId]
+          : [],
+      ),
+    );
+
+    return sortedMessages.filter((message) => {
+      if (message.messageType !== "approval_request") {
+        return true;
+      }
+
+      const approvalId = message.systemData?.approvalId;
+      return !approvalId || !resolvedApprovalIds.has(approvalId);
+    });
   }, [sortedMessages]);
+
+  const showDayDivider = useMemo(() => {
+    if (visibleMessages.length === 0) return false;
+    return isToday(visibleMessages[0].createdAt);
+  }, [visibleMessages]);
 
   const focusMessage = useCallback((messageId: string) => {
     focusedIdRef.current = messageId;
@@ -127,15 +146,15 @@ export function MessageList() {
   }, []);
 
   // Auto-scroll to bottom when new messages arrive (if user hasn't scrolled up)
-  const prevCountRef = useRef(sortedMessages.length);
+  const prevCountRef = useRef(visibleMessages.length);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    if (sortedMessages.length > prevCountRef.current && !userScrolledUp) {
+    if (visibleMessages.length > prevCountRef.current && !userScrolledUp) {
       el.scrollTop = el.scrollHeight;
     }
-    prevCountRef.current = sortedMessages.length;
-  }, [sortedMessages.length, userScrolledUp]);
+    prevCountRef.current = visibleMessages.length;
+  }, [visibleMessages.length, userScrolledUp]);
 
   // Scroll to bottom on initial load
   useEffect(() => {
@@ -158,11 +177,11 @@ export function MessageList() {
         </div>
       )}
 
-      {sortedMessages.length === 0 && (
+      {visibleMessages.length === 0 && (
         <div className="message-empty">{t("chat.empty")}</div>
       )}
 
-      {sortedMessages.map((msg) => {
+      {visibleMessages.map((msg) => {
         const isStream = "sessionId" in msg;
         const sender = memberMap.get(msg.senderMemberId) ?? buildMessageMemberSnapshot(msg.senderMemberId, msg);
         const isSelf = msg.senderMemberId === self?.memberId;
@@ -192,7 +211,7 @@ export function MessageList() {
           : msg.senderDisplayName || msg.senderMemberId;
 
         const replyTarget = msg.replyToMessageId
-          ? sortedMessages.find((m) => m.id === msg.replyToMessageId)
+          ? visibleMessages.find((m) => m.id === msg.replyToMessageId) ?? sortedMessages.find((m) => m.id === msg.replyToMessageId)
           : undefined;
         const replyTargetSender = replyTarget
           ? memberMap.get(replyTarget.senderMemberId) ?? buildMessageMemberSnapshot(replyTarget.senderMemberId, replyTarget)

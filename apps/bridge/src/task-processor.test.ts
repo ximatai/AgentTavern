@@ -317,6 +317,43 @@ test("processTask forwards unified message actions on completion", async () => {
   });
 });
 
+test("processTask normalizes empty action content for reply tasks", async () => {
+  const task = createTask({ backendType: "opencode", kind: "message_reply" });
+  const { calls, postJson } = createPostJsonRecorder();
+  const drivers = new Map<AgentBackendType, BridgeDriver>([
+    [
+      "opencode",
+      createDriver("opencode", async function* () {
+        yield {
+          type: "completed",
+          action: {
+            content: "",
+            summaryText: "Need planner draft.",
+          },
+        };
+      }),
+    ],
+  ]);
+
+  await processTask({
+    bridgeId: "brg_1",
+    bridgeToken: "tok_1",
+    bridgeInstanceId: "binst_1",
+    task,
+    postJson,
+    drivers,
+  });
+
+  assert.deepEqual(calls.at(-1)?.body, {
+    bridgeToken: "tok_1",
+    bridgeInstanceId: "binst_1",
+    action: {
+      content: "(no output)",
+      summaryText: "Need planner draft.",
+    },
+  });
+});
+
 test("processTask fails when no driver is configured", async () => {
   const task = createTask();
   const { calls, postJson } = createPostJsonRecorder();

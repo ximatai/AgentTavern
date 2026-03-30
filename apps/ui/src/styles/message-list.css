@@ -266,8 +266,16 @@
 .approval-card-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
   margin-bottom: 10px;
+}
+
+.approval-card-header-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 .approval-card-badge {
@@ -285,6 +293,21 @@
   color: var(--font-tertiary, #64748b);
 }
 
+.approval-card-toggle {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #7dd3fc;
+  cursor: pointer;
+}
+
+.approval-card-toggle:hover {
+  color: #bae6fd;
+}
+
 .approval-card-title {
   display: block;
   margin-bottom: 6px;
@@ -299,6 +322,16 @@
   font-size: 13px;
   line-height: 1.55;
   color: var(--font-secondary, #94a3b8);
+}
+
+.approval-card-summary {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--font-tertiary, #94a3b8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .approval-card-grid {
@@ -345,6 +378,47 @@
 .approval-card-links {
   display: flex;
   align-items: center;
+  gap: 10px;
+}
+
+.approval-card-links-secondary {
+  margin-left: auto;
+}
+
+.approval-card.is-resolved.is-collapsed {
+  padding-top: 14px;
+  padding-bottom: 12px;
+}
+
+.approval-card.is-resolved.is-collapsed .approval-card-header {
+  margin-bottom: 4px;
+}
+
+.approval-card.is-resolved.is-collapsed .approval-card-title {
+  margin-bottom: 4px;
+  font-size: 14px;
+}
+
+.approval-card.is-resolved.is-collapsed .approval-card-detail {
+  display: none;
+}
+
+.approval-card.is-resolved.is-collapsed .approval-card-summary {
+  margin-bottom: 2px;
+}
+
+.approval-card.is-resolved.is-collapsed .approval-card-actions {
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.approval-card.is-resolved.is-collapsed .approval-card-links {
+  gap: 6px;
+}
+
+.approval-card.is-resolved.is-collapsed .chat-action-button {
+  font-size: 12px;
 }
 
 .approval-card-controls {
@@ -391,6 +465,10 @@
   .approval-card-controls,
   .approval-card-buttons {
     width: 100%;
+  }
+
+  .approval-card-links-secondary {
+    margin-left: 0;
   }
 
   .approval-card-buttons .ant-btn {

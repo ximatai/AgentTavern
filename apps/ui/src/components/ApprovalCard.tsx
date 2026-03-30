@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { Button, Select } from "antd";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ApprovalGrantDuration, PublicMember, SystemMessageData } from "@agent-tavern/shared";
 
 import { useApprovalStore } from "../stores/approval";
@@ -56,6 +56,59 @@ function grantText(
   return opt ? t(opt.label) : "";
 }
 
+function approvalTitle(
+  kind: SystemMessageData["kind"],
+  fallback: string | undefined,
+  t: (key: string) => string,
+): string {
+  switch (kind) {
+    case "approval_required":
+      return t("systemNotice.approvalRequired");
+    case "approval_granted":
+      return t("systemNotice.approvalGranted");
+    case "approval_rejected":
+      return t("systemNotice.approvalRejected");
+    case "approval_expired":
+      return t("systemNotice.approvalExpired");
+    case "approval_owner_offline":
+      return t("systemNotice.ownerUnavailable");
+    default:
+      return fallback ?? "";
+  }
+}
+
+function approvalDetail(
+  sysData: SystemMessageData,
+  memberMap: Map<string, PublicMember>,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  const agentName = sysData.agentMemberId
+    ? (memberMap.get(sysData.agentMemberId)?.displayName ?? sysData.agentMemberId)
+    : "";
+  const requesterName = sysData.requesterMemberId
+    ? (memberMap.get(sysData.requesterMemberId)?.displayName ?? sysData.requesterMemberId)
+    : "";
+
+  switch (sysData.kind) {
+    case "approval_required":
+      return t("approval.detailRequired", { agent: agentName });
+    case "approval_granted":
+      return t("approval.detailGranted", {
+        agent: agentName,
+        requester: requesterName,
+        grant: grantText(sysData.grantDuration, t),
+      });
+    case "approval_rejected":
+      return t("approval.detailRejected", { agent: agentName, requester: requesterName });
+    case "approval_expired":
+      return t("approval.detailExpired");
+    case "approval_owner_offline":
+      return t("approval.detailOwnerOffline", { agent: agentName });
+    default:
+      return sysData.detail ?? "";
+  }
+}
+
 /* ── Types ── */
 
 type SummaryItem = { label: string; value: string };
@@ -84,15 +137,25 @@ export function ApprovalCard({
   const reject = useApprovalStore((s) => s.reject);
 
   const [busyId, setBusyId] = useState<string | null>(null);
+  const isResolvedCard = sysData.kind !== "approval_required";
+  const [expanded, setExpanded] = useState(() => !isResolvedCard);
 
   const status = cardStatus(sysData.status);
   const badge = kindBadge(sysData.kind, t);
   const grant = grantText(sysData.grantDuration, t);
+  const title = approvalTitle(sysData.kind, sysData.title, t);
+  const detail = approvalDetail(sysData, memberMap, t);
 
   const linkedPending = useMemo(
     () => (sysData.approvalId ? pendingApprovals.find((a) => a.id === sysData.approvalId) : undefined),
     [pendingApprovals, sysData.approvalId],
   );
+
+  useEffect(() => {
+    if (!isResolvedCard) {
+      setExpanded(true);
+    }
+  }, [isResolvedCard]);
 
   const canResolve = !!linkedPending && linkedPending.ownerMemberId === self?.memberId;
   const selectedGrant = linkedPending
@@ -116,6 +179,21 @@ export function ApprovalCard({
     out.push({ label: t("approval.status"), value: badge });
     return out;
   }, [sysData, memberMap, t, badge]);
+
+  const compactSummary = useMemo(() => {
+    const requester = items.find((item) => item.label === t("systemNotice.requester"))?.value;
+    const agent = items.find((item) => item.label === t("systemNotice.agent"))?.value;
+    const owner = items.find((item) => item.label === t("systemNotice.owner"))?.value;
+    const summaryParts = [
+      title,
+      requester ? `${t("systemNotice.requester")} ${requester}` : null,
+      agent ? `${t("systemNotice.agent")} ${agent}` : null,
+      owner ? `${t("systemNotice.owner")} ${owner}` : null,
+      grant ? `${t("systemNotice.grant")} ${grant}` : null,
+    ].filter(Boolean);
+
+    return summaryParts.join(" · ");
+  }, [grant, items, t, title]);
 
   const handleApprove = () => {
     if (!linkedPending || !self) return;
@@ -147,40 +225,56 @@ export function ApprovalCard({
 
   return (
     <div
-      className="approval-card"
+      className={`approval-card ${isResolvedCard ? "is-resolved" : "is-pending"} ${expanded ? "is-expanded" : "is-collapsed"}`}
       style={{ borderLeftColor: borderColor }}
     >
       <div className="approval-card-header">
-        <span
-          className="approval-card-badge"
-          style={{ background: badgeBg, color: badgeColor }}
-        >
-          {badge}
-        </span>
-        {grant && (
-          <span className="approval-card-grant">{grant}</span>
-        )}
+        <div className="approval-card-header-meta">
+          <span
+            className="approval-card-badge"
+            style={{ background: badgeBg, color: badgeColor }}
+          >
+            {badge}
+          </span>
+          {grant && (
+            <span className="approval-card-grant">{grant}</span>
+          )}
+        </div>
+        {isResolvedCard ? (
+          <button
+            type="button"
+            className="approval-card-toggle"
+            onClick={() => setExpanded((value) => !value)}
+          >
+            {expanded ? t("approval.collapse") : t("approval.expand")}
+          </button>
+        ) : null}
       </div>
 
-      {sysData.title && (
+      {title && (expanded || !isResolvedCard) && (
         <strong className="approval-card-title">
-          {sysData.title}
+          {title}
         </strong>
       )}
-      {sysData.detail && (
+      {detail && (expanded || !isResolvedCard) && (
         <p className="approval-card-detail">
-          {sysData.detail}
+          {detail}
         </p>
       )}
+      {isResolvedCard && !expanded && compactSummary ? (
+        <p className="approval-card-summary">{compactSummary}</p>
+      ) : null}
 
-      <div className="approval-card-grid">
-        {items.map((item) => (
-          <div key={item.label} className="approval-card-item">
-            <span className="approval-card-item-label">{item.label}</span>
-            <strong className="approval-card-item-value">{item.value}</strong>
-          </div>
-        ))}
-      </div>
+      {expanded ? (
+        <div className="approval-card-grid">
+          {items.map((item) => (
+            <div key={item.label} className="approval-card-item">
+              <span className="approval-card-item-label">{item.label}</span>
+              <strong className="approval-card-item-value">{item.value}</strong>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       <div className="approval-card-actions">
         {replyToMessageId && (
@@ -194,6 +288,17 @@ export function ApprovalCard({
             </button>
           </div>
         )}
+        {isResolvedCard && !expanded ? (
+          <div className="approval-card-links approval-card-links-secondary">
+            <button
+              type="button"
+              className="chat-action-button"
+              onClick={() => setExpanded(true)}
+            >
+              {t("approval.viewDetails")}
+            </button>
+          </div>
+        ) : null}
         {linkedPending && canResolve && (
           <div className="approval-card-controls">
             <div className="approval-card-select-wrap">

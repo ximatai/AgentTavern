@@ -152,7 +152,15 @@
     "approvalDetail": "Approval detail",
     "requester": "Requester",
     "requestTime": "Request time",
-    "reason": "Reason"
+    "reason": "Reason",
+    "detailRequired": "{{agent}} is waiting for owner approval.",
+    "detailGranted": "{{agent}} is allowed to respond to {{requester}} ({{grant}}).",
+    "detailRejected": "{{agent}} was not approved to respond to {{requester}}.",
+    "detailExpired": "The approval request timed out.",
+    "detailOwnerOffline": "{{agent}} cannot start because the owner is offline.",
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "viewDetails": "View details"
   },
   "assistant": {
     "title": "Assistants",
