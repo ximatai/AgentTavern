@@ -11,6 +11,7 @@ import {
   joinExistingRoom as joinExistingRoomAPI,
   joinRoom as joinRoomAPI,
   pullPrincipal as pullPrincipalAPI,
+  updateRoomSecretary as updateRoomSecretaryAPI,
 } from "../api/rooms";
 import { getLobbyPresence } from "../api/principals";
 import type { JoinResult } from "../api/rooms";
@@ -67,6 +68,10 @@ interface RoomActions {
     wsToken: string,
     targetPrincipalId: string,
   ) => Promise<JoinResult>;
+  updateRoomSecretary: (params: {
+    secretaryMode: Room["secretaryMode"];
+    secretaryMemberId?: string | null;
+  }) => Promise<void>;
   refreshMembers: () => Promise<void>;
   addOrUpdateMember: (member: PublicMember) => void;
   removeMember: (memberId: string) => void;
@@ -232,6 +237,22 @@ export const useRoomStore = create<RoomStore>()((set, get) => ({
     targetPrincipalId: string,
   ) => {
     return pullPrincipalAPI(roomId, actorMemberId, wsToken, targetPrincipalId);
+  },
+
+  updateRoomSecretary: async ({ secretaryMode, secretaryMemberId }) => {
+    const room = get().room;
+    const self = get().self;
+    if (!room || !self) throw new Error("Room not ready");
+
+    const updatedRoom = await updateRoomSecretaryAPI({
+      roomId: room.id,
+      actorMemberId: self.memberId,
+      wsToken: self.wsToken,
+      secretaryMode,
+      secretaryMemberId: secretaryMemberId ?? null,
+    });
+
+    set({ room: updatedRoom });
   },
 
   refreshMembers: async () => {

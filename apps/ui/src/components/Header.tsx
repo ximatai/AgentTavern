@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { SettingOutlined, RobotOutlined, LoginOutlined, ShareAltOutlined } from "@ant-design/icons";
+import { SettingOutlined, RobotOutlined, LoginOutlined, ShareAltOutlined, TeamOutlined } from "@ant-design/icons";
 
 import { toast } from "../lib/feedback";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 import { LoginModal } from "./LoginModal";
 import { AssistantManagementModal } from "./AssistantManagementModal";
+import { RoomSecretaryModal } from "./RoomSecretaryModal";
 import { usePrincipalStore } from "../stores/principal";
 import { useConnectionStore } from "../stores/connection";
 import { useRoomStore } from "../stores/room";
@@ -86,9 +87,14 @@ export function Header() {
   const principal = usePrincipalStore((s) => s.principal);
   const room = useRoomStore((s) => s.room);
   const self = useRoomStore((s) => s.self);
+  const members = useRoomStore((s) => s.members);
   const connectionStatus = useConnectionStore((s) => s.status);
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [secretaryOpen, setSecretaryOpen] = useState(false);
   const [copyingRoomInvite, setCopyingRoomInvite] = useState(false);
+  const secretaryMember = room?.secretaryMemberId
+    ? members.find((member) => member.id === room.secretaryMemberId) ?? null
+    : null;
 
   const handleCopyRoomInvite = async () => {
     if (!room) return;
@@ -115,6 +121,17 @@ export function Header() {
           {room ? (
             <div className="header-room-line">
               <span className="header-room-name">{room.name}</span>
+              {room.secretaryMode !== "off" ? (
+                <span className="header-room-status">
+                  {t("header.secretaryStatus", {
+                    mode:
+                      room.secretaryMode === "coordinate_and_summarize"
+                        ? t("header.secretaryModeCoordinateAndSummarize")
+                        : t("header.secretaryModeCoordinate"),
+                    name: secretaryMember?.displayName ?? t("header.secretaryUnknown"),
+                  })}
+                </span>
+              ) : null}
               {connectionStatus === "disconnected" ? (
                 <span className="header-room-status is-disconnected">
                   {t("header.connectionDisconnected")}
@@ -146,6 +163,10 @@ export function Header() {
         )}
         {self && (
           <>
+            <button type="button" className="assistant-badge" onClick={() => setSecretaryOpen(true)}>
+              <TeamOutlined />
+              <span>{t("header.secretary")}</span>
+            </button>
             <button
               type="button"
               className="assistant-badge"
@@ -161,6 +182,7 @@ export function Header() {
         <LanguageSwitcher />
         <IdentitySection />
       </div>
+      <RoomSecretaryModal open={secretaryOpen} onClose={() => setSecretaryOpen(false)} />
     </header>
   );
 }
