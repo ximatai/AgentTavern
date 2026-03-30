@@ -54,6 +54,8 @@ function seedRoom(params: { roomId: string; inviteToken: string; name: string })
     name: params.name,
     inviteToken: params.inviteToken,
     status: "active",
+    secretaryMemberId: null,
+    secretaryMode: "off",
     createdAt: new Date("2026-03-25T00:00:00.000Z").toISOString(),
   }).run();
 }
@@ -146,6 +148,323 @@ test("joining the same room twice with the same nickname returns 409", async () 
   assert.deepEqual(await secondResponse.json(), {
     error: "displayName already exists in room",
   });
+});
+
+test("a human room member can configure an independent agent as secretary", async () => {
+  const roomId = "room_secretary_config";
+  const inviteToken = createInviteToken();
+  seedRoom({
+    roomId,
+    name: "Secretary Config Room",
+    inviteToken,
+  });
+
+  db.insert(members).values([
+    {
+      id: "mem_human_secretary_actor",
+      roomId,
+      principalId: null,
+      type: "human",
+      roleKind: "none",
+      displayName: "Alice",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt: new Date("2026-03-25T00:00:00.000Z").toISOString(),
+    },
+    {
+      id: "mem_agent_secretary",
+      roomId,
+      principalId: null,
+      type: "agent",
+      roleKind: "independent",
+      displayName: "scribe",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: "local_process",
+      adapterConfig: "{\"command\":\"echo\"}",
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt: new Date("2026-03-25T00:00:00.000Z").toISOString(),
+    },
+  ]).run();
+
+  const wsToken = issueWsToken("mem_human_secretary_actor", roomId);
+  const response = await app.request(`http://localhost/api/rooms/${roomId}/secretary`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      actorMemberId: "mem_human_secretary_actor",
+      wsToken,
+      secretaryMemberId: "mem_agent_secretary",
+      secretaryMode: "coordinate",
+    }),
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    id: roomId,
+    name: "Secretary Config Room",
+    inviteToken,
+    status: "active",
+    secretaryMemberId: "mem_agent_secretary",
+    secretaryMode: "coordinate",
+    createdAt: new Date("2026-03-25T00:00:00.000Z").toISOString(),
+  });
+
+  const room = db.select().from(rooms).where(eq(rooms.id, roomId)).get();
+  assert.equal(room?.secretaryMemberId, "mem_agent_secretary");
+  assert.equal(room?.secretaryMode, "coordinate");
+});
+
+test("room secretary must be an active independent agent", async () => {
+  const roomId = "room_secretary_invalid_target";
+  seedRoom({
+    roomId,
+    name: "Secretary Invalid Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(members).values([
+    {
+      id: "mem_human_secretary_actor_2",
+      roomId,
+      principalId: null,
+      type: "human",
+      roleKind: "none",
+      displayName: "Alice",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt: new Date("2026-03-25T00:00:00.000Z").toISOString(),
+    },
+    {
+      id: "mem_assistant_secretary_bad",
+      roomId,
+      principalId: null,
+      type: "agent",
+      roleKind: "assistant",
+      displayName: "helper",
+      ownerMemberId: "mem_human_secretary_actor_2",
+      sourcePrivateAssistantId: null,
+      adapterType: "local_process",
+      adapterConfig: "{\"command\":\"echo\"}",
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt: new Date("2026-03-25T00:00:00.000Z").toISOString(),
+    },
+  ]).run();
+
+  const wsToken = issueWsToken("mem_human_secretary_actor_2", roomId);
+  const response = await app.request(`http://localhost/api/rooms/${roomId}/secretary`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      actorMemberId: "mem_human_secretary_actor_2",
+      wsToken,
+      secretaryMemberId: "mem_assistant_secretary_bad",
+      secretaryMode: "coordinate",
+    }),
+  });
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: "room secretary must be an active independent agent",
+  });
+});
+
+test("room secretary observes human room messages without an explicit mention", async () => {
+  const roomId = "room_secretary_observe";
+  const createdAt = new Date("2026-03-25T00:10:00.000Z").toISOString();
+
+  db.insert(rooms).values({
+    id: roomId,
+    name: "Secretary Observe Room",
+    inviteToken: createInviteToken(),
+    status: "active",
+    secretaryMemberId: "mem_secretary_observer",
+    secretaryMode: "coordinate",
+    createdAt,
+  }).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_human_secretary_requester",
+      roomId,
+      principalId: null,
+      type: "human",
+      roleKind: "none",
+      displayName: "Alice",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt,
+    },
+    {
+      id: "mem_secretary_observer",
+      roomId,
+      principalId: null,
+      type: "agent",
+      roleKind: "independent",
+      displayName: "Scribe",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: "local_process",
+      adapterConfig: JSON.stringify({
+        command: "node",
+        args: [
+          "-e",
+          "process.stdin.setEncoding('utf8');let text='';process.stdin.on('data',chunk=>text+=chunk);process.stdin.on('end',()=>process.stdout.write('secretary observed'));",
+        ],
+        inputFormat: 'text',
+      }),
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt,
+    },
+  ]).run();
+
+  const wsToken = issueWsToken("mem_human_secretary_requester", roomId);
+  const response = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_human_secretary_requester",
+      wsToken,
+      content: "Can someone summarize what we should do next?",
+    }),
+  });
+
+  assert.equal(response.status, 201);
+
+  const session = await waitFor(
+    () =>
+      db
+        .select()
+        .from(agentSessions)
+        .where(eq(agentSessions.roomId, roomId))
+        .get(),
+    (value) => value?.status === "completed",
+  );
+  assert.equal(session?.agentMemberId, "mem_secretary_observer");
+
+  const roomMessages = db
+    .select()
+    .from(messages)
+    .where(eq(messages.roomId, roomId))
+    .all();
+  assert.ok(
+    roomMessages.some(
+      (message) =>
+        message.senderMemberId === "mem_secretary_observer" &&
+        message.messageType === "agent_text" &&
+        /secretary observed/i.test(message.content),
+    ),
+  );
+});
+
+test("room secretary can silently complete an observe run", async () => {
+  const roomId = "room_secretary_silent";
+  const createdAt = new Date("2026-03-25T00:12:00.000Z").toISOString();
+
+  db.insert(rooms).values({
+    id: roomId,
+    name: "Secretary Silent Room",
+    inviteToken: createInviteToken(),
+    status: "active",
+    secretaryMemberId: "mem_secretary_silent",
+    secretaryMode: "coordinate",
+    createdAt,
+  }).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_human_secretary_silent",
+      roomId,
+      principalId: null,
+      type: "human",
+      roleKind: "none",
+      displayName: "Alice",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt,
+    },
+    {
+      id: "mem_secretary_silent",
+      roomId,
+      principalId: null,
+      type: "agent",
+      roleKind: "independent",
+      displayName: "Scribe",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: "local_process",
+      adapterConfig: JSON.stringify({
+        command: "node",
+        args: [
+          "-e",
+          "process.stdin.resume();process.stdin.on('end',()=>process.exit(0));",
+        ],
+        inputFormat: "text",
+      }),
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt,
+    },
+  ]).run();
+
+  const wsToken = issueWsToken("mem_human_secretary_silent", roomId);
+  const response = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_human_secretary_silent",
+      wsToken,
+      content: "FYI, just logging a note.",
+    }),
+  });
+
+  assert.equal(response.status, 201);
+
+  const session = await waitFor(
+    () =>
+      db
+        .select()
+        .from(agentSessions)
+        .where(eq(agentSessions.roomId, roomId))
+        .get(),
+    (value) => value?.status === "completed",
+  );
+  assert.equal(session?.status, "completed");
+
+  const roomMessages = db
+    .select()
+    .from(messages)
+    .where(eq(messages.roomId, roomId))
+    .all();
+  assert.equal(roomMessages.length, 1);
+  assert.equal(roomMessages[0]?.senderMemberId, "mem_human_secretary_silent");
 });
 
 test("a nickname can be reused after the previous principal leaves the room", async () => {
@@ -2470,6 +2789,139 @@ test("owner mentioning their own assistant bypasses approval", async () => {
   assert.ok(!roomMessages.some((message) => message.messageType === "approval_request"));
 });
 
+test("assistant replies can mention an independent agent and trigger a follow-up session", async () => {
+  const roomId = "room_assistant_followup_chain";
+  const createdAt = new Date("2026-03-25T03:40:00.000Z").toISOString();
+
+  seedRoom({
+    roomId,
+    name: "Assistant Followup Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(members).values([
+    {
+      id: "mem_requester_assistant_followup",
+      roomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "RequesterFollowup",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_owner_assistant_followup",
+      roomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "OwnerFollowup",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_beta_assistant_followup",
+      roomId,
+      type: "agent",
+      roleKind: "independent",
+      displayName: "BetaFollowup",
+      ownerMemberId: null,
+      adapterType: "local_process",
+      adapterConfig: JSON.stringify({
+        command: "node",
+        args: [
+          "-e",
+          "process.stdin.setEncoding('utf8');let text='';process.stdin.on('data',chunk=>text+=chunk);process.stdin.on('end',()=>process.stdout.write('beta followup:' + text.trim()));",
+        ],
+        inputFormat: "text",
+      }),
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_assistant_followup",
+      roomId,
+      type: "agent",
+      roleKind: "assistant",
+      displayName: "AssistFollowup",
+      ownerMemberId: "mem_owner_assistant_followup",
+      adapterType: "local_process",
+      adapterConfig: JSON.stringify({
+        command: "node",
+        args: [
+          "-e",
+          "process.stdin.setEncoding('utf8');process.stdin.resume();process.stdin.on('end',()=>process.stdout.write('@BetaFollowup please take the next turn'));",
+        ],
+        inputFormat: "text",
+      }),
+      presenceStatus: "online",
+      createdAt,
+    },
+  ]).run();
+
+  const requesterToken = issueWsToken("mem_requester_assistant_followup", roomId);
+  const ownerToken = issueWsToken("mem_owner_assistant_followup", roomId);
+  markMemberOnline("mem_owner_assistant_followup", roomId, ownerToken);
+
+  const firstResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_requester_assistant_followup",
+      wsToken: requesterToken,
+      content: "@AssistFollowup please coordinate",
+    }),
+  });
+
+  assert.equal(firstResponse.status, 201);
+
+  const pendingApproval = db
+    .select()
+    .from(approvals)
+    .where(eq(approvals.roomId, roomId))
+    .get();
+  assert.ok(pendingApproval);
+
+  const approveResponse = await app.request(
+    `http://localhost/api/approvals/${pendingApproval?.id}/approve`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        actorMemberId: "mem_owner_assistant_followup",
+        wsToken: ownerToken,
+        grantDuration: "once",
+      }),
+    },
+  );
+  assert.equal(approveResponse.status, 200);
+
+  const completedSessions = await waitFor(
+    () =>
+      db
+        .select()
+        .from(agentSessions)
+        .where(eq(agentSessions.roomId, roomId))
+        .all(),
+    (value) => value.filter((session) => session.status === "completed").length >= 2,
+  );
+
+  const betaMention = db
+    .select()
+    .from(mentions)
+    .where(eq(mentions.targetMemberId, "mem_beta_assistant_followup"))
+    .get();
+
+  assert.ok(betaMention);
+  assert.ok(completedSessions.some((session) => session.agentMemberId === "mem_assistant_followup"));
+  assert.ok(completedSessions.some((session) => session.agentMemberId === "mem_beta_assistant_followup"));
+});
+
 test("mentioning an independent agent triggers execution and commits a reply", async () => {
   const roomId = "room_independent_agent";
   const createdAt = new Date("2026-03-25T04:00:00.000Z").toISOString();
@@ -3584,6 +4036,371 @@ test("attached codex binding can be pulled and completed through bridge task end
         message.content === "final bridge output",
     ),
   );
+});
+
+test("bridge-completed agent replies can mention another independent agent and trigger a follow-up session", async () => {
+  const roomId = "room_bridge_agent_followup";
+  const createdAt = new Date("2026-03-25T07:10:00.000Z").toISOString();
+
+  seedRoom({
+    roomId,
+    name: "Bridge Followup Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(localBridges).values({
+    id: "brg_bridge_followup",
+    bridgeName: "Bridge Followup",
+    bridgeToken: "bridge_followup_token",
+    currentInstanceId: "binst_bridge_followup",
+    status: "online",
+    platform: "macOS",
+    version: "0.1.0",
+    metadata: null,
+    lastSeenAt: createdAt,
+    createdAt,
+    updatedAt: createdAt,
+  }).run();
+
+  db.insert(principals).values([
+    {
+      id: "prn_bridge_followup_alpha",
+      kind: "agent",
+      loginKey: "agent:followup-alpha",
+      globalDisplayName: "Alpha",
+      backendType: "codex_cli",
+      backendThreadId: "thread_followup_alpha",
+      status: "offline",
+      createdAt,
+    },
+    {
+      id: "prn_bridge_followup_beta",
+      kind: "agent",
+      loginKey: "agent:followup-beta",
+      globalDisplayName: "Beta",
+      backendType: "codex_cli",
+      backendThreadId: "thread_followup_beta",
+      status: "offline",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_bridge_followup_requester",
+      roomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "Requester",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_bridge_followup_alpha",
+      roomId,
+      principalId: "prn_bridge_followup_alpha",
+      type: "agent",
+      roleKind: "independent",
+      displayName: "Alpha",
+      ownerMemberId: null,
+      adapterType: "codex_cli",
+      adapterConfig: null,
+      presenceStatus: "offline",
+      createdAt,
+    },
+    {
+      id: "mem_bridge_followup_beta",
+      roomId,
+      principalId: "prn_bridge_followup_beta",
+      type: "agent",
+      roleKind: "independent",
+      displayName: "Beta",
+      ownerMemberId: null,
+      adapterType: "codex_cli",
+      adapterConfig: null,
+      presenceStatus: "offline",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(agentBindings).values([
+    {
+      id: "agb_bridge_followup_alpha",
+      principalId: "prn_bridge_followup_alpha",
+      privateAssistantId: null,
+      bridgeId: "brg_bridge_followup",
+      backendType: "codex_cli",
+      backendThreadId: "thread_followup_alpha",
+      cwd: "/tmp/followup-alpha",
+      status: "active",
+      attachedAt: createdAt,
+      detachedAt: null,
+    },
+    {
+      id: "agb_bridge_followup_beta",
+      principalId: "prn_bridge_followup_beta",
+      privateAssistantId: null,
+      bridgeId: "brg_bridge_followup",
+      backendType: "codex_cli",
+      backendThreadId: "thread_followup_beta",
+      cwd: "/tmp/followup-beta",
+      status: "active",
+      attachedAt: createdAt,
+      detachedAt: null,
+    },
+  ]).run();
+
+  const requesterToken = issueWsToken("mem_bridge_followup_requester", roomId);
+  const messageResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_bridge_followup_requester",
+      wsToken: requesterToken,
+      content: "@Alpha please coordinate with Beta",
+    }),
+  });
+
+  assert.equal(messageResponse.status, 201);
+
+  const pullAlpha = await app.request("http://localhost/api/bridges/brg_bridge_followup/tasks/pull", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      bridgeToken: "bridge_followup_token",
+      bridgeInstanceId: "binst_bridge_followup",
+    }),
+  });
+
+  assert.equal(pullAlpha.status, 200);
+  const alphaTaskEnvelope = await pullAlpha.json();
+  assert.equal(alphaTaskEnvelope.task.agentMemberId, "mem_bridge_followup_alpha");
+
+  const acceptAlpha = await app.request(
+    `http://localhost/api/bridges/brg_bridge_followup/tasks/${alphaTaskEnvelope.task.id}/accept`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_followup_token",
+        bridgeInstanceId: "binst_bridge_followup",
+      }),
+    },
+  );
+  assert.equal(acceptAlpha.status, 200);
+
+  const completeAlpha = await app.request(
+    `http://localhost/api/bridges/brg_bridge_followup/tasks/${alphaTaskEnvelope.task.id}/complete`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_followup_token",
+        bridgeInstanceId: "binst_bridge_followup",
+        finalText: "@Beta please answer the requester next",
+      }),
+    },
+  );
+  assert.equal(completeAlpha.status, 200);
+
+  const betaMention = db
+    .select()
+    .from(mentions)
+    .where(eq(mentions.targetMemberId, "mem_bridge_followup_beta"))
+    .get();
+  assert.ok(betaMention);
+
+  const sessionsInRoom = db
+    .select()
+    .from(agentSessions)
+    .where(eq(agentSessions.roomId, roomId))
+    .all();
+  const betaSession = sessionsInRoom.find((session) => session.agentMemberId === "mem_bridge_followup_beta");
+  assert.ok(betaSession);
+  assert.equal(betaSession?.status, "pending");
+
+  const pullBeta = await app.request("http://localhost/api/bridges/brg_bridge_followup/tasks/pull", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      bridgeToken: "bridge_followup_token",
+      bridgeInstanceId: "binst_bridge_followup",
+    }),
+  });
+
+  assert.equal(pullBeta.status, 200);
+  const betaTaskEnvelope = await pullBeta.json();
+  assert.equal(betaTaskEnvelope.task.agentMemberId, "mem_bridge_followup_beta");
+});
+
+test("bridge tasks can upload agent-generated attachments and commit an attachment-only message", async () => {
+  const roomId = "room_bridge_attachment_commit";
+  const createdAt = new Date("2026-03-25T07:20:00.000Z").toISOString();
+
+  seedRoom({
+    roomId,
+    name: "Bridge Attachment Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(localBridges).values({
+    id: "brg_bridge_attachment",
+    bridgeName: "Bridge Attachment",
+    bridgeToken: "bridge_attachment_token",
+    currentInstanceId: "binst_bridge_attachment",
+    status: "online",
+    platform: "macOS",
+    version: "0.1.0",
+    metadata: null,
+    lastSeenAt: createdAt,
+    createdAt,
+    updatedAt: createdAt,
+  }).run();
+
+  db.insert(principals).values({
+    id: "prn_bridge_attachment",
+    kind: "agent",
+    loginKey: "agent:bridge-attachment",
+    globalDisplayName: "AttachmentAgent",
+    backendType: "codex_cli",
+    backendThreadId: "thread_bridge_attachment",
+    status: "offline",
+    createdAt,
+  }).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_requester_bridge_attachment",
+      roomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "RequesterAttachment",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_agent_bridge_attachment",
+      roomId,
+      principalId: "prn_bridge_attachment",
+      type: "agent",
+      roleKind: "independent",
+      displayName: "AttachmentAgent",
+      ownerMemberId: null,
+      adapterType: "codex_cli",
+      adapterConfig: null,
+      presenceStatus: "offline",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(agentBindings).values({
+    id: "agb_bridge_attachment",
+    principalId: "prn_bridge_attachment",
+    privateAssistantId: null,
+    bridgeId: "brg_bridge_attachment",
+    backendType: "codex_cli",
+    backendThreadId: "thread_bridge_attachment",
+    cwd: "/tmp/bridge-attachment",
+    status: "active",
+    attachedAt: createdAt,
+    detachedAt: null,
+  }).run();
+
+  const requesterToken = issueWsToken("mem_requester_bridge_attachment", roomId);
+  const messageResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_requester_bridge_attachment",
+      wsToken: requesterToken,
+      content: "@AttachmentAgent send the report file",
+    }),
+  });
+
+  assert.equal(messageResponse.status, 201);
+
+  const pullResponse = await app.request("http://localhost/api/bridges/brg_bridge_attachment/tasks/pull", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      bridgeToken: "bridge_attachment_token",
+      bridgeInstanceId: "binst_bridge_attachment",
+    }),
+  });
+
+  assert.equal(pullResponse.status, 200);
+  const pulled = await pullResponse.json();
+
+  const acceptResponse = await app.request(
+    `http://localhost/api/bridges/brg_bridge_attachment/tasks/${pulled.task.id}/accept`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_attachment_token",
+        bridgeInstanceId: "binst_bridge_attachment",
+      }),
+    },
+  );
+  assert.equal(acceptResponse.status, 200);
+
+  const uploadResponse = await app.request(
+    `http://localhost/api/bridges/brg_bridge_attachment/tasks/${pulled.task.id}/attachments`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_attachment_token",
+        bridgeInstanceId: "binst_bridge_attachment",
+        name: "report.txt",
+        mimeType: "text/plain",
+        contentBase64: Buffer.from("report body", "utf8").toString("base64"),
+      }),
+    },
+  );
+
+  assert.equal(uploadResponse.status, 201);
+  const uploadResult = await uploadResponse.json();
+  assert.ok(uploadResult.attachmentId);
+
+  const completeResponse = await app.request(
+    `http://localhost/api/bridges/brg_bridge_attachment/tasks/${pulled.task.id}/complete`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_attachment_token",
+        bridgeInstanceId: "binst_bridge_attachment",
+        attachmentIds: [uploadResult.attachmentId],
+      }),
+    },
+  );
+
+  assert.equal(completeResponse.status, 200);
+
+  const committedMessage = db
+    .select()
+    .from(messages)
+    .where(eq(messages.id, pulled.task.outputMessageId))
+    .get();
+  assert.ok(committedMessage);
+  assert.equal(committedMessage?.content, "");
+
+  const attachedRows = db
+    .select()
+    .from(messageAttachments)
+    .where(eq(messageAttachments.messageId, pulled.task.outputMessageId))
+    .all();
+
+  assert.equal(attachedRows.length, 1);
+  assert.equal(attachedRows[0]?.originalName, "report.txt");
+  assert.equal(attachedRows[0]?.mimeType, "text/plain");
 });
 
 test("attached claude private assistant binding persists refreshed backendThreadId on completion", async () => {

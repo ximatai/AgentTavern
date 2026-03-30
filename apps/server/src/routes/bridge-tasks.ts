@@ -4,14 +4,21 @@ import { Hono } from "hono";
 import type { AgentSession } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
-import { agentBindings, agentSessions, bridgeTasks, localBridges, members } from "../db/schema";
+import { agentBindings, agentSessions, bridgeTasks, localBridges, members, rooms } from "../db/schema";
 import {
   commitSessionMessage,
+  completeSessionSilently,
   createStreamDeltaEvent,
   failSession,
   markSessionRunning,
   now,
 } from "../agents/session-events";
+import { queueAgentSession } from "../agents/runtime";
+import {
+  MAX_MESSAGE_ATTACHMENTS,
+  createDraftAttachmentFromBuffer,
+  resolveDraftAttachments,
+} from "../lib/message-attachments";
 import { broadcastToRoom } from "../realtime";
 
 const bridgeTaskRoutes = new Hono();
@@ -300,9 +307,21 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
   const finalText = typeof body?.finalText === "string" ? body.finalText.trim() : "";
   const backendThreadId =
     typeof body?.backendThreadId === "string" ? body.backendThreadId.trim() : "";
+  const attachmentIds = Array.isArray(body?.attachmentIds)
+    ? body.attachmentIds.flatMap((value: unknown) =>
+        typeof value === "string" && value.trim() ? [value.trim()] : [],
+      )
+    : [];
 
-  if (!bridgeToken || !bridgeInstanceId || !finalText) {
-    return c.json({ error: "bridgeToken, bridgeInstanceId, and finalText are required" }, 400);
+  if (!bridgeToken || !bridgeInstanceId) {
+    return c.json(
+      { error: "bridgeToken and bridgeInstanceId are required" },
+      400,
+    );
+  }
+
+  if (attachmentIds.length > MAX_MESSAGE_ATTACHMENTS) {
+    return c.json({ error: `up to ${MAX_MESSAGE_ATTACHMENTS} attachments are allowed` }, 400);
   }
 
   const auth = loadAuthorizedBridge(bridgeId, bridgeToken, bridgeInstanceId);
@@ -338,6 +357,32 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
     return c.json({ error: "session not found" }, 404);
   }
 
+  const room = db.select().from(rooms).where(eq(rooms.id, task.roomId)).get();
+
+  if (!room) {
+    return c.json({ error: "room not found" }, 404);
+  }
+
+  const allowSilentCompletion =
+    room.secretaryMemberId === session.agentMemberId && room.secretaryMode !== "off";
+
+  if (!finalText && attachmentIds.length === 0 && !allowSilentCompletion) {
+    return c.json(
+      { error: "finalText or attachmentIds are required unless this is a room secretary session" },
+      400,
+    );
+  }
+
+  const attachments = resolveDraftAttachments({
+    roomId: task.roomId,
+    uploaderMemberId: task.agentMemberId,
+    attachmentIds,
+  });
+
+  if (attachments === null) {
+    return c.json({ error: "one or more attachments are invalid or unavailable" }, 409);
+  }
+
   const completedAt = now();
   db
     .update(bridgeTasks)
@@ -360,18 +405,100 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
     }
   }
 
-  commitSessionMessage({
-    session: toAgentSession(session),
-    messageId: task.outputMessageId,
-    content: finalText,
-    replyToMessageId: session.triggerMessageId,
-  });
+  if (!finalText && attachmentIds.length === 0) {
+    completeSessionSilently(toAgentSession(session));
+  } else {
+    const committed = commitSessionMessage({
+      session: toAgentSession(session),
+      messageId: task.outputMessageId,
+      content: finalText,
+      attachments,
+      replyToMessageId: session.triggerMessageId,
+    });
+    for (const queuedSessionId of committed.queuedSessionIds) {
+      queueAgentSession(queuedSessionId);
+    }
+  }
 
   return c.json({
     taskId,
     status: "completed",
     completedAt,
   });
+});
+
+bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/attachments", async (c) => {
+  const bridgeId = c.req.param("bridgeId");
+  const taskId = c.req.param("taskId");
+  const body = await c.req.json().catch(() => null);
+  const bridgeToken = typeof body?.bridgeToken === "string" ? body.bridgeToken.trim() : "";
+  const bridgeInstanceId =
+    typeof body?.bridgeInstanceId === "string" ? body.bridgeInstanceId.trim() : "";
+  const name = typeof body?.name === "string" ? body.name.trim() : "";
+  const mimeType = typeof body?.mimeType === "string" ? body.mimeType.trim() : "";
+  const contentBase64 =
+    typeof body?.contentBase64 === "string" ? body.contentBase64.trim() : "";
+
+  if (!bridgeToken || !bridgeInstanceId || !name || !mimeType || !contentBase64) {
+    return c.json(
+      { error: "bridgeToken, bridgeInstanceId, name, mimeType, and contentBase64 are required" },
+      400,
+    );
+  }
+
+  const auth = loadAuthorizedBridge(bridgeId, bridgeToken, bridgeInstanceId);
+  if (auth.error) {
+    return c.json(auth.error.body, { status: auth.error.status });
+  }
+
+  const task = db
+    .select()
+    .from(bridgeTasks)
+    .where(and(eq(bridgeTasks.id, taskId), eq(bridgeTasks.bridgeId, bridgeId)))
+    .get();
+
+  if (!task) {
+    return c.json({ error: "task not found" }, 404);
+  }
+
+  if (task.status !== "accepted") {
+    return c.json({ error: "task is not accepting attachments" }, 409);
+  }
+
+  if (task.acceptedInstanceId !== bridgeInstanceId) {
+    return c.json({ error: "task is owned by another bridge instance" }, 409);
+  }
+
+  let content: Buffer;
+  try {
+    content = Buffer.from(contentBase64, "base64");
+  } catch {
+    return c.json({ error: "invalid contentBase64 payload" }, 400);
+  }
+
+  if (content.byteLength === 0) {
+    return c.json({ error: "attachment content must not be empty" }, 400);
+  }
+
+  try {
+    const attachment = createDraftAttachmentFromBuffer({
+      roomId: task.roomId,
+      uploaderMemberId: task.agentMemberId,
+      fileName: name,
+      mimeType,
+      content,
+      createdAt: now(),
+    });
+
+    return c.json({
+      attachmentId: attachment.id,
+      attachment,
+    }, 201);
+  } catch (error) {
+    return c.json({
+      error: error instanceof Error ? error.message : "failed to store attachment",
+    }, 400);
+  }
 });
 
 bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/fail", async (c) => {

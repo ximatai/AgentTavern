@@ -8,6 +8,7 @@ export type LocalProcessAdapterConfig = {
   cwd?: string;
   env?: Record<string, string>;
   inputFormat?: "text" | "json";
+  outputFormat?: "text" | "jsonl";
   maxRuntimeMs?: number;
   gracefulShutdownMs?: number;
 };
@@ -18,6 +19,30 @@ function toPayload(input: AgentRunInput, inputFormat: "text" | "json"): string {
   }
 
   return input.prompt;
+}
+
+function isAgentStreamEvent(value: unknown): value is AgentStreamEvent {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const event = value as Record<string, unknown>;
+  if (event.type === "delta") {
+    return typeof event.text === "string";
+  }
+  if (event.type === "failed") {
+    return typeof event.error === "string";
+  }
+  if (event.type === "completed") {
+    return (
+      event.finalText === undefined || typeof event.finalText === "string"
+    ) && (
+      event.sessionId === undefined || typeof event.sessionId === "string"
+    ) && (
+      event.attachments === undefined || Array.isArray(event.attachments)
+    );
+  }
+  return false;
 }
 
 export function createLocalProcessAdapter(
@@ -38,9 +63,11 @@ export function createLocalProcessAdapter(
 
       const decoder = new TextDecoder();
       let stderr = "";
+      let stdoutBuffer = "";
       let spawnErrorMessage: string | null = null;
       let timedOut = false;
       let forceKillTimeout: ReturnType<typeof setTimeout> | null = null;
+      let emittedTerminalEvent = false;
 
       const closePromise = new Promise<number | null>((resolve) => {
         child.once("error", (error) => {
@@ -86,8 +113,88 @@ export function createLocalProcessAdapter(
         for await (const chunk of child.stdout) {
           const text = typeof chunk === "string" ? chunk : decoder.decode(chunk);
 
+          if (!text) {
+            continue;
+          }
+
+          if (config.outputFormat === "jsonl") {
+            stdoutBuffer += text;
+
+            while (true) {
+              const lineBreak = stdoutBuffer.indexOf("\n");
+              if (lineBreak < 0) {
+                break;
+              }
+
+              const line = stdoutBuffer.slice(0, lineBreak).trim();
+              stdoutBuffer = stdoutBuffer.slice(lineBreak + 1);
+
+              if (!line) {
+                continue;
+              }
+
+              let parsed: unknown;
+              try {
+                parsed = JSON.parse(line);
+              } catch {
+                yield {
+                  type: "failed",
+                  error: `local process emitted invalid jsonl: ${line.slice(0, 200)}`,
+                };
+                emittedTerminalEvent = true;
+                return;
+              }
+
+              if (!isAgentStreamEvent(parsed)) {
+                yield {
+                  type: "failed",
+                  error: "local process emitted an unsupported event payload",
+                };
+                emittedTerminalEvent = true;
+                return;
+              }
+
+              if (parsed.type === "completed" || parsed.type === "failed") {
+                emittedTerminalEvent = true;
+              }
+              yield parsed;
+            }
+            continue;
+          }
+
           if (text) {
             yield { type: "delta", text };
+          }
+        }
+
+        if (config.outputFormat === "jsonl") {
+          const trailingLine = stdoutBuffer.trim();
+          if (trailingLine) {
+            let parsed: unknown;
+            try {
+              parsed = JSON.parse(trailingLine);
+            } catch {
+              yield {
+                type: "failed",
+                error: `local process emitted invalid jsonl: ${trailingLine.slice(0, 200)}`,
+              };
+              emittedTerminalEvent = true;
+              return;
+            }
+
+            if (!isAgentStreamEvent(parsed)) {
+              yield {
+                type: "failed",
+                error: "local process emitted an unsupported event payload",
+              };
+              emittedTerminalEvent = true;
+              return;
+            }
+
+            if (parsed.type === "completed" || parsed.type === "failed") {
+              emittedTerminalEvent = true;
+            }
+            yield parsed;
           }
         }
 
@@ -115,6 +222,9 @@ export function createLocalProcessAdapter(
         }
 
         if (exitCode === 0) {
+          if (emittedTerminalEvent) {
+            return;
+          }
           yield { type: "completed" };
           return;
         }

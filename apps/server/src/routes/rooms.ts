@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 
-import type { AgentBinding, Member, Principal, Room } from "@agent-tavern/shared";
+import type { AgentBinding, Member, Principal, Room, RoomSecretaryMode } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
 import { members, principals, rooms } from "../db/schema";
@@ -256,6 +256,34 @@ function findReusableDirectRoom(params: {
   return null;
 }
 
+function createRoomRecord(params: {
+  id: string;
+  name: string;
+  inviteToken: string;
+  createdAt: string;
+}): Room {
+  return {
+    id: params.id,
+    name: params.name,
+    inviteToken: params.inviteToken,
+    status: "active",
+    secretaryMemberId: null,
+    secretaryMode: "off",
+    createdAt: params.createdAt,
+  };
+}
+
+function toRoomSummary(room: Room) {
+  return {
+    id: room.id,
+    name: room.name,
+    inviteToken: room.inviteToken,
+    secretaryMemberId: room.secretaryMemberId,
+    secretaryMode: room.secretaryMode,
+    createdAt: room.createdAt,
+  };
+}
+
 roomRoutes.post("/api/rooms", async (c) => {
   const body = await c.req.json().catch(() => null);
   const name = typeof body?.name === "string" ? body.name.trim() : "";
@@ -264,13 +292,12 @@ roomRoutes.post("/api/rooms", async (c) => {
     return c.json({ error: "room name is required" }, 400);
   }
 
-  const room: Room = {
+  const room = createRoomRecord({
     id: createId("room"),
     name,
     inviteToken: createInviteToken(),
-    status: "active",
     createdAt: now(),
-  };
+  });
 
   db.insert(rooms).values(room).run();
 
@@ -278,6 +305,8 @@ roomRoutes.post("/api/rooms", async (c) => {
     id: room.id,
     name: room.name,
     inviteToken: room.inviteToken,
+    secretaryMemberId: room.secretaryMemberId,
+    secretaryMode: room.secretaryMode,
     inviteUrl: `/join/${room.inviteToken}`,
   });
 });
@@ -306,12 +335,7 @@ roomRoutes.get("/api/me/rooms", (c) => {
     .map((roomId) => db.select().from(rooms).where(eq(rooms.id, roomId)).get() as Room | undefined)
     .filter(Boolean)
     .sort((a, b) => b!.createdAt.localeCompare(a!.createdAt))
-    .map((room) => ({
-      id: room!.id,
-      name: room!.name,
-      inviteToken: room!.inviteToken,
-      createdAt: room!.createdAt,
-    }));
+    .map((room) => toRoomSummary(room!));
 
   return c.json({ rooms: joinedRooms });
 });
@@ -402,13 +426,12 @@ roomRoutes.post("/api/direct-rooms", async (c) => {
   }
 
   const createdAt = now();
-  const room: Room = {
+  const room = createRoomRecord({
     id: createId("room"),
     name: buildDirectRoomName(actor, peer),
     inviteToken: createInviteToken(),
-    status: "active",
     createdAt,
-  };
+  });
 
   db.insert(rooms).values(room).run();
 
@@ -497,7 +520,93 @@ roomRoutes.get("/api/invites/:inviteToken", (c) => {
     id: room.id,
     name: room.name,
     inviteToken: room.inviteToken,
+    secretaryMemberId: room.secretaryMemberId,
+    secretaryMode: room.secretaryMode,
     inviteUrl: `/join/${room.inviteToken}`,
+  });
+});
+
+roomRoutes.patch("/api/rooms/:roomId/secretary", async (c) => {
+  const roomId = c.req.param("roomId");
+  const room = db.select().from(rooms).where(eq(rooms.id, roomId)).get() as Room | undefined;
+
+  if (!room) {
+    return c.json({ error: "room not found" }, 404);
+  }
+
+  const body = await c.req.json().catch(() => null);
+  const actorMemberId =
+    typeof body?.actorMemberId === "string" ? body.actorMemberId.trim() : "";
+  const wsToken = typeof body?.wsToken === "string" ? body.wsToken.trim() : "";
+  const secretaryMemberId =
+    typeof body?.secretaryMemberId === "string" ? body.secretaryMemberId.trim() : null;
+  const secretaryMode: RoomSecretaryMode =
+    body?.secretaryMode === "coordinate" || body?.secretaryMode === "coordinate_and_summarize"
+      ? body.secretaryMode
+      : "off";
+
+  if (!actorMemberId || !wsToken) {
+    return c.json({ error: "actorMemberId and wsToken are required" }, 400);
+  }
+
+  const actor = db
+    .select()
+    .from(members)
+    .where(and(eq(members.id, actorMemberId), eq(members.roomId, roomId)))
+    .get() as Member | undefined;
+
+  if (!actor || (actor.membershipStatus ?? "active") !== "active") {
+    return c.json({ error: "actor not found in room" }, 404);
+  }
+
+  if (!verifyWsToken(wsToken, actorMemberId, roomId)) {
+    return c.json({ error: "invalid wsToken for actor" }, 403);
+  }
+
+  if (actor.type !== "human") {
+    return c.json({ error: "only human members can configure room secretary" }, 403);
+  }
+
+  if (secretaryMode === "off") {
+    db.update(rooms).set({ secretaryMemberId: null, secretaryMode: "off" }).where(eq(rooms.id, roomId)).run();
+    return c.json({
+      ...room,
+      secretaryMemberId: null,
+      secretaryMode: "off",
+    });
+  }
+
+  if (!secretaryMemberId) {
+    return c.json({ error: "secretaryMemberId is required unless secretaryMode is off" }, 400);
+  }
+
+  const secretaryMember = db
+    .select()
+    .from(members)
+    .where(and(eq(members.id, secretaryMemberId), eq(members.roomId, roomId)))
+    .get() as Member | undefined;
+
+  if (!secretaryMember || (secretaryMember.membershipStatus ?? "active") !== "active") {
+    return c.json({ error: "secretary member not found in room" }, 404);
+  }
+
+  if (secretaryMember.type !== "agent" || secretaryMember.roleKind !== "independent") {
+    return c.json({ error: "room secretary must be an active independent agent" }, 400);
+  }
+
+  db
+    .update(rooms)
+    .set({
+      secretaryMemberId: secretaryMember.id,
+      secretaryMode,
+    })
+    .where(eq(rooms.id, roomId))
+    .run();
+
+  return c.json({
+    ...room,
+    secretaryMemberId: secretaryMember.id,
+    secretaryMode,
   });
 });
 

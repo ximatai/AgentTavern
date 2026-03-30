@@ -40,6 +40,7 @@ import { toPublicMessage } from "../lib/public";
 import { broadcastToRoom } from "../realtime";
 import {
   commitSessionMessage,
+  completeSessionSilently,
   createStreamDeltaEvent,
   failSession,
   markSessionRunning,
@@ -78,6 +79,10 @@ function parseLocalProcessConfig(raw: string | null): LocalProcessAdapterConfig 
       parsed.inputFormat === "json" || parsed.inputFormat === "text"
         ? parsed.inputFormat
         : undefined;
+    const outputFormat =
+      parsed.outputFormat === "jsonl" || parsed.outputFormat === "text"
+        ? parsed.outputFormat
+        : undefined;
     const maxRuntimeMs =
       typeof parsed.maxRuntimeMs === "number" && parsed.maxRuntimeMs > 0
         ? parsed.maxRuntimeMs
@@ -93,6 +98,7 @@ function parseLocalProcessConfig(raw: string | null): LocalProcessAdapterConfig 
       cwd,
       env,
       inputFormat,
+      outputFormat,
       maxRuntimeMs,
       gracefulShutdownMs,
     };
@@ -121,6 +127,8 @@ function toRoom(row: {
   name: string;
   inviteToken: string;
   status: string;
+  secretaryMemberId: string | null;
+  secretaryMode: string;
   createdAt: string;
 }): Room {
   return row as Room;
@@ -184,14 +192,22 @@ function buildPrompt(input: {
     .join("\n");
 
   return [
-    `You are ${input.agent.displayName}, a member in the room "${input.room.name}".`,
+    input.room.secretaryMemberId === input.agent.id && input.room.secretaryMode !== "off"
+      ? `You are ${input.agent.displayName}, the secretary agent in the room "${input.room.name}".`
+      : `You are ${input.agent.displayName}, a member in the room "${input.room.name}".`,
     `Requester: ${input.requester.displayName}.`,
-    "Reply as a chat participant in plain text.",
+    input.room.secretaryMemberId === input.agent.id && input.room.secretaryMode !== "off"
+      ? "Observe the room, decide whether to respond, and only speak when coordination is genuinely helpful."
+      : "Reply as a chat participant in plain text.",
     "Recent room context:",
     context || "(no context)",
     "Current trigger message:",
     `${input.requester.displayName}: ${input.triggerMessage.content}`,
   ].join("\n");
+}
+
+function isSecretarySession(room: Room, session: AgentSession): boolean {
+  return room.secretaryMemberId === session.agentMemberId && room.secretaryMode !== "off";
 }
 
 function enqueueBridgeTask(params: {
@@ -459,16 +475,24 @@ async function runAgentSession(sessionId: string): Promise<void> {
   const committedText = finalText.trim();
 
   if (!committedText) {
+    if (isSecretarySession(typedRoom, runningSession)) {
+      completeSessionSilently(runningSession);
+      return;
+    }
+
     failSession(runningSession, `${typedAgent.displayName} returned an empty response.`);
     return;
   }
 
-  commitSessionMessage({
+  const committed = commitSessionMessage({
     session: runningSession,
     messageId: outputMessageId,
     content: committedText,
     replyToMessageId: typedTriggerMessage.id,
   });
+  for (const queuedSessionId of committed.queuedSessionIds) {
+    queueAgentSession(queuedSessionId);
+  }
 }
 
 export function queueAgentSession(sessionId: string): void {

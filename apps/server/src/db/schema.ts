@@ -29,6 +29,8 @@ export const rooms = sqliteTable("rooms", {
   name: text("name").notNull(),
   inviteToken: text("invite_token").notNull(),
   status: text("status").notNull(),
+  secretaryMemberId: text("secretary_member_id"),
+  secretaryMode: text("secretary_mode").notNull().default("off"),
   createdAt: text("created_at").notNull(),
 }, (table) => ({
   inviteTokenUniqueIdx: uniqueIndex("rooms_invite_token_unique_idx").on(

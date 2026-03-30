@@ -63,12 +63,32 @@ export async function processTask(params: {
       if (event.type === "completed") {
         const completedText =
           event.finalText !== undefined ? event.finalText : finalText || "(no output)";
+        const attachmentIds: string[] = [];
+
+        if (Array.isArray(event.attachments)) {
+          for (const attachment of event.attachments) {
+            const uploaded = await postJson<{ attachmentId: string }>(
+              `/api/bridges/${bridgeId}/tasks/${task.id}/attachments`,
+              {
+                bridgeToken,
+                bridgeInstanceId,
+                name: attachment.name,
+                mimeType: attachment.mimeType,
+                contentBase64: attachment.contentBase64,
+              },
+            );
+            attachmentIds.push(uploaded.attachmentId);
+          }
+        }
 
         const completeBody: Record<string, unknown> = {
           bridgeToken,
           bridgeInstanceId,
           finalText: completedText,
         };
+        if (attachmentIds.length > 0) {
+          completeBody.attachmentIds = attachmentIds;
+        }
 
         if (event.sessionId) {
           completeBody.backendThreadId = event.sessionId;

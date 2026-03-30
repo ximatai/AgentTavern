@@ -1,4 +1,5 @@
 export type RoomStatus = "active" | "archived";
+export type RoomSecretaryMode = "off" | "coordinate" | "coordinate_and_summarize";
 
 export type PrincipalKind = "human" | "agent";
 
@@ -137,6 +138,8 @@ export type Room = {
   name: string;
   inviteToken: string;
   status: RoomStatus;
+  secretaryMemberId: string | null;
+  secretaryMode: RoomSecretaryMode;
   createdAt: string;
 };
 

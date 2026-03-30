@@ -1,4 +1,4 @@
-import type { PublicMember, PublicMessage, Room } from "@agent-tavern/shared";
+import type { PublicMember, PublicMessage, Room, RoomSecretaryMode } from "@agent-tavern/shared";
 
 import { request } from "./client";
 
@@ -19,6 +19,8 @@ export type JoinedRoomRecord = {
   id: string;
   name: string;
   inviteToken: string;
+  secretaryMemberId: string | null;
+  secretaryMode: RoomSecretaryMode;
   createdAt: string;
 };
 
@@ -26,14 +28,30 @@ export type RoomInviteRecord = {
   id: string;
   name: string;
   inviteToken: string;
+  secretaryMemberId?: string | null;
+  secretaryMode?: RoomSecretaryMode;
   inviteUrl: string;
+};
+
+export type UpdateRoomSecretaryParams = {
+  roomId: string;
+  actorMemberId: string;
+  wsToken: string;
+  secretaryMode: RoomSecretaryMode;
+  secretaryMemberId?: string | null;
 };
 
 async function getRoom(roomId: string): Promise<Room> {
   return request<Room>(`/api/rooms/${roomId}`);
 }
 
-async function createRoom(name: string): Promise<{ id: string; name: string; inviteToken: string }> {
+async function createRoom(name: string): Promise<{
+  id: string;
+  name: string;
+  inviteToken: string;
+  secretaryMemberId: string | null;
+  secretaryMode: RoomSecretaryMode;
+}> {
   return request("/api/rooms", {
     method: "POST",
     body: JSON.stringify({ name }),
@@ -106,6 +124,13 @@ async function getJoinedRooms(
   );
 }
 
+async function updateRoomSecretary(params: UpdateRoomSecretaryParams): Promise<Room> {
+  return request<Room>(`/api/rooms/${params.roomId}/secretary`, {
+    method: "PATCH",
+    body: JSON.stringify(params),
+  });
+}
+
 export {
   getRoom,
   getRoomInvite,
@@ -117,4 +142,5 @@ export {
   getRoomMembers,
   getRoomMessages,
   getJoinedRooms,
+  updateRoomSecretary,
 };

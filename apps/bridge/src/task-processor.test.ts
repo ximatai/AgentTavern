@@ -133,6 +133,73 @@ test("processTask persists backend thread id returned by the driver", async () =
   });
 });
 
+test("processTask uploads generated attachments before completing", async () => {
+  const task = createTask({ backendType: "opencode" });
+  const { calls, postJson } = createPostJsonRecorder();
+  const drivers = new Map<AgentBackendType, BridgeDriver>([
+    [
+      "opencode",
+      createDriver("opencode", async function* () {
+        yield {
+          type: "completed",
+          finalText: "done with file",
+          attachments: [
+            {
+              name: "report.txt",
+              mimeType: "text/plain",
+              contentBase64: Buffer.from("report body", "utf8").toString("base64"),
+            },
+          ],
+        };
+      }),
+    ],
+  ]);
+
+  const postJsonWithAttachmentId: PostJson = async <T>(
+    path: string,
+    body: Record<string, unknown>,
+  ) => {
+    calls.push({ path, body });
+
+    if (path.endsWith("/attachments")) {
+      return { attachmentId: "att_generated_1" } as T;
+    }
+
+    return {} as T;
+  };
+
+  await processTask({
+    bridgeId: "brg_1",
+    bridgeToken: "tok_1",
+    bridgeInstanceId: "binst_1",
+    task,
+    postJson: postJsonWithAttachmentId,
+    drivers,
+  });
+
+  assert.deepEqual(
+    calls.map((call) => call.path),
+    [
+      "/api/bridges/brg_1/tasks/btsk_1/accept",
+      "/api/bridges/brg_1/tasks/btsk_1/attachments",
+      "/api/bridges/brg_1/tasks/btsk_1/complete",
+    ],
+  );
+  assert.deepEqual(calls.at(1)?.body, {
+    bridgeToken: "tok_1",
+    bridgeInstanceId: "binst_1",
+    name: "report.txt",
+    mimeType: "text/plain",
+    contentBase64: Buffer.from("report body", "utf8").toString("base64"),
+  });
+  assert.deepEqual(calls.at(2)?.body, {
+    bridgeToken: "tok_1",
+    bridgeInstanceId: "binst_1",
+    finalText: "done with file",
+    attachmentIds: ["att_generated_1"],
+  });
+});
+
 test("processTask fails when no driver is configured", async () => {
   const task = createTask();
   const { calls, postJson } = createPostJsonRecorder();

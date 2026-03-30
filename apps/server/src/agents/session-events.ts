@@ -1,10 +1,17 @@
 import { eq } from "drizzle-orm";
 
-import type { AgentSession, Message, RealtimeEvent, SystemMessageData } from "@agent-tavern/shared";
+import type {
+  AgentSession,
+  Message,
+  MessageAttachment,
+  RealtimeEvent,
+  SystemMessageData,
+} from "@agent-tavern/shared";
 
 import { db } from "../db/client";
-import { agentSessions, messages } from "../db/schema";
+import { agentSessions } from "../db/schema";
 import { insertMessage } from "../lib/message-records";
+import { submitMessageInternal } from "../lib/message-submission";
 import {
   createAgentFailedSystemData,
   createStructuredSystemMessage,
@@ -137,29 +144,32 @@ export function commitSessionMessage(params: {
   session: AgentSession;
   messageId: string;
   content: string;
+  attachments?: MessageAttachment[];
   replyToMessageId: string;
-}): AgentSession {
-  const committedMessage: Message = {
-    id: params.messageId,
+}): { session: AgentSession; queuedSessionIds: string[] } {
+  const { message: committedMessage, queuedSessionIds } = submitMessageInternal({
     roomId: params.session.roomId,
-    senderMemberId: params.session.agentMemberId,
-    messageType: "agent_text",
+    sender: {
+      id: params.session.agentMemberId,
+      roomId: params.session.roomId,
+      principalId: null,
+      type: "agent",
+      roleKind: "independent",
+      displayName: "",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt: now(),
+    },
     content: params.content,
-    attachments: [],
+    attachments: params.attachments ?? [],
     replyToMessageId: params.replyToMessageId,
-    createdAt: now(),
-  };
-
-  db.insert(messages).values({
-    id: committedMessage.id,
-    roomId: committedMessage.roomId,
-    senderMemberId: committedMessage.senderMemberId,
-    messageType: committedMessage.messageType,
-    content: committedMessage.content,
-    systemData: null,
-    replyToMessageId: committedMessage.replyToMessageId,
-    createdAt: committedMessage.createdAt,
-  }).run();
+    messageId: params.messageId,
+    draftAttachmentIds: params.attachments?.map((attachment) => attachment.id) ?? [],
+    attachmentUploaderMemberId: params.session.agentMemberId,
+  });
   broadcastToRoom(
     params.session.roomId,
     createMessageCommittedEvent(params.session.roomId, params.session.id, committedMessage),
@@ -187,6 +197,30 @@ export function commitSessionMessage(params: {
   broadcastToRoom(
     params.session.roomId,
     createSessionCompletedEvent(params.session.roomId, completedSession),
+  );
+
+  return { session: completedSession, queuedSessionIds };
+}
+
+export function completeSessionSilently(session: AgentSession): AgentSession {
+  const completedSession: AgentSession = {
+    ...session,
+    status: "completed",
+    endedAt: now(),
+  };
+
+  db
+    .update(agentSessions)
+    .set({
+      status: completedSession.status,
+      endedAt: completedSession.endedAt,
+    })
+    .where(eq(agentSessions.id, session.id))
+    .run();
+
+  broadcastToRoom(
+    session.roomId,
+    createSessionCompletedEvent(session.roomId, completedSession),
   );
 
   return completedSession;

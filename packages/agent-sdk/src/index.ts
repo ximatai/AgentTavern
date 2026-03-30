@@ -1,3 +1,9 @@
+export type AgentGeneratedAttachment = {
+  name: string;
+  mimeType: string;
+  contentBase64: string;
+};
+
 export type AgentRunInput = {
   roomId: string;
   agentMemberId: string;
@@ -15,7 +21,12 @@ export type AgentRunInput = {
 
 export type AgentStreamEvent =
   | { type: "delta"; text: string }
-  | { type: "completed"; finalText?: string; sessionId?: string }
+  | {
+      type: "completed";
+      finalText?: string;
+      sessionId?: string;
+      attachments?: AgentGeneratedAttachment[];
+    }
   | { type: "failed"; error: string };
 
 export interface AgentAdapter {

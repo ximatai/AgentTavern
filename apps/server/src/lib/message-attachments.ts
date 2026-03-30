@@ -152,39 +152,62 @@ export async function createDraftAttachments(params: {
   const created: MessageAttachment[] = [];
 
   for (const file of params.files) {
-    const mimeType = normalizeAttachmentMimeType(file.type);
-    if (!mimeType) {
-      throw new Error(`unsupported attachment type: ${file.type || "unknown"}`);
-    }
-
-    const originalName = sanitizeAttachmentName(file.name);
-    const attachmentId = createId("att");
-    const storagePath = path.join(attachmentsDir, attachmentId);
-    const buffer = Buffer.from(await file.arrayBuffer());
-    fs.writeFileSync(storagePath, buffer);
-
-    db.insert(messageAttachments).values({
-      id: attachmentId,
-      roomId: params.roomId,
-      uploaderMemberId: params.uploaderMemberId,
-      messageId: null,
-      storagePath,
-      originalName,
-      mimeType,
-      sizeBytes: file.size,
-      createdAt: params.createdAt,
-    }).run();
-
-    created.push({
-      id: attachmentId,
-      name: originalName,
-      mimeType,
-      sizeBytes: file.size,
-      url: buildAttachmentUrl(attachmentId),
-    });
+    created.push(
+      createDraftAttachmentFromBuffer({
+        roomId: params.roomId,
+        uploaderMemberId: params.uploaderMemberId,
+        fileName: file.name,
+        mimeType: file.type,
+        content: Buffer.from(await file.arrayBuffer()),
+        createdAt: params.createdAt,
+      }),
+    );
   }
 
   return created;
+}
+
+export function createDraftAttachmentFromBuffer(params: {
+  roomId: string;
+  uploaderMemberId: string;
+  fileName: string;
+  mimeType: string;
+  content: Buffer;
+  createdAt: string;
+}): MessageAttachment {
+  const mimeType = normalizeAttachmentMimeType(params.mimeType);
+  if (!mimeType) {
+    throw new Error(`unsupported attachment type: ${params.mimeType || "unknown"}`);
+  }
+
+  if (params.content.byteLength > MAX_ATTACHMENT_SIZE_BYTES) {
+    throw new Error(`attachment exceeds ${MAX_ATTACHMENT_SIZE_BYTES} bytes`);
+  }
+
+  const originalName = sanitizeAttachmentName(params.fileName);
+  const attachmentId = createId("att");
+  const storagePath = path.join(attachmentsDir, attachmentId);
+  fs.writeFileSync(storagePath, params.content);
+
+  db.insert(messageAttachments).values({
+    id: attachmentId,
+    roomId: params.roomId,
+    uploaderMemberId: params.uploaderMemberId,
+    messageId: null,
+    storagePath,
+    originalName,
+    mimeType,
+    sizeBytes: params.content.byteLength,
+    createdAt: params.createdAt,
+  }).run();
+
+  return {
+    id: attachmentId,
+    name: originalName,
+    mimeType,
+    sizeBytes: params.content.byteLength,
+    url: buildAttachmentUrl(attachmentId),
+  };
 }
 
 export function resolveDraftAttachments(params: {

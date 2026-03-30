@@ -127,6 +127,13 @@
       "when": 1774793400000,
       "tag": "0017_member_membership_status",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1774836600000,
+      "tag": "0018_room_secretary_mode",
+      "breakpoints": true
     }
   ]
 }
