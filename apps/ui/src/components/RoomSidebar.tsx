@@ -169,11 +169,16 @@ export function RoomSidebar() {
     for (const m of members) map.set(m.id, m);
     return map;
   }, [members]);
+  const ownerMemberId = room?.ownerMemberId ?? null;
 
   const humansWithAssistants = useMemo(() => {
     const sortedHumans = members
       .filter((m) => m.type === "human")
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      .sort((a, b) => {
+        if (a.id === ownerMemberId && b.id !== ownerMemberId) return -1;
+        if (b.id === ownerMemberId && a.id !== ownerMemberId) return 1;
+        return a.createdAt.localeCompare(b.createdAt);
+      });
     const tree = buildAssistantTree(members);
     const ownerAssistantMap = new Map<string, PublicMember[]>();
     for (const { owner, assistants } of tree) {
@@ -183,14 +188,13 @@ export function RoomSidebar() {
       human: h,
       assistants: ownerAssistantMap.get(h.id) ?? [],
     }));
-  }, [members]);
+  }, [members, ownerMemberId]);
 
   const independentAgents = useMemo(
     () => members.filter((m) => m.type === "agent" && m.roleKind === "independent"),
     [members],
   );
   const secretaryMemberId = room?.secretaryMemberId ?? null;
-  const ownerMemberId = room?.ownerMemberId ?? null;
 
   const runningSessionSummaries = useMemo(
     () =>
@@ -598,7 +602,7 @@ export function RoomSidebar() {
                     </strong>
                     {human.id === ownerMemberId ? (
                       <span className="rs-role-badge rs-role-badge-owner">
-                        {t("roomSidebar.owner")}
+                        {t("roomSidebar.roomOwner")}
                       </span>
                     ) : null}
                   </div>

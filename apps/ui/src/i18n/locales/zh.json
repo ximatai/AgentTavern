@@ -456,6 +456,7 @@
     "humans": "人类成员",
     "inRoom": "在当前聊天室中协作",
     "you": "你",
+    "roomOwner": "房主",
     "independentAgents": "独立 Agent",
     "noIndependentAgents": "暂无独立 Agent。",
     "canBeMentioned": "可被直接 @ 并执行",

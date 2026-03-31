@@ -456,6 +456,7 @@
     "humans": "Human Members",
     "inRoom": "In room",
     "you": "you",
+    "roomOwner": "Room Owner",
     "independentAgents": "Independent Agents",
     "noIndependentAgents": "No independent agents.",
     "canBeMentioned": "Can be @mentioned and executed",
