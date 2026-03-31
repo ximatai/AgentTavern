@@ -190,6 +190,7 @@ export function RoomSidebar() {
     [members],
   );
   const secretaryMemberId = room?.secretaryMemberId ?? null;
+  const ownerMemberId = room?.ownerMemberId ?? null;
 
   const runningSessionSummaries = useMemo(
     () =>
@@ -595,6 +596,11 @@ export function RoomSidebar() {
                         <span className="rs-self-marker">({t("roomSidebar.you")})</span>
                       )}
                     </strong>
+                    {human.id === ownerMemberId ? (
+                      <span className="rs-role-badge rs-role-badge-owner">
+                        {t("roomSidebar.owner")}
+                      </span>
+                    ) : null}
                   </div>
                   <p>{t("roomSidebar.inRoom")}</p>
                 </div>

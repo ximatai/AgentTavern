@@ -323,6 +323,11 @@
   color: var(--accent, #22D3EE);
 }
 
+.rs-role-badge-owner {
+  background: rgba(250, 204, 21, 0.14);
+  color: #facc15;
+}
+
 .rs-role-badge-secretary {
   background: rgba(45, 212, 191, 0.14);
   color: #2dd4bf;
