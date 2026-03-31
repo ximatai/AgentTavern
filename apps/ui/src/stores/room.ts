@@ -12,7 +12,9 @@ import {
   getRoomMessages,
   joinExistingRoom as joinExistingRoomAPI,
   joinRoom as joinRoomAPI,
+  leaveRoom as leaveRoomAPI,
   pullPrincipal as pullPrincipalAPI,
+  transferRoomOwnership as transferRoomOwnershipAPI,
   updateRoomSecretary as updateRoomSecretaryAPI,
 } from "../api/rooms";
 import { getLobbyPresence } from "../api/principals";
@@ -76,10 +78,13 @@ interface RoomActions {
     secretaryMode: Room["secretaryMode"];
     secretaryMemberId?: string | null;
   }) => Promise<void>;
+  transferRoomOwnership: (nextOwnerMemberId: string) => Promise<void>;
   disbandRoom: () => Promise<void>;
+  leaveRoom: () => Promise<void>;
   clearCurrentRoom: (roomId?: string) => void;
   refreshRoomSummary: () => Promise<void>;
   refreshMembers: () => Promise<void>;
+  setRoom: (room: Room) => void;
   addOrUpdateMember: (member: PublicMember) => void;
   removeMember: (memberId: string) => void;
   refreshLobbyPresence: () => Promise<void>;
@@ -153,21 +158,16 @@ export const useRoomStore = create<RoomStore>()((set, get) => ({
     const principal = usePrincipalStore.getState().principal;
     if (!principal) throw new Error("Not authenticated");
 
-    const createdRoom = await createRoomAPI(name);
-    const joinResult = await joinRoomAPI(
-      createdRoom.inviteToken,
-      principal.principalId,
-      principal.principalToken,
-    );
-
+    const created = await createRoomAPI(name, principal.principalId, principal.principalToken);
+    const joinResult = created.join;
     await get().hydrateRoom(joinResult.roomId);
     set({ self: joinResult });
 
     set((state) => ({
       recentRooms: mergeRecentRoom(state.recentRooms, {
-        roomId: createdRoom.id,
-        name: createdRoom.name,
-        inviteToken: createdRoom.inviteToken,
+        roomId: created.room.id,
+        name: created.room.name,
+        inviteToken: created.room.inviteToken,
       }),
     }));
     get().persistRecentRooms();
@@ -265,6 +265,20 @@ export const useRoomStore = create<RoomStore>()((set, get) => ({
     set({ room: updatedRoom });
   },
 
+  transferRoomOwnership: async (nextOwnerMemberId) => {
+    const room = get().room;
+    const self = get().self;
+    if (!room || !self) throw new Error("Room not ready");
+
+    const updatedRoom = await transferRoomOwnershipAPI(
+      room.id,
+      self.memberId,
+      self.wsToken,
+      nextOwnerMemberId,
+    );
+    set({ room: updatedRoom });
+  },
+
   clearCurrentRoom: (roomId) => {
     const currentRoom = get().room;
     if (roomId && currentRoom && currentRoom.id !== roomId) {
@@ -294,6 +308,20 @@ export const useRoomStore = create<RoomStore>()((set, get) => ({
     await disbandRoomAPI(room.id, self.memberId, self.wsToken);
     await get().refreshJoinedRooms();
     get().clearCurrentRoom(room.id);
+  },
+
+  leaveRoom: async () => {
+    const room = get().room;
+    const principal = usePrincipalStore.getState().principal;
+    if (!room || !principal) throw new Error("Room not ready");
+
+    await leaveRoomAPI(room.id, principal.principalId, principal.principalToken);
+    await get().refreshJoinedRooms();
+    get().clearCurrentRoom(room.id);
+  },
+
+  setRoom: (room) => {
+    set({ room });
   },
 
   refreshRoomSummary: async () => {

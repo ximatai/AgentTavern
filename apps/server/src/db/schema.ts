@@ -30,6 +30,7 @@ export const rooms = sqliteTable("rooms", {
   name: text("name").notNull(),
   inviteToken: text("invite_token").notNull(),
   status: text("status").notNull(),
+  ownerMemberId: text("owner_member_id"),
   secretaryMemberId: text("secretary_member_id"),
   secretaryMode: text("secretary_mode").notNull().default("off"),
   createdAt: text("created_at").notNull(),
@@ -37,6 +38,7 @@ export const rooms = sqliteTable("rooms", {
   inviteTokenUniqueIdx: uniqueIndex("rooms_invite_token_unique_idx").on(
     table.inviteToken,
   ),
+  ownerMemberIdIdx: index("rooms_owner_member_id_idx").on(table.ownerMemberId),
 }));
 
 export const members = sqliteTable("members", {

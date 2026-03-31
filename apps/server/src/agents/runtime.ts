@@ -233,7 +233,7 @@ function buildPrompt(input: {
     .from(members)
     .where(eq(members.roomId, input.room.id))
     .all()
-    .filter(isVisibleRoomMember);
+    .filter((member) => isVisibleRoomMember(member));
   const context = input.contextMessages
     .map((message) => `[${message.createdAt}] ${message.senderName}: ${message.content}`)
     .join("\n");

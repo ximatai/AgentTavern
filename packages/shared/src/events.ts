@@ -1,4 +1,4 @@
-import type { AgentSession } from "./domain";
+import type { AgentSession, Room } from "./domain";
 import type { PublicApproval, PublicMember, PublicMessage } from "./dto";
 
 export type RoomEvent =
@@ -19,6 +19,12 @@ export type RoomEvent =
       roomId: string;
       timestamp: string;
       payload: { member: PublicMember };
+    }
+  | {
+      type: "room.updated";
+      roomId: string;
+      timestamp: string;
+      payload: { room: Room };
     };
 
 export type MessageEvent =

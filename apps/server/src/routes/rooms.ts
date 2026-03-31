@@ -37,8 +37,32 @@ function buildDirectRoomName(actor: Principal, peer: Principal): string {
   return `${actor.globalDisplayName} · ${peer.globalDisplayName}`;
 }
 
-function isRoomArchived(room: Pick<Room, "status">): boolean {
+function isRoomArchived(room: { status: string | null }): boolean {
   return room.status !== "active";
+}
+
+function isActiveMember(member: { membershipStatus?: string | null }): boolean {
+  return (member.membershipStatus ?? "active") === "active";
+}
+
+function isHumanMember(member: { type: string | null }): boolean {
+  return member.type === "human";
+}
+
+function isRoomOwner(
+  room: { ownerMemberId?: string | null },
+  member: { id: string },
+): boolean {
+  return room.ownerMemberId === member.id;
+}
+
+function broadcastRoomUpdated(room: Room): void {
+  broadcastToRoom(room.id, {
+    type: "room.updated",
+    roomId: room.id,
+    timestamp: now(),
+    payload: { room },
+  });
 }
 
 function resolveDisplayName(params: {
@@ -188,6 +212,7 @@ function joinRoom(params: {
 }
 
 function leaveRoomByPrincipal(params: {
+  room: Room;
   roomId: string;
   principal: Principal;
 }) {
@@ -205,6 +230,31 @@ function leaveRoomByPrincipal(params: {
         principalId: params.principal.id,
         memberId: null,
       },
+    };
+  }
+
+  if (isRoomOwner(params.room, existingMembership)) {
+    const otherActiveHumans = db
+      .select()
+      .from(members)
+      .where(eq(members.roomId, params.roomId))
+      .all()
+      .filter((member) => isActiveMember(member) && isHumanMember(member) && member.id !== existingMembership.id);
+
+    if (otherActiveHumans.length > 0) {
+      return {
+        error: {
+          error: "room owner must transfer ownership before leaving",
+        },
+        status: 409 as const,
+      };
+    }
+
+    return {
+      error: {
+        error: "room owner must disband the room before leaving",
+      },
+      status: 409 as const,
     };
   }
 
@@ -276,6 +326,7 @@ function createRoomRecord(params: {
   id: string;
   name: string;
   inviteToken: string;
+  ownerMemberId: string | null;
   createdAt: string;
 }): Room {
   return {
@@ -283,6 +334,7 @@ function createRoomRecord(params: {
     name: params.name,
     inviteToken: params.inviteToken,
     status: "active",
+    ownerMemberId: params.ownerMemberId,
     secretaryMemberId: null,
     secretaryMode: "off",
     createdAt: params.createdAt,
@@ -294,6 +346,7 @@ function toRoomSummary(room: Room) {
     id: room.id,
     name: room.name,
     inviteToken: room.inviteToken,
+    ownerMemberId: room.ownerMemberId,
     secretaryMemberId: room.secretaryMemberId,
     secretaryMode: room.secretaryMode,
     createdAt: room.createdAt,
@@ -324,6 +377,7 @@ function disbandRoom(params: {
     .update(rooms)
     .set({
       status: "archived",
+      ownerMemberId: null,
       secretaryMemberId: null,
       secretaryMode: "off",
     })
@@ -434,27 +488,77 @@ function disbandRoom(params: {
 roomRoutes.post("/api/rooms", async (c) => {
   const body = await c.req.json().catch(() => null);
   const name = typeof body?.name === "string" ? body.name.trim() : "";
+  const principalId = typeof body?.principalId === "string" ? body.principalId.trim() : "";
+  const principalToken = typeof body?.principalToken === "string" ? body.principalToken.trim() : "";
 
-  if (!name) {
-    return c.json({ error: "room name is required" }, 400);
+  if (!name || !principalId || !principalToken) {
+    return c.json({ error: "room name, principalId and principalToken are required" }, 400);
   }
 
+  if (!verifyPrincipalToken(principalToken, principalId)) {
+    return c.json({ error: "invalid principal token" }, 403);
+  }
+
+  const principal = db
+    .select()
+    .from(principals)
+    .where(eq(principals.id, principalId))
+    .get() as Principal | undefined;
+
+  if (!principal) {
+    return c.json({ error: "principal not found" }, 404);
+  }
+
+  if (principal.kind !== "human") {
+    return c.json({ error: "only human principals can create rooms" }, 403);
+  }
+
+  const createdAt = now();
+  const ownerMemberId = createId("mem");
   const room = createRoomRecord({
     id: createId("room"),
     name,
     inviteToken: createInviteToken(),
-    createdAt: now(),
+    ownerMemberId,
+    createdAt,
   });
+  const ownerMember: Member = {
+    id: ownerMemberId,
+    roomId: room.id,
+    principalId: principal.id,
+    type: "human",
+    roleKind: "none",
+    displayName: principal.globalDisplayName,
+    ownerMemberId: null,
+    sourcePrivateAssistantId: null,
+    adapterType: null,
+    adapterConfig: null,
+    presenceStatus: "online",
+    membershipStatus: "active",
+    leftAt: null,
+    createdAt,
+  };
 
   db.insert(rooms).values(room).run();
+  db.insert(members).values(ownerMember).run();
+  const wsToken = issueWsToken(ownerMember.id, room.id);
 
   return c.json({
-    id: room.id,
-    name: room.name,
-    inviteToken: room.inviteToken,
-    secretaryMemberId: room.secretaryMemberId,
-    secretaryMode: room.secretaryMode,
-    inviteUrl: `/join/${room.inviteToken}`,
+    room: {
+      id: room.id,
+      name: room.name,
+      inviteToken: room.inviteToken,
+      ownerMemberId: room.ownerMemberId,
+      secretaryMemberId: room.secretaryMemberId,
+      secretaryMode: room.secretaryMode,
+      inviteUrl: `/join/${room.inviteToken}`,
+    },
+    join: {
+      memberId: ownerMember.id,
+      roomId: room.id,
+      displayName: ownerMember.displayName,
+      wsToken,
+    },
   });
 });
 
@@ -535,6 +639,10 @@ roomRoutes.post("/api/direct-rooms", async (c) => {
     return c.json({ error: "principal not found" }, 404);
   }
 
+  if (actor.kind !== "human") {
+    return c.json({ error: "only human principals can create direct rooms" }, 403);
+  }
+
   const reusable = findReusableDirectRoom({ actorPrincipalId, peerPrincipalId });
 
   if (reusable) {
@@ -577,21 +685,20 @@ roomRoutes.post("/api/direct-rooms", async (c) => {
     id: createId("room"),
     name: buildDirectRoomName(actor, peer),
     inviteToken: createInviteToken(),
+    ownerMemberId: null,
     createdAt,
   });
-
-  db.insert(rooms).values(room).run();
 
   const actorMember: Member = {
     id: createId("mem"),
     roomId: room.id,
     principalId: actor.id,
-    type: actor.kind === "agent" ? "agent" : "human",
-    roleKind: actor.kind === "agent" ? "independent" : "none",
+    type: "human",
+    roleKind: "none",
     displayName: actor.globalDisplayName,
     ownerMemberId: null,
     sourcePrivateAssistantId: null,
-    adapterType: actor.kind === "agent" ? (actor.backendType ?? "codex_cli") : null,
+    adapterType: null,
     adapterConfig: null,
     presenceStatus: "online",
     membershipStatus: "active",
@@ -616,6 +723,9 @@ roomRoutes.post("/api/direct-rooms", async (c) => {
     createdAt,
   };
 
+  room.ownerMemberId = actorMember.id;
+
+  db.insert(rooms).values(room).run();
   db.insert(members).values([actorMember, peerMember]).run();
 
   const wsToken = issueWsToken(actorMember.id, room.id);
@@ -686,6 +796,7 @@ roomRoutes.get("/api/invites/:inviteToken", (c) => {
     id: room.id,
     name: room.name,
     inviteToken: room.inviteToken,
+    ownerMemberId: room.ownerMemberId,
     secretaryMemberId: room.secretaryMemberId,
     secretaryMode: room.secretaryMode,
     inviteUrl: `/join/${room.inviteToken}`,
@@ -733,17 +844,28 @@ roomRoutes.patch("/api/rooms/:roomId/secretary", async (c) => {
     return c.json({ error: "invalid wsToken for actor" }, 403);
   }
 
-  if (actor.type !== "human") {
+  if (!isHumanMember(actor)) {
     return c.json({ error: "only human members can configure room secretary" }, 403);
   }
 
+  if (!isRoomOwner(room, actor)) {
+    return c.json({ error: "only the room owner can configure room secretary" }, 403);
+  }
+
   if (secretaryMode === "off") {
-    db.update(rooms).set({ secretaryMemberId: null, secretaryMode: "off" }).where(eq(rooms.id, roomId)).run();
-    return c.json({
+    const updatedRoom = {
       ...room,
+      ownerMemberId: room.ownerMemberId,
       secretaryMemberId: null,
       secretaryMode: "off",
-    });
+    } satisfies Room;
+    db
+      .update(rooms)
+      .set({ secretaryMemberId: null, secretaryMode: "off" })
+      .where(eq(rooms.id, roomId))
+      .run();
+    broadcastRoomUpdated(updatedRoom);
+    return c.json(updatedRoom);
   }
 
   if (!secretaryMemberId) {
@@ -764,6 +886,13 @@ roomRoutes.patch("/api/rooms/:roomId/secretary", async (c) => {
     return c.json({ error: "room secretary must be an active independent agent" }, 400);
   }
 
+  const updatedRoom: Room = {
+    ...room,
+    ownerMemberId: room.ownerMemberId,
+    secretaryMemberId: secretaryMember.id,
+    secretaryMode,
+  };
+
   db
     .update(rooms)
     .set({
@@ -773,11 +902,84 @@ roomRoutes.patch("/api/rooms/:roomId/secretary", async (c) => {
     .where(eq(rooms.id, roomId))
     .run();
 
-  return c.json({
+  broadcastRoomUpdated(updatedRoom);
+
+  return c.json(updatedRoom);
+});
+
+roomRoutes.post("/api/rooms/:roomId/ownership/transfer", async (c) => {
+  const roomId = c.req.param("roomId");
+  const room = db.select().from(rooms).where(eq(rooms.id, roomId)).get() as Room | undefined;
+
+  if (!room) {
+    return c.json({ error: "room not found" }, 404);
+  }
+
+  if (isRoomArchived(room)) {
+    return c.json({ error: "room is archived" }, 410);
+  }
+
+  const body = await c.req.json().catch(() => null);
+  const actorMemberId =
+    typeof body?.actorMemberId === "string" ? body.actorMemberId.trim() : "";
+  const wsToken = typeof body?.wsToken === "string" ? body.wsToken.trim() : "";
+  const nextOwnerMemberId =
+    typeof body?.nextOwnerMemberId === "string" ? body.nextOwnerMemberId.trim() : "";
+
+  if (!actorMemberId || !wsToken || !nextOwnerMemberId) {
+    return c.json({ error: "actorMemberId, wsToken and nextOwnerMemberId are required" }, 400);
+  }
+
+  const actor = db
+    .select()
+    .from(members)
+    .where(and(eq(members.id, actorMemberId), eq(members.roomId, roomId)))
+    .get() as Member | undefined;
+
+  if (!actor || !isActiveMember(actor)) {
+    return c.json({ error: "actor not found in room" }, 404);
+  }
+
+  if (!verifyWsToken(wsToken, actorMemberId, roomId)) {
+    return c.json({ error: "invalid wsToken for actor" }, 403);
+  }
+
+  if (!isHumanMember(actor) || !isRoomOwner(room, actor)) {
+    return c.json({ error: "only the room owner can transfer ownership" }, 403);
+  }
+
+  const nextOwner = db
+    .select()
+    .from(members)
+    .where(and(eq(members.id, nextOwnerMemberId), eq(members.roomId, roomId)))
+    .get() as Member | undefined;
+
+  if (!nextOwner || !isActiveMember(nextOwner)) {
+    return c.json({ error: "next owner not found in room" }, 404);
+  }
+
+  if (!isHumanMember(nextOwner)) {
+    return c.json({ error: "room owner must be an active human member" }, 400);
+  }
+
+  if (nextOwner.id === actor.id) {
+    return c.json({ error: "next owner must be different from current owner" }, 409);
+  }
+
+  const updatedRoom: Room = {
     ...room,
-    secretaryMemberId: secretaryMember.id,
-    secretaryMode,
-  });
+    ownerMemberId: nextOwner.id,
+  };
+
+  db
+    .update(rooms)
+    .set({ ownerMemberId: nextOwner.id })
+    .where(eq(rooms.id, roomId))
+    .run();
+
+  broadcastRoomUpdated(updatedRoom);
+
+  return c.json(updatedRoom);
 });
 
 roomRoutes.post("/api/rooms/:roomId/join", async (c) => {
@@ -950,7 +1152,10 @@ roomRoutes.post("/api/rooms/:roomId/leave", async (c) => {
     return c.json({ error: "principal not found" }, 404);
   }
 
-  const result = leaveRoomByPrincipal({ roomId, principal });
+  const result = leaveRoomByPrincipal({ room: room as Room, roomId, principal });
+  if ("error" in result) {
+    return c.json(result.error, result.status);
+  }
   return c.json(result.payload);
 });
 
@@ -1067,8 +1272,8 @@ roomRoutes.post("/api/rooms/:roomId/disband", async (c) => {
     return c.json({ error: "invalid wsToken for actor" }, 403);
   }
 
-  if (actor.type !== "human") {
-    return c.json({ error: "only human members can disband a room" }, 403);
+  if (!isHumanMember(actor) || !isRoomOwner(room, actor)) {
+    return c.json({ error: "only the room owner can disband a room" }, 403);
   }
 
   return c.json(disbandRoom({ room, actor }));

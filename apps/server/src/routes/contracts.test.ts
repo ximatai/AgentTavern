@@ -49,12 +49,18 @@ const { db } = dbClient;
 const { createInviteToken } = ids;
 const { issuePrincipalToken, issueWsToken, registerSocket } = realtime;
 
-function seedRoom(params: { roomId: string; inviteToken: string; name: string }): void {
+function seedRoom(params: {
+  roomId: string;
+  inviteToken: string;
+  name: string;
+  ownerMemberId?: string | null;
+}): void {
   db.insert(rooms).values({
     id: params.roomId,
     name: params.name,
     inviteToken: params.inviteToken,
     status: "active",
+    ownerMemberId: params.ownerMemberId ?? null,
     secretaryMemberId: null,
     secretaryMode: "off",
     createdAt: new Date("2026-03-25T00:00:00.000Z").toISOString(),
@@ -158,6 +164,7 @@ test("a human room member can configure an independent agent as secretary", asyn
     roomId,
     name: "Secretary Config Room",
     inviteToken,
+    ownerMemberId: "mem_human_secretary_actor",
   });
 
   db.insert(members).values([
@@ -213,6 +220,7 @@ test("a human room member can configure an independent agent as secretary", asyn
     name: "Secretary Config Room",
     inviteToken,
     status: "active",
+    ownerMemberId: "mem_human_secretary_actor",
     secretaryMemberId: "mem_agent_secretary",
     secretaryMode: "coordinate",
     createdAt: new Date("2026-03-25T00:00:00.000Z").toISOString(),
@@ -229,6 +237,7 @@ test("room secretary must be an active independent agent", async () => {
     roomId,
     name: "Secretary Invalid Room",
     inviteToken: createInviteToken(),
+    ownerMemberId: "mem_human_secretary_actor_2",
   });
 
   db.insert(members).values([
@@ -1299,6 +1308,7 @@ test("human member can disband a room and archive its active runtime state", asy
     roomId,
     inviteToken,
     name: "Disband Runtime Room",
+    ownerMemberId: "mem_disband_owner",
   });
 
   db.insert(principals).values([
@@ -1471,6 +1481,7 @@ test("human member can disband a room and archive its active runtime state", asy
   );
 
   assert.equal(archivedRoom?.status, "archived");
+  assert.equal(archivedRoom?.ownerMemberId, null);
   assert.equal(archivedRoom?.secretaryMode, "off");
   assert.equal(archivedRoom?.secretaryMemberId, null);
   assert.ok(roomMembers.every((member) => member.membershipStatus === "left"));
@@ -1493,6 +1504,7 @@ test("archived rooms reject invite joins and new messages", async () => {
     roomId,
     inviteToken,
     name: "Archived Room Guards",
+    ownerMemberId: "mem_disband_actor_only",
   });
 
   db.insert(principals).values({
@@ -1669,7 +1681,7 @@ test("direct room reuses the same two-principal room and room pull adds a lobby 
   assert.ok(roomMembers.find((member) => member.principalId === carol.principalId));
 });
 
-test("agent principal bootstrap exposes runtime-capable lobby presence and creates an independent agent projection", async () => {
+test("agent principals cannot initiate direct rooms because room owners must be human", async () => {
   const agentResponse = await app.request("http://localhost/api/principals/bootstrap", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -1717,24 +1729,10 @@ test("agent principal bootstrap exposes runtime-capable lobby presence and creat
     }),
   });
 
-  assert.equal(directRoomResponse.status, 200);
-  const directRoom = await directRoomResponse.json();
-  const agentMember = db
-    .select()
-    .from(members)
-    .where(eq(members.id, directRoom.join.memberId))
-    .get();
-  assert.equal(agentMember?.type, "agent");
-  assert.equal(agentMember?.roleKind, "independent");
-  assert.equal(agentMember?.principalId, agent.principalId);
-  assert.equal(agentMember?.adapterType, "codex_cli");
-
-  const binding = db
-    .select()
-    .from(agentBindings)
-    .where(eq(agentBindings.backendThreadId, "thread_agent_principal_finance"))
-    .get();
-  assert.equal(binding?.principalId, agent.principalId);
+  assert.equal(directRoomResponse.status, 403);
+  assert.deepEqual(await directRoomResponse.json(), {
+    error: "only human principals can create direct rooms",
+  });
 
   disconnectAgent();
 });
@@ -1789,7 +1787,7 @@ test("agent principal with active binding appears in lobby without principal web
   assert.equal(lobbyAgent.runtimeStatus, "ready");
 });
 
-test("claude agent principal bootstrap exposes runtime-capable lobby presence and creates an independent agent projection", async () => {
+test("claude agent principals also cannot initiate direct rooms", async () => {
   const agentResponse = await app.request("http://localhost/api/principals/bootstrap", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -1839,28 +1837,165 @@ test("claude agent principal bootstrap exposes runtime-capable lobby presence an
     }),
   });
 
-  assert.equal(directRoomResponse.status, 200);
-  const directRoom = await directRoomResponse.json();
-  const agentMember = db
-    .select()
-    .from(members)
-    .where(eq(members.id, directRoom.join.memberId))
-    .get();
-  assert.equal(agentMember?.type, "agent");
-  assert.equal(agentMember?.roleKind, "independent");
-  assert.equal(agentMember?.principalId, agent.principalId);
-  assert.equal(agentMember?.adapterType, "claude_code");
-
-  const binding = db
-    .select()
-    .from(agentBindings)
-    .where(eq(agentBindings.backendThreadId, "thread_agent_principal_claude"))
-    .get();
-  assert.equal(binding?.principalId, agent.principalId);
-  assert.equal(binding?.backendType, "claude_code");
-  assert.equal(binding?.status, "pending_bridge");
+  assert.equal(directRoomResponse.status, 403);
+  assert.deepEqual(await directRoomResponse.json(), {
+    error: "only human principals can create direct rooms",
+  });
 
   disconnectAgent();
+});
+
+test("room owner can transfer ownership to another active human member", async () => {
+  const roomId = "room_owner_transfer";
+  const inviteToken = createInviteToken();
+  const createdAt = new Date("2026-03-25T03:15:00.000Z").toISOString();
+
+  seedRoom({
+    roomId,
+    inviteToken,
+    name: "Owner Transfer Room",
+    ownerMemberId: "mem_owner_transfer_current",
+  });
+
+  db.insert(members).values([
+    {
+      id: "mem_owner_transfer_current",
+      roomId,
+      principalId: null,
+      type: "human",
+      roleKind: "none",
+      displayName: "Alice",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt,
+    },
+    {
+      id: "mem_owner_transfer_next",
+      roomId,
+      principalId: null,
+      type: "human",
+      roleKind: "none",
+      displayName: "Bob",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "offline",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt,
+    },
+  ]).run();
+
+  const wsToken = issueWsToken("mem_owner_transfer_current", roomId);
+  const response = await app.request(`http://localhost/api/rooms/${roomId}/ownership/transfer`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      actorMemberId: "mem_owner_transfer_current",
+      wsToken,
+      nextOwnerMemberId: "mem_owner_transfer_next",
+    }),
+  });
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.ownerMemberId, "mem_owner_transfer_next");
+
+  const room = db.select().from(rooms).where(eq(rooms.id, roomId)).get();
+  assert.equal(room?.ownerMemberId, "mem_owner_transfer_next");
+});
+
+test("room owner cannot leave before transferring ownership", async () => {
+  const roomId = "room_owner_leave_requires_transfer";
+  const createdAt = new Date("2026-03-25T03:20:00.000Z").toISOString();
+
+  seedRoom({
+    roomId,
+    inviteToken: createInviteToken(),
+    name: "Owner Leave Guard Room",
+    ownerMemberId: "mem_owner_leave_guard",
+  });
+
+  db.insert(principals).values([
+    {
+      id: "prn_owner_leave_guard",
+      kind: "human",
+      loginKey: "owner-leave-guard@example.com",
+      globalDisplayName: "Alice",
+      backendType: null,
+      backendThreadId: null,
+      backendConfig: null,
+      status: "online",
+      createdAt,
+    },
+    {
+      id: "prn_owner_leave_guard_peer",
+      kind: "human",
+      loginKey: "owner-leave-guard-peer@example.com",
+      globalDisplayName: "Bob",
+      backendType: null,
+      backendThreadId: null,
+      backendConfig: null,
+      status: "offline",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_owner_leave_guard",
+      roomId,
+      principalId: "prn_owner_leave_guard",
+      type: "human",
+      roleKind: "none",
+      displayName: "Alice",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt,
+    },
+    {
+      id: "mem_owner_leave_guard_peer",
+      roomId,
+      principalId: "prn_owner_leave_guard_peer",
+      type: "human",
+      roleKind: "none",
+      displayName: "Bob",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "offline",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt,
+    },
+  ]).run();
+
+  const principalToken = issuePrincipalToken("prn_owner_leave_guard");
+  const response = await app.request(`http://localhost/api/rooms/${roomId}/leave`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      principalId: "prn_owner_leave_guard",
+      principalToken,
+    }),
+  });
+
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), {
+    error: "room owner must transfer ownership before leaving",
+  });
 });
 
 test("openai-compatible agent principal bootstrap stores backendConfig and auto-generates backendThreadId", async () => {

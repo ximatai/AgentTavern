@@ -19,6 +19,7 @@ export type JoinedRoomRecord = {
   id: string;
   name: string;
   inviteToken: string;
+  ownerMemberId: string | null;
   secretaryMemberId: string | null;
   secretaryMode: RoomSecretaryMode;
   createdAt: string;
@@ -28,6 +29,7 @@ export type RoomInviteRecord = {
   id: string;
   name: string;
   inviteToken: string;
+  ownerMemberId?: string | null;
   secretaryMemberId?: string | null;
   secretaryMode?: RoomSecretaryMode;
   inviteUrl: string;
@@ -52,6 +54,21 @@ export type DisbandRoomResult = {
   disbandedByMemberId: string;
 };
 
+export type TransferRoomOwnershipResult = Room;
+
+export type CreateRoomResult = {
+  room: {
+    id: string;
+    name: string;
+    inviteToken: string;
+    ownerMemberId: string | null;
+    secretaryMemberId: string | null;
+    secretaryMode: RoomSecretaryMode;
+    inviteUrl: string;
+  };
+  join: JoinResult;
+};
+
 async function getRoom(roomId: string): Promise<Room> {
   return request<Room>(`/api/rooms/${roomId}`);
 }
@@ -60,16 +77,14 @@ async function getRoomSummary(roomId: string): Promise<RoomSummaryResponse> {
   return request<RoomSummaryResponse>(`/api/rooms/${roomId}/summary`);
 }
 
-async function createRoom(name: string): Promise<{
-  id: string;
-  name: string;
-  inviteToken: string;
-  secretaryMemberId: string | null;
-  secretaryMode: RoomSecretaryMode;
-}> {
+async function createRoom(
+  name: string,
+  principalId: string,
+  principalToken: string,
+): Promise<CreateRoomResult> {
   return request("/api/rooms", {
     method: "POST",
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, principalId, principalToken }),
   });
 }
 
@@ -157,6 +172,29 @@ async function disbandRoom(
   });
 }
 
+async function transferRoomOwnership(
+  roomId: string,
+  actorMemberId: string,
+  wsToken: string,
+  nextOwnerMemberId: string,
+): Promise<TransferRoomOwnershipResult> {
+  return request<TransferRoomOwnershipResult>(`/api/rooms/${roomId}/ownership/transfer`, {
+    method: "POST",
+    body: JSON.stringify({ actorMemberId, wsToken, nextOwnerMemberId }),
+  });
+}
+
+async function leaveRoom(
+  roomId: string,
+  principalId: string,
+  principalToken: string,
+): Promise<{ left: boolean; roomId: string; principalId: string; memberId: string | null }> {
+  return request(`/api/rooms/${roomId}/leave`, {
+    method: "POST",
+    body: JSON.stringify({ principalId, principalToken }),
+  });
+}
+
 export {
   getRoom,
   getRoomSummary,
@@ -171,4 +209,6 @@ export {
   getJoinedRooms,
   updateRoomSecretary,
   disbandRoom,
+  transferRoomOwnership,
+  leaveRoom,
 };

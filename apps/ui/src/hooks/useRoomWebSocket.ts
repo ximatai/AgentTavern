@@ -202,6 +202,10 @@ function handleEvent(event: RealtimeEvent): void {
       useRoomStore.getState().addOrUpdateMember(event.payload.member);
       break;
     }
+    case "room.updated": {
+      useRoomStore.getState().setRoom(event.payload.room);
+      break;
+    }
     case "member.left": {
       const self = useRoomStore.getState().self;
       if (self?.memberId === event.payload.memberId) {

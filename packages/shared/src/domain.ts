@@ -157,6 +157,7 @@ export type Room = {
   name: string;
   inviteToken: string;
   status: RoomStatus;
+  ownerMemberId: string | null;
   secretaryMemberId: string | null;
   secretaryMode: RoomSecretaryMode;
   createdAt: string;

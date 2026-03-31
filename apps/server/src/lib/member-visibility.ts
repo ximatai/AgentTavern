@@ -1,9 +1,11 @@
-import type { Member } from "@agent-tavern/shared";
-
-export function isActiveRoomMember(member: Pick<Member, "membershipStatus">): boolean {
+export function isActiveRoomMember(member: { membershipStatus?: string | null }): boolean {
   return (member.membershipStatus ?? "active") === "active";
 }
 
-export function isVisibleRoomMember(member: Pick<Member, "membershipStatus" | "sourcePrivateAssistantId" | "presenceStatus">): boolean {
+export function isVisibleRoomMember(member: {
+  membershipStatus?: string | null;
+  sourcePrivateAssistantId?: string | null;
+  presenceStatus?: string | null;
+}): boolean {
   return isActiveRoomMember(member) && !(member.sourcePrivateAssistantId && member.presenceStatus === "offline");
 }

@@ -32,7 +32,7 @@ memberRoutes.get("/api/rooms/:roomId/members", (c) => {
     .from(members)
     .where(eq(members.roomId, roomId))
     .all()
-    .filter(isVisibleRoomMember);
+    .filter((member) => isVisibleRoomMember(member));
   const bindings = roomMembers
     .map((member) => resolveBindingForMember(member as Member))
     .filter(Boolean) as Array<typeof agentBindings.$inferSelect>;

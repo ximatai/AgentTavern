@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { SettingOutlined, RobotOutlined, LoginOutlined, ShareAltOutlined, TeamOutlined, DeleteOutlined } from "@ant-design/icons";
-import { Modal } from "antd";
+import { SettingOutlined, RobotOutlined, LoginOutlined, ShareAltOutlined, TeamOutlined, DeleteOutlined, SwapOutlined, LogoutOutlined } from "@ant-design/icons";
+import { Modal, Select } from "antd";
 
 import { toast } from "../lib/feedback";
 import { LanguageSwitcher } from "./LanguageSwitcher";
@@ -90,13 +90,24 @@ export function Header() {
   const self = useRoomStore((s) => s.self);
   const members = useRoomStore((s) => s.members);
   const disbandRoom = useRoomStore((s) => s.disbandRoom);
+  const leaveRoom = useRoomStore((s) => s.leaveRoom);
+  const transferRoomOwnership = useRoomStore((s) => s.transferRoomOwnership);
   const connectionStatus = useConnectionStore((s) => s.status);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [secretaryOpen, setSecretaryOpen] = useState(false);
   const [copyingRoomInvite, setCopyingRoomInvite] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [pendingOwnerMemberId, setPendingOwnerMemberId] = useState<string | null>(null);
+  const [transferLoading, setTransferLoading] = useState(false);
   const secretaryMember = room?.secretaryMemberId
     ? members.find((member) => member.id === room.secretaryMemberId) ?? null
     : null;
+  const isRoomOwner = !!room && !!self && room.ownerMemberId === self.memberId;
+  const transferCandidates = useMemo(
+    () =>
+      members.filter((member) => member.type === "human" && member.id !== self?.memberId),
+    [members, self?.memberId],
+  );
 
   const handleCopyRoomInvite = async () => {
     if (!room) return;
@@ -131,6 +142,71 @@ export function Header() {
         } catch (error) {
           toast().error(
             error instanceof Error ? error.message : t("header.disbandRoomFailed"),
+          );
+        }
+      },
+    });
+  };
+
+  const handleTransferOwnership = async () => {
+    if (!pendingOwnerMemberId) return;
+    setTransferLoading(true);
+    try {
+      await transferRoomOwnership(pendingOwnerMemberId);
+      toast().success(t("header.transferOwnerSuccess"));
+      setTransferOpen(false);
+      setPendingOwnerMemberId(null);
+    } catch (error) {
+      toast().error(
+        error instanceof Error ? error.message : t("header.transferOwnerFailed"),
+      );
+    } finally {
+      setTransferLoading(false);
+    }
+  };
+
+  const handleLeaveRoom = () => {
+    if (!room) return;
+
+    if (isRoomOwner) {
+      if (transferCandidates.length === 0) {
+        Modal.confirm({
+          title: t("header.ownerMustDisbandTitle"),
+          content: t("header.ownerMustDisbandBody"),
+          okText: t("header.disbandRoomAction"),
+          okButtonProps: { danger: true },
+          cancelText: t("common.cancel"),
+          onOk: async () => {
+            try {
+              await disbandRoom();
+              toast().success(t("header.disbandRoomSuccess"));
+            } catch (error) {
+              toast().error(
+                error instanceof Error ? error.message : t("header.disbandRoomFailed"),
+              );
+            }
+          },
+        });
+        return;
+      }
+
+      setPendingOwnerMemberId(transferCandidates[0]?.id ?? null);
+      setTransferOpen(true);
+      return;
+    }
+
+    Modal.confirm({
+      title: t("header.leaveRoomTitle"),
+      content: t("header.leaveRoomConfirm", { roomName: room.name }),
+      okText: t("header.leaveRoomAction"),
+      cancelText: t("common.cancel"),
+      onOk: async () => {
+        try {
+          await leaveRoom();
+          toast().success(t("header.leaveRoomSuccess"));
+        } catch (error) {
+          toast().error(
+            error instanceof Error ? error.message : t("header.leaveRoomFailed"),
           );
         }
       },
@@ -187,10 +263,12 @@ export function Header() {
         )}
         {self && (
           <>
-            <button type="button" className="assistant-badge" onClick={() => setSecretaryOpen(true)}>
-              <TeamOutlined />
-              <span>{t("header.secretary")}</span>
-            </button>
+            {isRoomOwner ? (
+              <button type="button" className="assistant-badge" onClick={() => setSecretaryOpen(true)}>
+                <TeamOutlined />
+                <span>{t("header.secretary")}</span>
+              </button>
+            ) : null}
             <button
               type="button"
               className="assistant-badge"
@@ -200,13 +278,36 @@ export function Header() {
               <ShareAltOutlined />
               <span>{copyingRoomInvite ? t("header.copying") : t("header.shareRoom")}</span>
             </button>
+            {isRoomOwner && transferCandidates.length > 0 ? (
+              <button
+                type="button"
+                className="assistant-badge"
+                onClick={() => {
+                  setPendingOwnerMemberId(transferCandidates[0]?.id ?? null);
+                  setTransferOpen(true);
+                }}
+              >
+                <SwapOutlined />
+                <span>{t("header.transferOwner")}</span>
+              </button>
+            ) : null}
+            {isRoomOwner ? (
+              <button
+                type="button"
+                className="assistant-badge"
+                onClick={handleDisbandRoom}
+              >
+                <DeleteOutlined />
+                <span>{t("header.disbandRoom")}</span>
+              </button>
+            ) : null}
             <button
               type="button"
               className="assistant-badge"
-              onClick={handleDisbandRoom}
+              onClick={handleLeaveRoom}
             >
-              <DeleteOutlined />
-              <span>{t("header.disbandRoom")}</span>
+              <LogoutOutlined />
+              <span>{t("header.leaveRoom")}</span>
             </button>
           </>
         )}
@@ -215,6 +316,51 @@ export function Header() {
         <IdentitySection />
       </div>
       <RoomSecretaryModal open={secretaryOpen} onClose={() => setSecretaryOpen(false)} />
+      <Modal
+        title={t("header.transferOwnerTitle")}
+        open={transferOpen}
+        onCancel={() => {
+          setTransferOpen(false);
+          setPendingOwnerMemberId(null);
+        }}
+        onOk={() => void handleTransferOwnership()}
+        okText={t("header.transferOwnerAction")}
+        confirmLoading={transferLoading}
+      >
+        <p>{t("header.transferOwnerConfirm", { roomName: room?.name ?? "" })}</p>
+        <Select
+          style={{ width: "100%" }}
+          value={pendingOwnerMemberId ?? undefined}
+          onChange={(value) => setPendingOwnerMemberId(value)}
+          options={transferCandidates.map((member) => ({
+            value: member.id,
+            label: member.displayName,
+          }))}
+        />
+        <p style={{ marginTop: 12 }}>
+          {t("header.transferOwnerLeaveHint")}
+        </p>
+        <button
+          type="button"
+          className="assistant-badge"
+          onClick={() => void (async () => {
+            if (!pendingOwnerMemberId) return;
+            await handleTransferOwnership();
+            try {
+              await leaveRoom();
+              toast().success(t("header.leaveRoomSuccess"));
+            } catch (error) {
+              toast().error(
+                error instanceof Error ? error.message : t("header.leaveRoomFailed"),
+              );
+            }
+          })()}
+          disabled={transferLoading || !pendingOwnerMemberId}
+        >
+          <LogoutOutlined />
+          <span>{t("header.transferAndLeave")}</span>
+        </button>
+      </Modal>
     </header>
   );
 }
