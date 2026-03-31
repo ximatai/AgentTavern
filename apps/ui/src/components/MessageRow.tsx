@@ -83,6 +83,8 @@ function systemTitleKey(kind: string): string | null {
       return "systemNotice.agentFailed";
     case "agent_busy":
       return "systemNotice.agentBusy";
+    case "agent_unavailable":
+      return "systemNotice.agentUnavailable";
     case "bridge_attach_required":
       return "systemNotice.bridgeAttachRequired";
     case "bridge_waiting":

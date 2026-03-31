@@ -228,12 +228,36 @@ function buildPrompt(input: {
   sessionKind: AgentSessionKind;
   contextMessages: AgentRunInput["contextMessages"];
 }): string {
-  const roomMembers = db
+  const allRoomMembers = db
     .select()
     .from(members)
     .where(eq(members.roomId, input.room.id))
-    .all()
-    .filter((member) => isVisibleRoomMember(member));
+    .all();
+  const assistantIds = [
+    ...new Set(
+      allRoomMembers
+        .map((member) => member.sourcePrivateAssistantId)
+        .filter(Boolean),
+    ),
+  ] as string[];
+  const assistantStatusById = new Map(
+    (assistantIds.length
+      ? db
+          .select({ id: privateAssistants.id, status: privateAssistants.status })
+          .from(privateAssistants)
+          .where(inArray(privateAssistants.id, assistantIds))
+          .all()
+      : []
+    ).map((assistant) => [assistant.id, assistant.status]),
+  );
+  const roomMembers = allRoomMembers.filter((member) =>
+    isVisibleRoomMember({
+      ...member,
+      assistantStatus: member.sourcePrivateAssistantId
+        ? assistantStatusById.get(member.sourcePrivateAssistantId) ?? null
+        : null,
+    }),
+  );
   const context = input.contextMessages
     .map((message) => `[${message.createdAt}] ${message.senderName}: ${message.content}`)
     .join("\n");
@@ -247,7 +271,11 @@ function buildPrompt(input: {
               ? "secretary agent"
               : "independent agent"
           : "human";
-      return `- ${member.displayName} (${typeLabel})`;
+      const availabilityLabel =
+        member.type === "agent" && member.presenceStatus === "offline"
+          ? ", offline"
+          : "";
+      return `- ${member.displayName} (${typeLabel}${availabilityLabel})`;
     })
     .join("\n");
   const isSecretary = input.room.secretaryMemberId === input.agent.id && input.room.secretaryMode !== "off";

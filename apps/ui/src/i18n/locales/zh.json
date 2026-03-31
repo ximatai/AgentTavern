@@ -111,6 +111,7 @@
     "requester": "请求者",
     "agentFailed": "助理运行失败",
     "agentBusy": "助理忙碌中",
+    "agentUnavailable": "助理暂不可用",
     "bridgeAttachRequired": "等待本地 Bridge 接入",
     "bridgeWaiting": "等待本地 Bridge 恢复",
     "approvalRequired": "需要所有者审批",
@@ -383,6 +384,13 @@
     "copyFailed": "复制接入文案失败",
     "adoptSuccess": "已将私有助理加入当前聊天室",
     "adoptFailed": "加入私有助理失败",
+    "pauseAssistant": "暂时离线",
+    "resumeAssistant": "恢复在线",
+    "pausedAssistant": "已暂时离线",
+    "pauseSuccess": "助理已暂时离线",
+    "pauseFailed": "让助理暂时离线失败",
+    "resumeSuccess": "助理已恢复在线",
+    "resumeFailed": "恢复助理在线失败",
     "leaveRoom": "从当前房间下线",
     "leaveRoomSuccess": "已将助理从当前聊天室下线",
     "leaveRoomFailed": "从当前聊天室下线助理失败",
@@ -404,7 +412,8 @@
       "pending_bridge": "已接入，待加入房间",
       "active": "已加入房间",
       "detached": "等待 Bridge",
-      "failed": "接入异常"
+      "failed": "接入异常",
+      "paused": "暂时离线"
     }
   },
   "roomAssistantPanel": {
@@ -480,6 +489,7 @@
     "runtimeReady": "已连接",
     "runtimePendingBridge": "待绑定",
     "runtimeWaitingBridge": "等待 Bridge",
+    "runtimeOffline": "离线",
     "sessionType": "任务类型",
     "sessionPending": "排队中",
     "sessionWaitingApproval": "等待审批",

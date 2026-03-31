@@ -4,6 +4,7 @@ import { SettingOutlined, RobotOutlined, LoginOutlined, ShareAltOutlined, TeamOu
 import { Modal, Select } from "antd";
 
 import { toast } from "../lib/feedback";
+import { copyText } from "../lib/clipboard";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 import { LoginModal } from "./LoginModal";
@@ -115,7 +116,7 @@ export function Header() {
     setCopyingRoomInvite(true);
     try {
       const shareUrl = new URL(`/join/${room.inviteToken}`, window.location.origin).toString();
-      await navigator.clipboard.writeText(shareUrl);
+      await copyText(shareUrl);
       toast().success(t("header.roomInviteCopied"));
     } catch (error) {
       toast().error(

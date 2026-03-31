@@ -6,6 +6,14 @@ export function isVisibleRoomMember(member: {
   membershipStatus?: string | null;
   sourcePrivateAssistantId?: string | null;
   presenceStatus?: string | null;
+  assistantStatus?: string | null;
 }): boolean {
-  return isActiveRoomMember(member) && !(member.sourcePrivateAssistantId && member.presenceStatus === "offline");
+  return (
+    isActiveRoomMember(member) &&
+    !(
+      member.sourcePrivateAssistantId &&
+      member.presenceStatus === "offline" &&
+      member.assistantStatus !== "paused"
+    )
+  );
 }

@@ -103,7 +103,12 @@ export type PrincipalEvent =
       principalId: string;
       timestamp: string;
       payload: {
-        reason: "invite_created" | "invite_accepted" | "assistant_created" | "assistant_deleted";
+        reason:
+          | "invite_created"
+          | "invite_accepted"
+          | "assistant_created"
+          | "assistant_updated"
+          | "assistant_deleted";
       };
     }
   | {

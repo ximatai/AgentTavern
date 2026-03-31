@@ -144,6 +144,7 @@ export function RoomAssistantModal({ open, onClose }: RoomAssistantModalProps) {
             <div className="am-list">
               {assistants.map((assistant) => {
                 const joined = joinedAssistantIds.has(assistant.id);
+                const paused = assistant.status === "paused";
                 return (
                   <div key={assistant.id} className="am-list-item">
                     <div className="am-item-left">
@@ -155,6 +156,9 @@ export function RoomAssistantModal({ open, onClose }: RoomAssistantModalProps) {
                       </div>
                       <div className="am-item-meta">
                         <Tag className="am-backend-tag">{backendTypeLabel(assistant.backendType, t)}</Tag>
+                        <Tag className="am-status-tag">
+                          {t(`assistantPanel.assistantStatus.${assistant.status}`)}
+                        </Tag>
                         <Text type="secondary" className="am-item-status">
                           {joined
                             ? t("roomAssistantPanel.statusInRoom")
@@ -175,11 +179,12 @@ export function RoomAssistantModal({ open, onClose }: RoomAssistantModalProps) {
                       ) : (
                         <Button
                           size="small"
+                          disabled={paused}
                           loading={adoptingId === assistant.id}
                           onClick={() => void handleAdopt(assistant.id)}
                           icon={<RobotOutlined />}
                         >
-                          {t("assistantPanel.joinRoom")}
+                          {paused ? t("assistantPanel.pausedAssistant") : t("assistantPanel.joinRoom")}
                         </Button>
                       )}
                     </div>

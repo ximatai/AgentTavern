@@ -22,6 +22,7 @@ export type SystemMessageStatus = "info" | "success" | "warning" | "error";
 export type SystemMessageKind =
   | "agent_failed"
   | "agent_busy"
+  | "agent_unavailable"
   | "bridge_attach_required"
   | "bridge_waiting"
   | "approval_required"
@@ -105,6 +106,8 @@ export type AgentBindingStatus =
   | "detached"
   | "failed";
 
+export type PrivateAssistantStatus = AgentBindingStatus | "paused";
+
 export type BridgeStatus = "online" | "offline";
 
 export type BridgeTaskStatus =
@@ -134,7 +137,7 @@ export type PrivateAssistant = {
   backendType: AgentBackendType;
   backendThreadId: string | null;
   backendConfig?: string | null;
-  status: AgentBindingStatus;
+  status: PrivateAssistantStatus;
   createdAt: string;
 };
 

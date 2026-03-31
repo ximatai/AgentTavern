@@ -65,6 +65,10 @@ function getRuntimeLabel(
   member: PublicMember,
   t: (key: string) => string,
 ): string | null {
+  if (member.type === "agent" && member.presenceStatus === "offline" && member.runtimeStatus === null) {
+    return t("roomSidebar.runtimeOffline");
+  }
+
   switch (member.runtimeStatus) {
     case "ready":
       return t("roomSidebar.runtimeReady");

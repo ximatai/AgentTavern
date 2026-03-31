@@ -6,13 +6,16 @@ import type {
   AgentBinding,
   Member,
   PrivateAssistant,
+  PrivateAssistantStatus,
   PrivateAssistantInvite,
   RealtimeEvent,
 } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
-import { agentBindings, members, privateAssistantInvites, privateAssistants, rooms } from "../db/schema";
+import { agentBindings, localBridges, members, privateAssistantInvites, privateAssistants, rooms } from "../db/schema";
+import { resolveBindingForPrivateAssistant } from "../lib/agent-binding-resolution";
 import { createId, createInviteToken } from "../lib/id";
+import { resolveMemberRuntimeStatus } from "../lib/member-runtime";
 import { toPublicMember } from "../lib/public";
 import { broadcastToPrincipal, broadcastToRoom, verifyPrincipalToken, verifyWsToken } from "../realtime";
 import {
@@ -26,6 +29,75 @@ import {
 } from "./support";
 
 const privateAssistantRoutes = new Hono();
+
+function resolveAssistantStatus(assistant: Pick<PrivateAssistant, "id" | "status">): PrivateAssistantStatus {
+  if (assistant.status === "paused") {
+    return "paused";
+  }
+
+  const binding = resolveBindingForPrivateAssistant(assistant.id);
+  return (binding?.status as PrivateAssistantStatus | undefined) ?? "pending_bridge";
+}
+
+function broadcastPrivateAssistantChanged(
+  principalId: string,
+  reason: "assistant_created" | "assistant_updated" | "assistant_deleted",
+): void {
+  broadcastToPrincipal(principalId, {
+    type: "private_assistants.changed",
+    principalId,
+    timestamp: now(),
+    payload: { reason },
+  });
+}
+
+function syncPrivateAssistantProjectionPresence(
+  assistantId: string,
+  presenceStatus: "online" | "offline",
+  assistantStatus: PrivateAssistantStatus,
+): void {
+  const assistantMembers = db
+    .select()
+    .from(members)
+    .where(eq(members.sourcePrivateAssistantId, assistantId))
+    .all() as Member[];
+  const binding = resolveBindingForPrivateAssistant(assistantId);
+  const bridge = binding?.bridgeId
+    ? db.select().from(localBridges).where(eq(localBridges.id, binding.bridgeId)).get() ?? null
+    : null;
+
+  for (const assistantMember of assistantMembers) {
+    const room = db.select().from(rooms).where(eq(rooms.id, assistantMember.roomId)).get();
+    if (!room || room.status !== "active") {
+      continue;
+    }
+
+    db.update(members).set({ presenceStatus }).where(eq(members.id, assistantMember.id)).run();
+    const updatedMember = db
+      .select()
+      .from(members)
+      .where(eq(members.id, assistantMember.id))
+      .get() as Member | undefined;
+
+    if (!updatedMember) {
+      continue;
+    }
+
+    broadcastToRoom(updatedMember.roomId, {
+      type: "member.updated",
+      roomId: updatedMember.roomId,
+      timestamp: now(),
+      payload: {
+        member: toPublicMember(
+          updatedMember,
+          assistantStatus === "paused"
+            ? null
+            : resolveMemberRuntimeStatus(updatedMember, binding, bridge),
+        ),
+      },
+    });
+  }
+}
 
 function ensurePrivateAssistantBinding(assistant: PrivateAssistant): void {
   if (!assistant.backendThreadId) {
@@ -93,7 +165,7 @@ privateAssistantRoutes.get("/api/me/assistants", (c) => {
     .where(eq(privateAssistants.ownerPrincipalId, principalId))
     .all();
 
-  return c.json(items);
+  return c.json(items.map((item) => ({ ...item, status: resolveAssistantStatus(item as PrivateAssistant) })));
 });
 
 privateAssistantRoutes.get("/api/me/assistants/invites", (c) => {
@@ -218,12 +290,7 @@ privateAssistantRoutes.post("/api/me/assistants", async (c) => {
     throw error;
   }
 
-  broadcastToPrincipal(principalId, {
-    type: "private_assistants.changed",
-    principalId,
-    timestamp: now(),
-    payload: { reason: "assistant_created" },
-  });
+  broadcastPrivateAssistantChanged(principalId, "assistant_created");
 
   return c.json(assistant, 201);
 });
@@ -497,6 +564,85 @@ privateAssistantRoutes.delete("/api/me/assistants/invites/:inviteId", (c) => {
   return c.json({ ok: true });
 });
 
+privateAssistantRoutes.post("/api/me/assistants/:assistantId/pause", async (c) => {
+  const assistantId = c.req.param("assistantId");
+  const body = await c.req.json().catch(() => null);
+  const principalId = typeof body?.principalId === "string" ? body.principalId.trim() : "";
+  const principalToken =
+    typeof body?.principalToken === "string" ? body.principalToken.trim() : "";
+
+  if (!principalId || !principalToken) {
+    return c.json({ error: "principalId and principalToken are required" }, 400);
+  }
+
+  if (!verifyPrincipalToken(principalToken, principalId)) {
+    return c.json({ error: "invalid principal token" }, 403);
+  }
+
+  const assistant = db
+    .select()
+    .from(privateAssistants)
+    .where(eq(privateAssistants.id, assistantId))
+    .get() as PrivateAssistant | undefined;
+
+  if (!assistant) {
+    return c.json({ error: "private assistant not found" }, 404);
+  }
+
+  if (assistant.ownerPrincipalId !== principalId) {
+    return c.json({ error: "private assistant does not belong to actor principal" }, 403);
+  }
+
+  if (assistant.status !== "paused") {
+    db.update(privateAssistants).set({ status: "paused" }).where(eq(privateAssistants.id, assistantId)).run();
+    syncPrivateAssistantProjectionPresence(assistantId, "offline", "paused");
+    broadcastPrivateAssistantChanged(principalId, "assistant_updated");
+  }
+
+  return c.json({ ...assistant, status: "paused" satisfies PrivateAssistantStatus });
+});
+
+privateAssistantRoutes.post("/api/me/assistants/:assistantId/resume", async (c) => {
+  const assistantId = c.req.param("assistantId");
+  const body = await c.req.json().catch(() => null);
+  const principalId = typeof body?.principalId === "string" ? body.principalId.trim() : "";
+  const principalToken =
+    typeof body?.principalToken === "string" ? body.principalToken.trim() : "";
+
+  if (!principalId || !principalToken) {
+    return c.json({ error: "principalId and principalToken are required" }, 400);
+  }
+
+  if (!verifyPrincipalToken(principalToken, principalId)) {
+    return c.json({ error: "invalid principal token" }, 403);
+  }
+
+  const assistant = db
+    .select()
+    .from(privateAssistants)
+    .where(eq(privateAssistants.id, assistantId))
+    .get() as PrivateAssistant | undefined;
+
+  if (!assistant) {
+    return c.json({ error: "private assistant not found" }, 404);
+  }
+
+  if (assistant.ownerPrincipalId !== principalId) {
+    return c.json({ error: "private assistant does not belong to actor principal" }, 403);
+  }
+
+  const resumedStatus = resolveAssistantStatus({ ...assistant, status: "pending_bridge" });
+  db
+    .update(privateAssistants)
+    .set({ status: resumedStatus })
+    .where(eq(privateAssistants.id, assistantId))
+    .run();
+  syncPrivateAssistantProjectionPresence(assistantId, "online", resumedStatus);
+  broadcastPrivateAssistantChanged(principalId, "assistant_updated");
+
+  return c.json({ ...assistant, status: resumedStatus });
+});
+
 privateAssistantRoutes.delete("/api/me/assistants/:assistantId", (c) => {
   const assistantId = c.req.param("assistantId");
   const principalId = c.req.query("principalId")?.trim() ?? "";
@@ -559,12 +705,7 @@ privateAssistantRoutes.delete("/api/me/assistants/:assistantId", (c) => {
   db.delete(agentBindings).where(eq(agentBindings.privateAssistantId, assistant.id)).run();
   db.delete(privateAssistants).where(eq(privateAssistants.id, assistantId)).run();
 
-  broadcastToPrincipal(principalId, {
-    type: "private_assistants.changed",
-    principalId,
-    timestamp: now(),
-    payload: { reason: "assistant_deleted" },
-  });
+  broadcastPrivateAssistantChanged(principalId, "assistant_deleted");
 
   return c.json({ ok: true });
 });
@@ -622,6 +763,10 @@ privateAssistantRoutes.post("/api/rooms/:roomId/assistants/adopt", async (c) => 
 
   if (assistant.ownerPrincipalId !== actor.principalId) {
     return c.json({ error: "private assistant does not belong to actor principal" }, 403);
+  }
+
+  if (assistant.status === "paused") {
+    return c.json({ error: "private assistant is temporarily offline" }, 409);
   }
 
   const existingProjection = db

@@ -9,10 +9,11 @@ import type {
 } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
-import { agentSessions, approvals, members, mentions, messages, rooms } from "../db/schema";
+import { agentSessions, approvals, members, mentions, messages, privateAssistants, rooms } from "../db/schema";
 import { createId } from "./id";
 import { insertMessage } from "./message-records";
 import {
+  createAgentUnavailableSystemData,
   createApprovalRequiredSystemData,
   createApprovalResultSystemData,
   createStructuredSystemMessage,
@@ -333,6 +334,35 @@ function handleAssistantMention(params: {
   return queuedSessionIds;
 }
 
+function handleUnavailableAgentMention(params: {
+  roomId: string;
+  message: Message;
+  target: Member;
+  detail: string;
+}): void {
+  markMentionStatus({
+    messageId: params.message.id,
+    targetMemberId: params.target.id,
+    status: "expired",
+  });
+
+  const unavailableMessage = createWorkflowMessage({
+    roomId: params.roomId,
+    senderMemberId: params.target.id,
+    messageType: "system_notice",
+    systemData: createAgentUnavailableSystemData(
+      params.target.displayName,
+      params.detail,
+      params.target.id,
+    ),
+    replyToMessageId: params.message.id,
+    createdAt: now(),
+  });
+
+  insertMessage(unavailableMessage);
+  broadcastToRoom(params.roomId, createMessageCreatedEvent(params.roomId, unavailableMessage));
+}
+
 function shouldQueueSecretaryObservation(params: {
   roomId: string;
   sender: Member;
@@ -458,6 +488,34 @@ export function processMessageTriggers(params: {
       .get() as Member | undefined;
 
     if (!target || target.id === params.sender.id) {
+      continue;
+    }
+
+    const pausedAssistant =
+      target.type === "agent" &&
+      target.presenceStatus === "offline" &&
+      target.sourcePrivateAssistantId
+        ? (db
+            .select()
+            .from(privateAssistants)
+            .where(eq(privateAssistants.id, target.sourcePrivateAssistantId))
+            .get() as { status: string } | undefined)
+        : undefined;
+
+    if (pausedAssistant?.status === "paused") {
+      createMentionRecord({
+        messageId: params.message.id,
+        targetMemberId: target.id,
+        triggerText: `@${mentionName}`,
+        status: "expired",
+        createdAt: now(),
+      });
+      handleUnavailableAgentMention({
+        roomId: params.roomId,
+        message: params.message,
+        target,
+        detail: `${target.displayName} is temporarily offline.`,
+      });
       continue;
     }
 

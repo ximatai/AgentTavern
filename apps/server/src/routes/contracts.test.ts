@@ -2468,6 +2468,146 @@ test("principal can invite a private codex assistant, accept it, and adopt it in
   assert.equal(assistantHistory?.senderPresenceStatus, "offline");
 });
 
+test("private assistants can be paused and resumed by the owner", async () => {
+  const principalResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "paused-assistant-owner@example.com",
+      globalDisplayName: "暂停房主",
+    }),
+  });
+  assert.equal(principalResponse.status, 200);
+  const principal = await principalResponse.json();
+
+  const assistantResponse = await app.request("http://localhost/api/me/assistants", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      principalId: principal.principalId,
+      principalToken: principal.principalToken,
+      name: "暂停助理",
+      backendType: "openai_compatible",
+      backendConfig: {
+        baseUrl: "http://127.0.0.1:11434/v1",
+        model: "neo-test",
+      },
+    }),
+  });
+  assert.equal(assistantResponse.status, 201);
+  const assistant = await assistantResponse.json();
+
+  const roomId = "room_paused_assistant";
+  seedRoom({
+    roomId,
+    name: "Paused Assistant Room",
+    inviteToken: createInviteToken(),
+  });
+
+  const joinResponse = await app.request(
+    `http://localhost/api/invites/${db.select().from(rooms).where(eq(rooms.id, roomId)).get()!.inviteToken}/join`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        principalId: principal.principalId,
+        principalToken: principal.principalToken,
+      }),
+    },
+  );
+  assert.equal(joinResponse.status, 200);
+  const join = await joinResponse.json();
+
+  const pauseResponse = await app.request(`http://localhost/api/me/assistants/${assistant.id}/pause`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      principalId: principal.principalId,
+      principalToken: principal.principalToken,
+    }),
+  });
+  assert.equal(pauseResponse.status, 200);
+  assert.equal((await pauseResponse.json()).status, "paused");
+
+  const blockedAdoptResponse = await app.request(`http://localhost/api/rooms/${roomId}/assistants/adopt`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      actorMemberId: join.memberId,
+      wsToken: join.wsToken,
+      privateAssistantId: assistant.id,
+    }),
+  });
+  assert.equal(blockedAdoptResponse.status, 409);
+  assert.deepEqual(await blockedAdoptResponse.json(), {
+    error: "private assistant is temporarily offline",
+  });
+
+  const resumeResponse = await app.request(`http://localhost/api/me/assistants/${assistant.id}/resume`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      principalId: principal.principalId,
+      principalToken: principal.principalToken,
+    }),
+  });
+  assert.equal(resumeResponse.status, 200);
+
+  const adoptResponse = await app.request(`http://localhost/api/rooms/${roomId}/assistants/adopt`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      actorMemberId: join.memberId,
+      wsToken: join.wsToken,
+      privateAssistantId: assistant.id,
+    }),
+  });
+  assert.equal(adoptResponse.status, 201);
+  const adopted = await adoptResponse.json();
+
+  const pauseAgainResponse = await app.request(`http://localhost/api/me/assistants/${assistant.id}/pause`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      principalId: principal.principalId,
+      principalToken: principal.principalToken,
+    }),
+  });
+  assert.equal(pauseAgainResponse.status, 200);
+
+  const pausedProjection = db.select().from(members).where(eq(members.id, adopted.id)).get();
+  assert.equal(pausedProjection?.presenceStatus, "offline");
+
+  const listedMembersResponse = await app.request(`http://localhost/api/rooms/${roomId}/members`);
+  assert.equal(listedMembersResponse.status, 200);
+  const listedMembers = (await listedMembersResponse.json()) as Array<{ id: string; presenceStatus: string }>;
+  assert.ok(
+    listedMembers.some((member) => member.id === adopted.id && member.presenceStatus === "offline"),
+  );
+
+  const mentionResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: join.memberId,
+      wsToken: join.wsToken,
+      content: "@暂停助理 帮我看一下",
+    }),
+  });
+  assert.equal(mentionResponse.status, 201);
+
+  const listedMessagesResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`);
+  const listedMessages = (await listedMessagesResponse.json()) as Array<{
+    messageType: string;
+    systemData: { kind: string; title: string } | null;
+  }>;
+  const unavailableMessage = listedMessages.find(
+    (message) => message.systemData?.kind === "agent_unavailable",
+  );
+  assert.equal(unavailableMessage?.messageType, "system_notice");
+});
+
 test("principal can directly connect an openai-compatible private assistant from the web ui", async () => {
   const bootstrapResponse = await app.request("http://localhost/api/principals/bootstrap", {
     method: "POST",

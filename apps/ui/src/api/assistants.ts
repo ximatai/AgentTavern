@@ -12,7 +12,7 @@ export type PrivateAssistantRecord = {
   name: string;
   backendType: AgentBackendType;
   backendThreadId: string | null;
-  status: "pending_bridge" | "active" | "detached" | "failed";
+  status: "pending_bridge" | "active" | "detached" | "failed" | "paused";
   createdAt: string;
 };
 
@@ -95,6 +95,28 @@ async function removePrivateAssistant(
   );
 }
 
+async function pausePrivateAssistant(
+  privateAssistantId: string,
+  principalId: string,
+  principalToken: string,
+): Promise<PrivateAssistantRecord> {
+  return request<PrivateAssistantRecord>(`/api/me/assistants/${privateAssistantId}/pause`, {
+    method: "POST",
+    body: JSON.stringify({ principalId, principalToken }),
+  });
+}
+
+async function resumePrivateAssistant(
+  privateAssistantId: string,
+  principalId: string,
+  principalToken: string,
+): Promise<PrivateAssistantRecord> {
+  return request<PrivateAssistantRecord>(`/api/me/assistants/${privateAssistantId}/resume`, {
+    method: "POST",
+    body: JSON.stringify({ principalId, principalToken }),
+  });
+}
+
 async function adoptAssistant(
   roomId: string,
   actorMemberId: string,
@@ -134,6 +156,8 @@ export {
   createAssistantInvite,
   removeAssistantInvite,
   removePrivateAssistant,
+  pausePrivateAssistant,
+  resumePrivateAssistant,
   adoptAssistant,
   takeAssistantOffline,
 };

@@ -45,6 +45,20 @@ export function createAgentBusySystemData(
   };
 }
 
+export function createAgentUnavailableSystemData(
+  agentDisplayName: string,
+  detail: string,
+  agentMemberId?: string | null,
+): SystemMessageData {
+  return {
+    kind: "agent_unavailable",
+    status: "warning",
+    title: "Agent is unavailable",
+    detail: detail || `${agentDisplayName} is currently unavailable.`,
+    agentMemberId: agentMemberId ?? null,
+  };
+}
+
 export function createBridgeAttachRequiredSystemData(
   agentDisplayName: string,
   agentMemberId?: string | null,

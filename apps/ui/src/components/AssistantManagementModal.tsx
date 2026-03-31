@@ -10,6 +10,7 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { toast } from "../lib/feedback";
+import { copyText } from "../lib/clipboard";
 import { usePrincipalStore } from "../stores/principal";
 import {
   getPrivateAssistants,
@@ -18,6 +19,8 @@ import {
   createAssistantInvite,
   removeAssistantInvite,
   removePrivateAssistant,
+  pausePrivateAssistant,
+  resumePrivateAssistant,
 } from "../api/assistants";
 import type {
   PrivateAssistantRecord,
@@ -84,6 +87,7 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
   const [copyingId, setCopyingId] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [removingInviteId, setRemovingInviteId] = useState<string | null>(null);
+  const [togglingAssistantId, setTogglingAssistantId] = useState<string | null>(null);
   const [inviteBackendType, setInviteBackendType] = useState<AgentBackendType>("claude_code");
 
   const refreshData = useCallback(async () => {
@@ -177,7 +181,7 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
   async function handleCopy(invite: PrivateAssistantInviteRecord) {
     setCopyingId(invite.id);
     try {
-      await navigator.clipboard.writeText(buildInvitePrompt(invite));
+      await copyText(buildInvitePrompt(invite));
       toast().success(t("common.copied"));
     } catch {
       toast().error(t("assistantPanel.copyFailed"));
@@ -207,6 +211,35 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
         }
       },
     });
+  }
+
+  async function handleToggleAssistant(assistant: PrivateAssistantRecord) {
+    if (!principal) return;
+
+    setTogglingAssistantId(assistant.id);
+    try {
+      const updated = assistant.status === "paused"
+        ? await resumePrivateAssistant(assistant.id, principal.principalId, principal.principalToken)
+        : await pausePrivateAssistant(assistant.id, principal.principalId, principal.principalToken);
+      setAssistants((prev) =>
+        sortByCreatedAt(prev.map((item) => (item.id === assistant.id ? updated : item))),
+      );
+      toast().success(
+        assistant.status === "paused"
+          ? t("assistantPanel.resumeSuccess")
+          : t("assistantPanel.pauseSuccess"),
+      );
+    } catch (err) {
+      toast().error(
+        err instanceof Error
+          ? err.message
+          : assistant.status === "paused"
+            ? t("assistantPanel.resumeFailed")
+            : t("assistantPanel.pauseFailed"),
+      );
+    } finally {
+      setTogglingAssistantId(null);
+    }
   }
 
   async function handleRemoveInvite(inviteId: string) {
@@ -275,9 +308,21 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
                     </div>
                     <div className="am-item-meta">
                       <Tag className="am-backend-tag">{backendTypeLabel(assistant.backendType)}</Tag>
+                      <Tag className="am-status-tag">
+                        {t(`assistantPanel.assistantStatus.${assistant.status}`)}
+                      </Tag>
                     </div>
                   </div>
                   <div className="am-item-actions">
+                    <Button
+                      size="small"
+                      loading={togglingAssistantId === assistant.id}
+                      onClick={() => void handleToggleAssistant(assistant)}
+                    >
+                      {assistant.status === "paused"
+                        ? t("assistantPanel.resumeAssistant")
+                        : t("assistantPanel.pauseAssistant")}
+                    </Button>
                     <Button
                       size="small"
                       type="text"

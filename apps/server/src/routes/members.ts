@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import type { Member, RealtimeEvent } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
-import { agentBindings, localBridges, members, rooms } from "../db/schema";
+import { agentBindings, localBridges, members, privateAssistants, rooms } from "../db/schema";
 import { resolveBindingForMember } from "../lib/agent-binding-resolution";
 import { createId } from "../lib/id";
 import { resolveMemberRuntimeStatus } from "../lib/member-runtime";
@@ -27,12 +27,36 @@ memberRoutes.get("/api/rooms/:roomId/members", (c) => {
     return c.json({ error: "room is archived" }, 410);
   }
 
-  const roomMembers = db
+  const allRoomMembers = db
     .select()
     .from(members)
     .where(eq(members.roomId, roomId))
-    .all()
-    .filter((member) => isVisibleRoomMember(member));
+    .all();
+  const assistantIds = [
+    ...new Set(
+      allRoomMembers
+        .map((member) => member.sourcePrivateAssistantId)
+        .filter(Boolean),
+    ),
+  ] as string[];
+  const assistantStatusById = new Map(
+    (assistantIds.length
+      ? db
+          .select({ id: privateAssistants.id, status: privateAssistants.status })
+          .from(privateAssistants)
+          .where(inArray(privateAssistants.id, assistantIds))
+          .all()
+      : []
+    ).map((assistant) => [assistant.id, assistant.status]),
+  );
+  const roomMembers = allRoomMembers.filter((member) =>
+    isVisibleRoomMember({
+      ...member,
+      assistantStatus: member.sourcePrivateAssistantId
+        ? assistantStatusById.get(member.sourcePrivateAssistantId) ?? null
+        : null,
+    }),
+  );
   const bindings = roomMembers
     .map((member) => resolveBindingForMember(member as Member))
     .filter(Boolean) as Array<typeof agentBindings.$inferSelect>;

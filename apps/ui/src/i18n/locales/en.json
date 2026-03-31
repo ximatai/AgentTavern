@@ -111,6 +111,7 @@
     "requester": "Requester",
     "agentFailed": "Agent run failed",
     "agentBusy": "Agent is busy",
+    "agentUnavailable": "Agent is unavailable",
     "bridgeAttachRequired": "Waiting for local bridge attachment",
     "bridgeWaiting": "Waiting for local bridge reconnect",
     "approvalRequired": "Owner approval required",
@@ -383,6 +384,13 @@
     "copyFailed": "Failed to copy prompt",
     "adoptSuccess": "Assistant joined the room",
     "adoptFailed": "Failed to join assistant to room",
+    "pauseAssistant": "Pause",
+    "resumeAssistant": "Resume",
+    "pausedAssistant": "Paused",
+    "pauseSuccess": "Assistant paused",
+    "pauseFailed": "Failed to pause assistant",
+    "resumeSuccess": "Assistant resumed",
+    "resumeFailed": "Failed to resume assistant",
     "leaveRoom": "Take Offline From Room",
     "leaveRoomSuccess": "Assistant removed from the current room",
     "leaveRoomFailed": "Failed to remove assistant from the current room",
@@ -404,7 +412,8 @@
       "pending_bridge": "Connected, not in room",
       "active": "In room",
       "detached": "Waiting for Bridge",
-      "failed": "Connection error"
+      "failed": "Connection error",
+      "paused": "Paused"
     }
   },
   "roomAssistantPanel": {
@@ -480,6 +489,7 @@
     "runtimeReady": "Connected",
     "runtimePendingBridge": "Pending bind",
     "runtimeWaitingBridge": "Waiting Bridge",
+    "runtimeOffline": "Offline",
     "sessionType": "Task type",
     "sessionPending": "Queued",
     "sessionWaitingApproval": "Awaiting approval",
