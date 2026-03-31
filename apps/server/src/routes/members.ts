@@ -8,6 +8,7 @@ import { agentBindings, localBridges, members, rooms } from "../db/schema";
 import { resolveBindingForMember } from "../lib/agent-binding-resolution";
 import { createId } from "../lib/id";
 import { resolveMemberRuntimeStatus } from "../lib/member-runtime";
+import { isVisibleRoomMember } from "../lib/member-visibility";
 import { toPublicMember } from "../lib/public";
 import { broadcastToRoom, verifyWsToken } from "../realtime";
 import { isValidDisplayName, now } from "./support";
@@ -21,9 +22,7 @@ memberRoutes.get("/api/rooms/:roomId/members", (c) => {
     .from(members)
     .where(eq(members.roomId, roomId))
     .all()
-    .filter((member) => (member.membershipStatus ?? "active") === "active")
-    .filter((member) => !(member.sourcePrivateAssistantId && member.presenceStatus === "offline"))
-    ;
+    .filter(isVisibleRoomMember);
   const bindings = roomMembers
     .map((member) => resolveBindingForMember(member as Member))
     .filter(Boolean) as Array<typeof agentBindings.$inferSelect>;

@@ -36,6 +36,7 @@ import { expireStalePendingBridgeTasks } from "../lib/bridge-task-maintenance";
 import { createId } from "../lib/id";
 import { insertMessage } from "../lib/message-records";
 import { getRoomSummary, normalizeRoomSummaryOutput } from "../lib/room-summary";
+import { isVisibleRoomMember } from "../lib/member-visibility";
 import {
   MAX_MESSAGE_ATTACHMENTS,
   MAX_TOTAL_ATTACHMENT_BYTES,
@@ -232,7 +233,7 @@ function buildPrompt(input: {
     .from(members)
     .where(eq(members.roomId, input.room.id))
     .all()
-    .filter((member) => (member.membershipStatus ?? "active") === "active");
+    .filter(isVisibleRoomMember);
   const context = input.contextMessages
     .map((message) => `[${message.createdAt}] ${message.senderName}: ${message.content}`)
     .join("\n");

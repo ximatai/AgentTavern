@@ -3569,6 +3569,115 @@ test("mentioning an independent agent triggers execution and commits a reply", a
   );
 });
 
+test("agent prompts exclude hidden offline private assistants from the room roster", async () => {
+  const roomId = "room_hidden_offline_private_assistant_prompt";
+  const createdAt = new Date("2026-03-25T04:05:00.000Z").toISOString();
+
+  seedRoom({
+    roomId,
+    name: "Hidden Assistant Prompt Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(members).values([
+    {
+      id: "mem_requester_hidden_prompt",
+      roomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "RequesterHiddenPrompt",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      membershipStatus: "active",
+      createdAt,
+    },
+    {
+      id: "mem_agent_visible_prompt",
+      roomId,
+      type: "agent",
+      roleKind: "assistant",
+      displayName: "VisibleAssistant",
+      ownerMemberId: "mem_requester_hidden_prompt",
+      sourcePrivateAssistantId: "pa_visible_prompt",
+      adapterType: "local_process",
+      adapterConfig: JSON.stringify({
+        command: "node",
+        args: [
+          "-e",
+          "process.stdin.setEncoding('utf8');let text='';process.stdin.on('data',chunk=>text+=chunk);process.stdin.on('end',()=>process.stdout.write(text));",
+        ],
+        inputFormat: "text",
+      }),
+      presenceStatus: "online",
+      membershipStatus: "active",
+      createdAt,
+    },
+    {
+      id: "mem_agent_hidden_prompt",
+      roomId,
+      type: "agent",
+      roleKind: "assistant",
+      displayName: "HiddenOfflineAssistant",
+      ownerMemberId: "mem_requester_hidden_prompt",
+      sourcePrivateAssistantId: "pa_hidden_prompt",
+      adapterType: "local_process",
+      adapterConfig: JSON.stringify({
+        command: "node",
+        args: [
+          "-e",
+          "process.stdout.write('hidden');",
+        ],
+        inputFormat: "text",
+      }),
+      presenceStatus: "offline",
+      membershipStatus: "active",
+      createdAt,
+    },
+  ]).run();
+
+  const requesterToken = issueWsToken("mem_requester_hidden_prompt", roomId);
+
+  const response = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_requester_hidden_prompt",
+      wsToken: requesterToken,
+      content: "@VisibleAssistant who is here?",
+    }),
+  });
+
+  assert.equal(response.status, 201);
+
+  const session = await waitFor(
+    () =>
+      db
+        .select()
+        .from(agentSessions)
+        .where(eq(agentSessions.roomId, roomId))
+        .get(),
+    (value) => value?.status === "completed",
+  );
+  const roomMessages = db
+    .select()
+    .from(messages)
+    .where(eq(messages.roomId, roomId))
+    .all();
+  const agentReply = roomMessages.find(
+    (message) => message.messageType === "agent_text" && message.senderMemberId === "mem_agent_visible_prompt",
+  );
+
+  assert.equal(session?.status, "completed");
+  assert.ok(agentReply);
+  assert.match(agentReply!.content, /Active room members:/);
+  assert.match(agentReply!.content, /RequesterHiddenPrompt/);
+  assert.match(agentReply!.content, /VisibleAssistant/);
+  assert.doesNotMatch(agentReply!.content, /HiddenOfflineAssistant/);
+});
+
 test("local independent agent can commit an attachment-only reply from a unified action", async () => {
   const roomId = "room_local_agent_attachment_action";
   const createdAt = new Date("2026-03-25T04:10:00.000Z").toISOString();
