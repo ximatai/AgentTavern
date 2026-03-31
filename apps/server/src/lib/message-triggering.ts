@@ -20,6 +20,7 @@ import {
 import {
   broadcastToRoom,
   isMemberOnline,
+  isPrincipalOnline,
 } from "../realtime";
 import {
   consumeAuthorization,
@@ -217,7 +218,16 @@ function handleAssistantMention(params: {
     );
   }
 
-  const ownerOnline = isMemberOnline(ownerMemberId, params.roomId);
+  const ownerMember = db
+    .select()
+    .from(members)
+    .where(and(eq(members.id, ownerMemberId), eq(members.roomId, params.roomId)))
+    .get() as Member | undefined;
+  const ownerOnline = Boolean(
+    ownerMember &&
+      (isMemberOnline(ownerMemberId, params.roomId) ||
+        (ownerMember.principalId ? isPrincipalOnline(ownerMember.principalId) : false)),
+  );
 
   if (!ownerOnline) {
     markMentionStatus({

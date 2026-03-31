@@ -246,3 +246,7 @@ export function isMemberOnline(memberId: string, roomId: string): boolean {
 
   return false;
 }
+
+export function isPrincipalOnline(principalId: string): boolean {
+  return (principalSockets.get(principalId)?.size ?? 0) > 0;
+}

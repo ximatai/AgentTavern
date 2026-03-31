@@ -3022,6 +3022,113 @@ test("mentioning an assistant while the owner is offline expires approval flow",
   assert.equal(offlineSystemMessage?.systemData?.title, "Owner unavailable");
 });
 
+test("mentioning an assistant keeps approval pending when the owner principal is online", async () => {
+  const roomId = "room_owner_principal_online";
+  const createdAt = new Date("2026-03-25T01:10:00.000Z").toISOString();
+
+  seedRoom({
+    roomId,
+    name: "Owner Principal Online Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(principals).values({
+    id: "prn_owner_principal_online",
+    kind: "human",
+    loginKey: "owner-principal-online@example.com",
+    globalDisplayName: "Owner",
+    backendType: null,
+    backendThreadId: null,
+    backendConfig: null,
+    status: "offline",
+    createdAt,
+  }).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_requester_principal_online",
+      roomId,
+      principalId: null,
+      type: "human",
+      roleKind: "none",
+      displayName: "Requester",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt,
+    },
+    {
+      id: "mem_owner_principal_online",
+      roomId,
+      principalId: "prn_owner_principal_online",
+      type: "human",
+      roleKind: "none",
+      displayName: "Owner",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "offline",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt,
+    },
+    {
+      id: "mem_assistant_principal_online",
+      roomId,
+      principalId: null,
+      type: "agent",
+      roleKind: "assistant",
+      displayName: "AssistB",
+      ownerMemberId: "mem_owner_principal_online",
+      sourcePrivateAssistantId: null,
+      adapterType: "local_process",
+      adapterConfig: "{\"command\":\"node\"}",
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt,
+    },
+  ]).run();
+
+  const requesterWsToken = issueWsToken("mem_requester_principal_online", roomId);
+  const ownerPrincipalToken = issuePrincipalToken("prn_owner_principal_online");
+  const disconnectOwner = markPrincipalOnline("prn_owner_principal_online", ownerPrincipalToken);
+
+  const response = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_requester_principal_online",
+      wsToken: requesterWsToken,
+      content: "@AssistB please help",
+    }),
+  });
+
+  assert.equal(response.status, 201);
+
+  const approval = db.select().from(approvals).where(eq(approvals.roomId, roomId)).get();
+  const session = db.select().from(agentSessions).where(eq(agentSessions.roomId, roomId)).get();
+  const mention = db.select().from(mentions).where(eq(mentions.targetMemberId, "mem_assistant_principal_online")).get();
+  const listedMessagesResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`);
+  const listedMessages = (await listedMessagesResponse.json()) as Array<{
+    messageType: string;
+    systemData: { kind: string; title: string } | null;
+  }>;
+
+  assert.equal(approval?.status, "pending");
+  assert.equal(session?.status, "waiting_approval");
+  assert.equal(mention?.status, "pending_approval");
+  assert.equal(listedMessages.some((message) => message.systemData?.kind === "approval_owner_offline"), false);
+  assert.equal(listedMessages.some((message) => message.messageType === "approval_request"), true);
+
+  disconnectOwner();
+});
+
 test("approving an assistant request updates approval, session and mention state", async () => {
   const roomId = "room_approve_flow";
   const createdAt = new Date("2026-03-25T02:00:00.000Z").toISOString();
