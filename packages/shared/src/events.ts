@@ -105,7 +105,7 @@ export type PrincipalEvent =
       principalId: string;
       timestamp: string;
       payload: {
-        reason: "room_joined" | "direct_room_created";
+        reason: "room_joined" | "direct_room_created" | "room_disbanded";
         roomId: string;
       };
     }

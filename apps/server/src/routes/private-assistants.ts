@@ -577,6 +577,10 @@ privateAssistantRoutes.post("/api/rooms/:roomId/assistants/adopt", async (c) => 
     return c.json({ error: "room not found" }, 404);
   }
 
+  if (room.status !== "active") {
+    return c.json({ error: "room is archived" }, 410);
+  }
+
   const body = await c.req.json().catch(() => null);
   const actorMemberId =
     typeof body?.actorMemberId === "string" ? body.actorMemberId.trim() : "";
@@ -754,6 +758,10 @@ privateAssistantRoutes.post("/api/rooms/:roomId/assistants/:assistantMemberId/of
 
   if (!room) {
     return c.json({ error: "room not found" }, 404);
+  }
+
+  if (room.status !== "active") {
+    return c.json({ error: "room is archived" }, 410);
   }
 
   const body = await c.req.json().catch(() => null);

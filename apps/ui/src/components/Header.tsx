@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { SettingOutlined, RobotOutlined, LoginOutlined, ShareAltOutlined, TeamOutlined } from "@ant-design/icons";
+import { SettingOutlined, RobotOutlined, LoginOutlined, ShareAltOutlined, TeamOutlined, DeleteOutlined } from "@ant-design/icons";
+import { Modal } from "antd";
 
 import { toast } from "../lib/feedback";
 import { LanguageSwitcher } from "./LanguageSwitcher";
@@ -88,6 +89,7 @@ export function Header() {
   const room = useRoomStore((s) => s.room);
   const self = useRoomStore((s) => s.self);
   const members = useRoomStore((s) => s.members);
+  const disbandRoom = useRoomStore((s) => s.disbandRoom);
   const connectionStatus = useConnectionStore((s) => s.status);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [secretaryOpen, setSecretaryOpen] = useState(false);
@@ -111,6 +113,28 @@ export function Header() {
     } finally {
       setCopyingRoomInvite(false);
     }
+  };
+
+  const handleDisbandRoom = () => {
+    if (!room) return;
+
+    Modal.confirm({
+      title: t("header.disbandRoomTitle"),
+      content: t("header.disbandRoomConfirm", { roomName: room.name }),
+      okText: t("header.disbandRoomAction"),
+      okButtonProps: { danger: true },
+      cancelText: t("common.cancel"),
+      onOk: async () => {
+        try {
+          await disbandRoom();
+          toast().success(t("header.disbandRoomSuccess"));
+        } catch (error) {
+          toast().error(
+            error instanceof Error ? error.message : t("header.disbandRoomFailed"),
+          );
+        }
+      },
+    });
   };
 
   return (
@@ -175,6 +199,14 @@ export function Header() {
             >
               <ShareAltOutlined />
               <span>{copyingRoomInvite ? t("header.copying") : t("header.shareRoom")}</span>
+            </button>
+            <button
+              type="button"
+              className="assistant-badge"
+              onClick={handleDisbandRoom}
+            >
+              <DeleteOutlined />
+              <span>{t("header.disbandRoom")}</span>
             </button>
           </>
         )}

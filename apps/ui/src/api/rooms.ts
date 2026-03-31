@@ -45,6 +45,13 @@ export type UpdateRoomSecretaryParams = {
   secretaryMemberId?: string | null;
 };
 
+export type DisbandRoomResult = {
+  roomId: string;
+  status: "archived";
+  disbandedAt: string;
+  disbandedByMemberId: string;
+};
+
 async function getRoom(roomId: string): Promise<Room> {
   return request<Room>(`/api/rooms/${roomId}`);
 }
@@ -139,6 +146,17 @@ async function updateRoomSecretary(params: UpdateRoomSecretaryParams): Promise<R
   });
 }
 
+async function disbandRoom(
+  roomId: string,
+  actorMemberId: string,
+  wsToken: string,
+): Promise<DisbandRoomResult> {
+  return request<DisbandRoomResult>(`/api/rooms/${roomId}/disband`, {
+    method: "POST",
+    body: JSON.stringify({ actorMemberId, wsToken }),
+  });
+}
+
 export {
   getRoom,
   getRoomSummary,
@@ -152,4 +170,5 @@ export {
   getRoomMessages,
   getJoinedRooms,
   updateRoomSecretary,
+  disbandRoom,
 };

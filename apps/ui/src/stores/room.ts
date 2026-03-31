@@ -4,6 +4,7 @@ import type { PublicMember, Room, RoomSummary } from "@agent-tavern/shared";
 import {
   createRoom as createRoomAPI,
   createDirectRoom as createDirectRoomAPI,
+  disbandRoom as disbandRoomAPI,
   getJoinedRooms as getJoinedRoomsAPI,
   getRoom,
   getRoomSummary as getRoomSummaryAPI,
@@ -21,6 +22,7 @@ import type { RecentRoomRecord } from "../types";
 import { usePrincipalStore } from "./principal";
 import { useMessageStore } from "./message";
 import { useSessionStore } from "./session";
+import { useApprovalStore } from "./approval";
 
 const MAX_RECENT_ROOMS = 6;
 
@@ -74,6 +76,8 @@ interface RoomActions {
     secretaryMode: Room["secretaryMode"];
     secretaryMemberId?: string | null;
   }) => Promise<void>;
+  disbandRoom: () => Promise<void>;
+  clearCurrentRoom: (roomId?: string) => void;
   refreshRoomSummary: () => Promise<void>;
   refreshMembers: () => Promise<void>;
   addOrUpdateMember: (member: PublicMember) => void;
@@ -108,7 +112,8 @@ function mergeJoinedRooms(
   current: RecentRoomRecord[],
   joinedRooms: Array<{ id: string; name: string; inviteToken: string; createdAt: string }>,
 ): RecentRoomRecord[] {
-  const next = [...current];
+  const joinedRoomIds = new Set(joinedRooms.map((room) => room.id));
+  const next = current.filter((item) => joinedRoomIds.has(item.roomId));
   for (const room of joinedRooms) {
     if (next.some((item) => item.roomId === room.id)) continue;
     next.push({
@@ -258,6 +263,37 @@ export const useRoomStore = create<RoomStore>()((set, get) => ({
     });
 
     set({ room: updatedRoom });
+  },
+
+  clearCurrentRoom: (roomId) => {
+    const currentRoom = get().room;
+    if (roomId && currentRoom && currentRoom.id !== roomId) {
+      return;
+    }
+
+    set((state) => ({
+      room: null,
+      roomSummary: null,
+      self: null,
+      members: [],
+      recentRooms: currentRoom
+        ? state.recentRooms.filter((item) => item.roomId !== currentRoom.id)
+        : state.recentRooms,
+    }));
+    useMessageStore.getState().reset();
+    useSessionStore.getState().reset();
+    useApprovalStore.getState().reset();
+    get().persistRecentRooms();
+  },
+
+  disbandRoom: async () => {
+    const room = get().room;
+    const self = get().self;
+    if (!room || !self) throw new Error("Room not ready");
+
+    await disbandRoomAPI(room.id, self.memberId, self.wsToken);
+    await get().refreshJoinedRooms();
+    get().clearCurrentRoom(room.id);
   },
 
   refreshRoomSummary: async () => {

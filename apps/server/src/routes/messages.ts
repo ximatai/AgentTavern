@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import type { Member, Message } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
-import { members, messages } from "../db/schema";
+import { members, messages, rooms } from "../db/schema";
 import { submitMessage } from "../lib/message-orchestration";
 import {
   MAX_MESSAGE_ATTACHMENTS,
@@ -19,6 +19,16 @@ const messageRoutes = new Hono();
 
 messageRoutes.get("/api/rooms/:roomId/messages", (c) => {
   const roomId = c.req.param("roomId");
+  const room = db.select().from(rooms).where(eq(rooms.id, roomId)).get();
+
+  if (!room) {
+    return c.json({ error: "room not found" }, 404);
+  }
+
+  if (room.status !== "active") {
+    return c.json({ error: "room is archived" }, 410);
+  }
+
   const roomMessages = hydrateMessagesWithAttachments(
     db
       .select()
@@ -50,6 +60,16 @@ messageRoutes.get("/api/rooms/:roomId/messages", (c) => {
 
 messageRoutes.post("/api/rooms/:roomId/messages", async (c) => {
   const roomId = c.req.param("roomId");
+  const room = db.select().from(rooms).where(eq(rooms.id, roomId)).get();
+
+  if (!room) {
+    return c.json({ error: "room not found" }, 404);
+  }
+
+  if (room.status !== "active") {
+    return c.json({ error: "room is archived" }, 410);
+  }
+
   const body = await c.req.json().catch(() => null);
   const senderMemberId =
     typeof body?.senderMemberId === "string" ? body.senderMemberId.trim() : "";

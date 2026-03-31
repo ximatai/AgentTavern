@@ -1,10 +1,21 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 
 import type { AgentBinding, Member, Principal, Room, RoomSecretaryMode } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
-import { members, principals, rooms } from "../db/schema";
+import {
+  agentAuthorizations,
+  agentSessions,
+  approvals,
+  bridgeTasks,
+  members,
+  mentions,
+  messages,
+  principals,
+  roomSummaries,
+  rooms,
+} from "../db/schema";
 import { createId, createInviteToken } from "../lib/id";
 import { resolveBindingForPrincipal } from "../lib/agent-binding-resolution";
 import { resolveMemberRuntimeStatus } from "../lib/member-runtime";
@@ -24,6 +35,10 @@ const roomRoutes = new Hono();
 
 function buildDirectRoomName(actor: Principal, peer: Principal): string {
   return `${actor.globalDisplayName} · ${peer.globalDisplayName}`;
+}
+
+function isRoomArchived(room: Pick<Room, "status">): boolean {
+  return room.status !== "active";
 }
 
 function resolveDisplayName(params: {
@@ -224,7 +239,7 @@ function findReusableDirectRoom(params: {
   actorPrincipalId: string;
   peerPrincipalId: string;
 }): Room | null {
-  const allRooms = db.select().from(rooms).all() as Room[];
+  const allRooms = db.select().from(rooms).where(eq(rooms.status, "active")).all() as Room[];
 
   for (const room of allRooms) {
     const roomMembers = db
@@ -285,6 +300,137 @@ function toRoomSummary(room: Room) {
   };
 }
 
+function disbandRoom(params: {
+  room: Room;
+  actor: Member;
+}) {
+  const timestamp = now();
+  const roomId = params.room.id;
+  const roomMembers = db
+    .select()
+    .from(members)
+    .where(eq(members.roomId, roomId))
+    .all() as Member[];
+  const activeMembers = roomMembers.filter((member) => (member.membershipStatus ?? "active") === "active");
+  const principalIds = [...new Set(activeMembers.map((member) => member.principalId).filter(Boolean))] as string[];
+  const messageIds = db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(eq(messages.roomId, roomId))
+    .all()
+    .map((row) => row.id);
+
+  db
+    .update(rooms)
+    .set({
+      status: "archived",
+      secretaryMemberId: null,
+      secretaryMode: "off",
+    })
+    .where(eq(rooms.id, roomId))
+    .run();
+
+  db
+    .update(members)
+    .set({
+      presenceStatus: "offline",
+      membershipStatus: "left",
+      leftAt: timestamp,
+    })
+    .where(and(eq(members.roomId, roomId), eq(members.membershipStatus, "active")))
+    .run();
+
+  db
+    .update(agentSessions)
+    .set({
+      status: "cancelled",
+      endedAt: timestamp,
+    })
+    .where(
+      and(
+        eq(agentSessions.roomId, roomId),
+        inArray(agentSessions.status, ["pending", "waiting_approval", "running"]),
+      ),
+    )
+    .run();
+
+  db
+    .update(bridgeTasks)
+    .set({
+      status: "failed",
+      failedAt: timestamp,
+    })
+    .where(
+      and(
+        eq(bridgeTasks.roomId, roomId),
+        inArray(bridgeTasks.status, ["pending", "assigned", "accepted"]),
+      ),
+    )
+    .run();
+
+  db
+    .update(approvals)
+    .set({
+      status: "expired",
+      resolvedAt: timestamp,
+    })
+    .where(and(eq(approvals.roomId, roomId), eq(approvals.status, "pending")))
+    .run();
+
+  if (messageIds.length > 0) {
+    db
+      .update(mentions)
+      .set({ status: "expired" })
+      .where(
+        and(
+          inArray(mentions.messageId, messageIds),
+          inArray(mentions.status, ["detected", "pending_approval", "approved"]),
+        ),
+      )
+      .run();
+  }
+
+  db
+    .update(agentAuthorizations)
+    .set({
+      revokedAt: timestamp,
+      updatedAt: timestamp,
+    })
+    .where(and(eq(agentAuthorizations.roomId, roomId), isNull(agentAuthorizations.revokedAt)))
+    .run();
+
+  db.delete(roomSummaries).where(eq(roomSummaries.roomId, roomId)).run();
+
+  for (const member of activeMembers) {
+    revokeWsTokensForMember(member.id, roomId);
+    broadcastToRoom(roomId, {
+      type: "member.left",
+      roomId,
+      timestamp,
+      payload: { memberId: member.id },
+    });
+  }
+
+  for (const principalId of principalIds) {
+    broadcastToPrincipal(principalId, {
+      type: "rooms.changed",
+      principalId,
+      timestamp,
+      payload: {
+        reason: "room_disbanded",
+        roomId,
+      },
+    });
+  }
+
+  return {
+    roomId,
+    status: "archived" as const,
+    disbandedAt: timestamp,
+    disbandedByMemberId: params.actor.id,
+  };
+}
+
 roomRoutes.post("/api/rooms", async (c) => {
   const body = await c.req.json().catch(() => null);
   const name = typeof body?.name === "string" ? body.name.trim() : "";
@@ -334,7 +480,7 @@ roomRoutes.get("/api/me/rooms", (c) => {
   const joinedRoomIds = Array.from(new Set(joinedMembers.map((member) => member.roomId)));
   const joinedRooms = joinedRoomIds
     .map((roomId) => db.select().from(rooms).where(eq(rooms.id, roomId)).get() as Room | undefined)
-    .filter(Boolean)
+    .filter((room) => Boolean(room) && room!.status === "active")
     .sort((a, b) => b!.createdAt.localeCompare(a!.createdAt))
     .map((room) => toRoomSummary(room!));
 
@@ -514,6 +660,10 @@ roomRoutes.get("/api/rooms/:roomId/summary", (c) => {
     return c.json({ error: "room not found" }, 404);
   }
 
+  if (isRoomArchived(room)) {
+    return c.json({ error: "room is archived" }, 410);
+  }
+
   return c.json({ summary: getRoomSummary(roomId) });
 });
 
@@ -526,6 +676,10 @@ roomRoutes.get("/api/invites/:inviteToken", (c) => {
 
   if (!room) {
     return c.json({ error: "invite not found" }, 404);
+  }
+
+  if (isRoomArchived(room)) {
+    return c.json({ error: "invite is no longer active" }, 410);
   }
 
   return c.json({
@@ -544,6 +698,10 @@ roomRoutes.patch("/api/rooms/:roomId/secretary", async (c) => {
 
   if (!room) {
     return c.json({ error: "room not found" }, 404);
+  }
+
+  if (isRoomArchived(room)) {
+    return c.json({ error: "room is archived" }, 410);
   }
 
   const body = await c.req.json().catch(() => null);
@@ -630,6 +788,10 @@ roomRoutes.post("/api/rooms/:roomId/join", async (c) => {
     return c.json({ error: "room not found" }, 404);
   }
 
+  if (isRoomArchived(room)) {
+    return c.json({ error: "room is archived" }, 410);
+  }
+
   const body = await c.req.json().catch(() => null);
   const principalId = typeof body?.principalId === "string" ? body.principalId.trim() : "";
   const principalToken =
@@ -701,6 +863,10 @@ roomRoutes.post("/api/invites/:inviteToken/join", async (c) => {
 
   if (!room) {
     return c.json({ error: "invite not found" }, 404);
+  }
+
+  if (isRoomArchived(room)) {
+    return c.json({ error: "invite is no longer active" }, 410);
   }
 
   const body = await c.req.json().catch(() => null);
@@ -796,6 +962,10 @@ roomRoutes.post("/api/rooms/:roomId/pull", async (c) => {
     return c.json({ error: "room not found" }, 404);
   }
 
+  if (isRoomArchived(room)) {
+    return c.json({ error: "room is archived" }, 410);
+  }
+
   const body = await c.req.json().catch(() => null);
   const actorMemberId =
     typeof body?.actorMemberId === "string" ? body.actorMemberId.trim() : "";
@@ -860,6 +1030,48 @@ roomRoutes.post("/api/rooms/:roomId/pull", async (c) => {
   }
 
   return c.json(result.payload, 201);
+});
+
+roomRoutes.post("/api/rooms/:roomId/disband", async (c) => {
+  const roomId = c.req.param("roomId");
+  const room = db.select().from(rooms).where(eq(rooms.id, roomId)).get() as Room | undefined;
+
+  if (!room) {
+    return c.json({ error: "room not found" }, 404);
+  }
+
+  if (isRoomArchived(room)) {
+    return c.json({ error: "room is already archived" }, 409);
+  }
+
+  const body = await c.req.json().catch(() => null);
+  const actorMemberId =
+    typeof body?.actorMemberId === "string" ? body.actorMemberId.trim() : "";
+  const wsToken = typeof body?.wsToken === "string" ? body.wsToken.trim() : "";
+
+  if (!actorMemberId || !wsToken) {
+    return c.json({ error: "actorMemberId and wsToken are required" }, 400);
+  }
+
+  const actor = db
+    .select()
+    .from(members)
+    .where(and(eq(members.id, actorMemberId), eq(members.roomId, roomId)))
+    .get() as Member | undefined;
+
+  if (!actor || (actor.membershipStatus ?? "active") !== "active") {
+    return c.json({ error: "actor not found in room" }, 404);
+  }
+
+  if (!verifyWsToken(wsToken, actorMemberId, roomId)) {
+    return c.json({ error: "invalid wsToken for actor" }, 403);
+  }
+
+  if (actor.type !== "human") {
+    return c.json({ error: "only human members can disband a room" }, 403);
+  }
+
+  return c.json(disbandRoom({ room, actor }));
 });
 
 export { roomRoutes };

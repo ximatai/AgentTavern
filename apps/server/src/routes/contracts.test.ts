@@ -1290,6 +1290,274 @@ test("agent principal can leave the system and detach from all rooms", async () 
   assert.equal(refreshedBinding?.status, "detached");
 });
 
+test("human member can disband a room and archive its active runtime state", async () => {
+  const roomId = "room_disband_runtime";
+  const inviteToken = createInviteToken();
+  const createdAt = new Date("2026-03-25T03:00:00.000Z").toISOString();
+
+  seedRoom({
+    roomId,
+    inviteToken,
+    name: "Disband Runtime Room",
+  });
+
+  db.insert(principals).values([
+    {
+      id: "prn_disband_owner",
+      kind: "human",
+      loginKey: "owner@example.com",
+      globalDisplayName: "OwnerDisband",
+      backendType: null,
+      backendThreadId: null,
+      backendConfig: null,
+      status: "online",
+      createdAt,
+    },
+    {
+      id: "prn_disband_peer",
+      kind: "human",
+      loginKey: "peer@example.com",
+      globalDisplayName: "PeerDisband",
+      backendType: null,
+      backendThreadId: null,
+      backendConfig: null,
+      status: "online",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_disband_owner",
+      roomId,
+      principalId: "prn_disband_owner",
+      type: "human",
+      roleKind: "none",
+      displayName: "OwnerDisband",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt,
+    },
+    {
+      id: "mem_disband_peer",
+      roomId,
+      principalId: "prn_disband_peer",
+      type: "human",
+      roleKind: "none",
+      displayName: "PeerDisband",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt,
+    },
+    {
+      id: "mem_disband_assistant",
+      roomId,
+      principalId: null,
+      type: "agent",
+      roleKind: "assistant",
+      displayName: "DisbandAssistant",
+      ownerMemberId: "mem_disband_owner",
+      sourcePrivateAssistantId: "pa_disband_assistant",
+      adapterType: "codex_cli",
+      adapterConfig: null,
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(messages).values({
+    id: "msg_disband_trigger",
+    roomId,
+    senderMemberId: "mem_disband_peer",
+    senderDisplayName: "PeerDisband",
+    senderType: "human",
+    senderRoleKind: "none",
+    messageType: "user_text",
+    content: "@DisbandAssistant help",
+    systemData: null,
+    replyToMessageId: null,
+    createdAt,
+  }).run();
+
+  db.insert(mentions).values({
+    id: "men_disband_pending",
+    messageId: "msg_disband_trigger",
+    targetMemberId: "mem_disband_assistant",
+    triggerText: "@DisbandAssistant",
+    status: "pending_approval",
+    createdAt,
+  }).run();
+
+  db.insert(approvals).values({
+    id: "apr_disband_pending",
+    roomId,
+    requesterMemberId: "mem_disband_peer",
+    ownerMemberId: "mem_disband_owner",
+    agentMemberId: "mem_disband_assistant",
+    triggerMessageId: "msg_disband_trigger",
+    status: "pending",
+    grantDuration: "once",
+    createdAt,
+    resolvedAt: null,
+  }).run();
+
+  db.insert(agentSessions).values({
+    id: "ags_disband_waiting",
+    roomId,
+    agentMemberId: "mem_disband_assistant",
+    kind: "message_reply",
+    triggerMessageId: "msg_disband_trigger",
+    requesterMemberId: "mem_disband_peer",
+    approvalId: "apr_disband_pending",
+    approvalRequired: true,
+    status: "waiting_approval",
+    startedAt: null,
+    endedAt: null,
+  }).run();
+
+  db.insert(agentAuthorizations).values({
+    id: "aut_disband_active",
+    roomId,
+    ownerMemberId: "mem_disband_owner",
+    requesterMemberId: "mem_disband_peer",
+    agentMemberId: "mem_disband_assistant",
+    grantDuration: "forever",
+    remainingUses: null,
+    expiresAt: null,
+    revokedAt: null,
+    createdAt,
+    updatedAt: createdAt,
+  }).run();
+
+  const ownerWsToken = issueWsToken("mem_disband_owner", roomId);
+  const ownerPrincipalToken = issuePrincipalToken("prn_disband_owner");
+
+  const response = await app.request(`http://localhost/api/rooms/${roomId}/disband`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      actorMemberId: "mem_disband_owner",
+      wsToken: ownerWsToken,
+    }),
+  });
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.roomId, roomId);
+  assert.equal(payload.status, "archived");
+  assert.equal(payload.disbandedByMemberId, "mem_disband_owner");
+  assert.ok(payload.disbandedAt);
+
+  const archivedRoom = db.select().from(rooms).where(eq(rooms.id, roomId)).get();
+  const roomMembers = db.select().from(members).where(eq(members.roomId, roomId)).all();
+  const approval = db.select().from(approvals).where(eq(approvals.id, "apr_disband_pending")).get();
+  const session = db.select().from(agentSessions).where(eq(agentSessions.id, "ags_disband_waiting")).get();
+  const mention = db.select().from(mentions).where(eq(mentions.id, "men_disband_pending")).get();
+  const authorization = db.select().from(agentAuthorizations).where(eq(agentAuthorizations.id, "aut_disband_active")).get();
+  const joinedRoomsResponse = await app.request(
+    `http://localhost/api/me/rooms?principalId=prn_disband_owner&principalToken=${ownerPrincipalToken}`,
+  );
+
+  assert.equal(archivedRoom?.status, "archived");
+  assert.equal(archivedRoom?.secretaryMode, "off");
+  assert.equal(archivedRoom?.secretaryMemberId, null);
+  assert.ok(roomMembers.every((member) => member.membershipStatus === "left"));
+  assert.ok(roomMembers.every((member) => member.presenceStatus === "offline"));
+  assert.equal(approval?.status, "expired");
+  assert.ok(approval?.resolvedAt);
+  assert.equal(session?.status, "cancelled");
+  assert.ok(session?.endedAt);
+  assert.equal(mention?.status, "expired");
+  assert.ok(authorization?.revokedAt);
+  assert.deepEqual(await joinedRoomsResponse.json(), { rooms: [] });
+});
+
+test("archived rooms reject invite joins and new messages", async () => {
+  const roomId = "room_disband_rejects_actions";
+  const inviteToken = createInviteToken();
+  const createdAt = new Date("2026-03-25T03:05:00.000Z").toISOString();
+
+  seedRoom({
+    roomId,
+    inviteToken,
+    name: "Archived Room Guards",
+  });
+
+  db.insert(principals).values({
+    id: "prn_disband_actor_only",
+    kind: "human",
+    loginKey: "actor-only@example.com",
+    globalDisplayName: "ActorOnly",
+    backendType: null,
+    backendThreadId: null,
+    backendConfig: null,
+    status: "online",
+    createdAt,
+  }).run();
+
+  db.insert(members).values({
+    id: "mem_disband_actor_only",
+    roomId,
+    principalId: "prn_disband_actor_only",
+    type: "human",
+    roleKind: "none",
+    displayName: "ActorOnly",
+    ownerMemberId: null,
+    sourcePrivateAssistantId: null,
+    adapterType: null,
+    adapterConfig: null,
+    presenceStatus: "online",
+    membershipStatus: "active",
+    leftAt: null,
+    createdAt,
+  }).run();
+
+  const actorWsToken = issueWsToken("mem_disband_actor_only", roomId);
+
+  const disbandResponse = await app.request(`http://localhost/api/rooms/${roomId}/disband`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      actorMemberId: "mem_disband_actor_only",
+      wsToken: actorWsToken,
+    }),
+  });
+
+  assert.equal(disbandResponse.status, 200);
+
+  const joinResponse = await app.request(`http://localhost/api/invites/${inviteToken}/join`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ nickname: "LateJoiner" }),
+  });
+  const messageResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_disband_actor_only",
+      wsToken: actorWsToken,
+      content: "hello?",
+    }),
+  });
+
+  assert.equal(joinResponse.status, 410);
+  assert.deepEqual(await joinResponse.json(), { error: "invite is no longer active" });
+  assert.equal(messageResponse.status, 410);
+  assert.deepEqual(await messageResponse.json(), { error: "room is archived" });
+});
+
 test("direct room reuses the same two-principal room and room pull adds a lobby principal into an existing room", async () => {
   const aliceResponse = await app.request("http://localhost/api/principals/bootstrap", {
     method: "POST",

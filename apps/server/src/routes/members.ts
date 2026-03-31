@@ -17,6 +17,16 @@ const memberRoutes = new Hono();
 
 memberRoutes.get("/api/rooms/:roomId/members", (c) => {
   const roomId = c.req.param("roomId");
+  const room = db.select().from(rooms).where(eq(rooms.id, roomId)).get();
+
+  if (!room) {
+    return c.json({ error: "room not found" }, 404);
+  }
+
+  if (room.status !== "active") {
+    return c.json({ error: "room is archived" }, 410);
+  }
+
   const roomMembers = db
     .select()
     .from(members)
@@ -51,6 +61,10 @@ memberRoutes.post("/api/rooms/:roomId/members/agents", async (c) => {
 
   if (!room) {
     return c.json({ error: "room not found" }, 404);
+  }
+
+  if (room.status !== "active") {
+    return c.json({ error: "room is archived" }, 410);
   }
 
   const body = await c.req.json().catch(() => null);

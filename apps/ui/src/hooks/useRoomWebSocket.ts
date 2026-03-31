@@ -203,6 +203,12 @@ function handleEvent(event: RealtimeEvent): void {
       break;
     }
     case "member.left": {
+      const self = useRoomStore.getState().self;
+      if (self?.memberId === event.payload.memberId) {
+        useRoomStore.getState().clearCurrentRoom(event.roomId);
+        useConnectionStore.getState().setStatus("none");
+        break;
+      }
       useRoomStore.getState().removeMember(event.payload.memberId);
       break;
     }
