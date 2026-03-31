@@ -28,6 +28,16 @@ const TASK_ASSIGNMENT_LEASE_MS = Number(
   process.env.AGENT_TAVERN_BRIDGE_TASK_LEASE_MS ?? 15_000,
 );
 
+const BRIDGE_TASK_ERROR_CODE = {
+  BRIDGE_NOT_FOUND: "BRIDGE_NOT_FOUND",
+  INVALID_BRIDGE_CREDENTIALS: "INVALID_BRIDGE_CREDENTIALS",
+  STALE_BRIDGE_INSTANCE: "STALE_BRIDGE_INSTANCE",
+} as const;
+
+function bridgeTaskError(code: string, error: string) {
+  return { code, error };
+}
+
 function resolveBindingForAgentMember(agentMemberId: string) {
   const agentMember = db
     .select({
@@ -73,16 +83,37 @@ function loadAuthorizedBridge(
     .get();
 
   if (!bridge) {
-    return { error: { status: 404 as const, body: { error: "bridge not found" } }, bridge: null };
+    return {
+      error: {
+        status: 404 as const,
+        body: bridgeTaskError(BRIDGE_TASK_ERROR_CODE.BRIDGE_NOT_FOUND, "bridge not found"),
+      },
+      bridge: null,
+    };
   }
 
   if (bridge.bridgeToken !== bridgeToken) {
-    return { error: { status: 403 as const, body: { error: "invalid bridge credentials" } }, bridge: null };
+    return {
+      error: {
+        status: 403 as const,
+        body: bridgeTaskError(
+          BRIDGE_TASK_ERROR_CODE.INVALID_BRIDGE_CREDENTIALS,
+          "invalid bridge credentials",
+        ),
+      },
+      bridge: null,
+    };
   }
 
   if (bridgeInstanceId && bridge.currentInstanceId && bridge.currentInstanceId !== bridgeInstanceId) {
     return {
-      error: { status: 409 as const, body: { error: "stale bridge instance" } },
+      error: {
+        status: 409 as const,
+        body: bridgeTaskError(
+          BRIDGE_TASK_ERROR_CODE.STALE_BRIDGE_INSTANCE,
+          "stale bridge instance",
+        ),
+      },
       bridge: null,
     };
   }

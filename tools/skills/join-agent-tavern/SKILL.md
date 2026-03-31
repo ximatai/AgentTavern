@@ -86,6 +86,7 @@ python3 "<script-dir>/leave_system.py" \
 6. Read the returned JSON and report the result to the user.
 7. Join / accept flows send the selected `cwd` when attaching to a local bridge.
 8. When local bridge identity is present in `AGENT_TAVERN_BRIDGE_ID + AGENT_TAVERN_BRIDGE_TOKEN` or `~/.agent-tavern/bridge-state.json`, the join scripts also call `POST /api/bridges/:bridgeId/agents/attach`.
+9. When attach fails with confirmed stale file-backed bridge credentials (`code=BRIDGE_NOT_FOUND` or `code=INVALID_BRIDGE_CREDENTIALS`), the scripts re-register a bridge, persist the refreshed identity, and retry attach once.
 
 ## Rules
 
@@ -130,4 +131,4 @@ Report:
 - Private assistant helper: `scripts/join_assistant_invite.py`
   - Parses `/private-assistant-invites/<token>`
   - Calls `POST /api/private-assistant-invites/:inviteToken/accept`
-  - Attempts bridge attach using the returned `privateAssistantId`
+  - Attempts bridge attach using the returned assistant id (`privateAssistantId` when present, otherwise response `id`)

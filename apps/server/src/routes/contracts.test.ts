@@ -4036,6 +4036,7 @@ test("bridge register creates a reusable bridge identity and heartbeat refreshes
 
   assert.equal(staleHeartbeatResponse.status, 409);
   assert.deepEqual(await staleHeartbeatResponse.json(), {
+    code: "STALE_BRIDGE_INSTANCE",
     error: "stale bridge instance",
   });
 });
@@ -4103,6 +4104,127 @@ test("bridge heartbeat auto-attaches pending bindings when it is the sole online
   assert.equal(binding?.bridgeId, "brg_auto_attach");
   assert.equal(binding?.status, "active");
   assert.notEqual(binding?.attachedAt, createdAt);
+});
+
+test("bridge heartbeat broadcasts member.updated when a stale attached bridge becomes fresh again", async () => {
+  const roomId = "room_bridge_heartbeat_recovery";
+  const staleSeenAt = new Date(Date.now() - 60_000).toISOString();
+  const wsToken = issueWsToken("mem_human_bridge_heartbeat_recovery", roomId);
+  const sent: string[] = [];
+  const listeners = new Map<string, () => void>();
+  const fakeSocket = {
+    readyState: WebSocket.OPEN,
+    close() {},
+    send(payload: string) {
+      sent.push(payload);
+    },
+    on(event: string, handler: () => void) {
+      listeners.set(event, handler);
+      return this;
+    },
+  };
+
+  seedRoom({
+    roomId,
+    name: "Bridge Heartbeat Recovery",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(localBridges).values({
+    id: "brg_heartbeat_recovery",
+    bridgeName: "Recovery Bridge",
+    bridgeToken: "bridge_heartbeat_recovery_token",
+    currentInstanceId: "binst_heartbeat_recovery",
+    status: "online",
+    platform: "macOS",
+    version: "0.1.0",
+    metadata: null,
+    lastSeenAt: staleSeenAt,
+    createdAt: staleSeenAt,
+    updatedAt: staleSeenAt,
+  }).run();
+
+  db.insert(principals).values({
+    id: "prn_heartbeat_recovery",
+    kind: "agent",
+    loginKey: "agent:heartbeat-recovery",
+    globalDisplayName: "RecoveredAgent",
+    backendType: "codex_cli",
+    backendThreadId: "thread_heartbeat_recovery",
+    status: "offline",
+    createdAt: staleSeenAt,
+  }).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_human_bridge_heartbeat_recovery",
+      roomId,
+      principalId: null,
+      type: "human",
+      roleKind: "none",
+      displayName: "Owner",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt: staleSeenAt,
+    },
+    {
+      id: "mem_agent_bridge_heartbeat_recovery",
+      roomId,
+      principalId: "prn_heartbeat_recovery",
+      type: "agent",
+      roleKind: "independent",
+      displayName: "RecoveredAgent",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: "codex_cli",
+      adapterConfig: null,
+      presenceStatus: "offline",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt: staleSeenAt,
+    },
+  ]).run();
+
+  db.insert(agentBindings).values({
+    id: "agb_heartbeat_recovery",
+    principalId: "prn_heartbeat_recovery",
+    privateAssistantId: null,
+    bridgeId: "brg_heartbeat_recovery",
+    backendType: "codex_cli",
+    backendThreadId: "thread_heartbeat_recovery",
+    cwd: "/tmp/heartbeat-recovery",
+    status: "active",
+    attachedAt: staleSeenAt,
+    detachedAt: null,
+  }).run();
+
+  registerSocket(fakeSocket as never, {
+    url: `/?roomId=${roomId}&memberId=mem_human_bridge_heartbeat_recovery&wsToken=${wsToken}`,
+  } as never);
+
+  const response = await app.request("http://localhost/api/bridges/brg_heartbeat_recovery/heartbeat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      bridgeToken: "bridge_heartbeat_recovery_token",
+      bridgeInstanceId: "binst_heartbeat_recovery",
+    }),
+  });
+
+  assert.equal(response.status, 200);
+
+  const updatedEvent = sent
+    .map((payload) => JSON.parse(payload))
+    .find((event) => event.type === "member.updated" && event.payload?.member?.id === "mem_agent_bridge_heartbeat_recovery");
+
+  assert.equal(updatedEvent?.payload?.member?.runtimeStatus, "ready");
+
+  listeners.get("close")?.();
 });
 
 test("bridge heartbeat does not auto-attach pending bindings when multiple bridges are online", async () => {
@@ -4361,6 +4483,7 @@ test("bridge attach returns 409 when the binding is already owned by another bri
 
   assert.equal(response.status, 409);
   assert.deepEqual(await response.json(), {
+    code: "AGENT_BINDING_ALREADY_ATTACHED",
     error: "agent binding already attached to another bridge",
   });
 });
@@ -4600,6 +4723,7 @@ test("attached codex binding can be pulled and completed through bridge task end
 
   assert.equal(staleDeltaResponse.status, 409);
   assert.deepEqual(await staleDeltaResponse.json(), {
+    code: "STALE_BRIDGE_INSTANCE",
     error: "stale bridge instance",
   });
 

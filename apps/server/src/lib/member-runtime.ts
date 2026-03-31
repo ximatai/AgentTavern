@@ -1,6 +1,6 @@
 import { localBridges } from "../db/schema";
 
-const BRIDGE_STALE_AFTER_MS = Number(process.env.AGENT_TAVERN_BRIDGE_STALE_AFTER_MS ?? 20_000);
+export const BRIDGE_STALE_AFTER_MS = Number(process.env.AGENT_TAVERN_BRIDGE_STALE_AFTER_MS ?? 20_000);
 
 type RuntimeMember = {
   type: string;
@@ -13,6 +13,14 @@ type RuntimeBinding = {
 } | null;
 
 type RuntimeBridge = typeof localBridges.$inferSelect | null;
+
+export function isBridgeFresh(bridge?: RuntimeBridge): boolean {
+  if (!bridge || bridge.status !== "online") {
+    return false;
+  }
+
+  return Date.now() - new Date(bridge.lastSeenAt).getTime() <= BRIDGE_STALE_AFTER_MS;
+}
 
 export function resolveMemberRuntimeStatus(
   member: RuntimeMember,
@@ -39,7 +47,5 @@ export function resolveMemberRuntimeStatus(
     return "waiting_bridge";
   }
 
-  return Date.now() - new Date(bridge.lastSeenAt).getTime() <= BRIDGE_STALE_AFTER_MS
-    ? "ready"
-    : "waiting_bridge";
+  return isBridgeFresh(bridge) ? "ready" : "waiting_bridge";
 }

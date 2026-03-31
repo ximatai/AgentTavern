@@ -3,6 +3,7 @@ import argparse
 import json
 import os
 import re
+import socket
 import uuid
 from pathlib import Path
 import sys
@@ -90,14 +91,22 @@ def post_json(url: str, payload: Dict[str, str]) -> Tuple[int, dict]:
         return 597, {"error": "unexpected request error", "reason": str(exc)}
 
 
+def get_bridge_state_path() -> str:
+    return os.environ.get("AGENT_TAVERN_BRIDGE_STATE_PATH", DEFAULT_BRIDGE_STATE_PATH)
+
+
 def read_bridge_identity() -> Optional[Dict[str, str]]:
     bridge_id = os.environ.get("AGENT_TAVERN_BRIDGE_ID", "").strip()
     bridge_token = os.environ.get("AGENT_TAVERN_BRIDGE_TOKEN", "").strip()
+    state_path = get_bridge_state_path()
 
     if bridge_id and bridge_token:
-        return {"bridgeId": bridge_id, "bridgeToken": bridge_token}
-
-    state_path = os.environ.get("AGENT_TAVERN_BRIDGE_STATE_PATH", DEFAULT_BRIDGE_STATE_PATH)
+        return {
+            "bridgeId": bridge_id,
+            "bridgeToken": bridge_token,
+            "source": "env",
+            "statePath": state_path,
+        }
 
     if not os.path.exists(state_path):
         return None
@@ -112,9 +121,62 @@ def read_bridge_identity() -> Optional[Dict[str, str]]:
     bridge_token = str(data.get("bridgeToken", "")).strip()
 
     if bridge_id and bridge_token:
-        return {"bridgeId": bridge_id, "bridgeToken": bridge_token}
+        return {
+            "bridgeId": bridge_id,
+            "bridgeToken": bridge_token,
+            "source": "file",
+            "statePath": state_path,
+        }
 
     return None
+
+
+def persist_bridge_identity(state_path: str, bridge_id: str, bridge_token: str) -> None:
+    os.makedirs(os.path.dirname(state_path), exist_ok=True)
+    with open(state_path, "w", encoding="utf-8") as handle:
+        json.dump({"bridgeId": bridge_id, "bridgeToken": bridge_token}, handle, indent=2)
+
+
+def resolve_bridge_name() -> str:
+    configured_name = os.environ.get("AGENT_TAVERN_BRIDGE_NAME", "").strip()
+    if configured_name:
+        return configured_name
+    hostname = socket.gethostname().strip()
+    return hostname or "Local Bridge"
+
+
+def register_bridge(base_url: str, bridge_identity: Optional[Dict[str, str]]) -> Tuple[int, dict]:
+    payload = {
+        "bridgeName": resolve_bridge_name(),
+        "bridgeInstanceId": f"binst_{uuid.uuid4()}",
+        "platform": sys.platform,
+        "version": "join-agent-tavern-skill",
+        "metadata": {
+            "source": "join-agent-tavern-skill",
+            "taskLoopEnabled": False,
+        },
+    }
+
+    if bridge_identity:
+        payload["bridgeId"] = bridge_identity.get("bridgeId", "")
+        payload["bridgeToken"] = bridge_identity.get("bridgeToken", "")
+
+    status, data = post_json(f"{base_url}/api/bridges/register", payload)
+    if (status in (403, 404)) and bridge_identity:
+        payload.pop("bridgeId", None)
+        payload.pop("bridgeToken", None)
+        status, data = post_json(f"{base_url}/api/bridges/register", payload)
+    return status, data
+
+
+def should_recover_stale_bridge(status: int, data: dict) -> bool:
+    code = str(data.get("code", "")).strip().upper()
+    if code in {"BRIDGE_NOT_FOUND", "INVALID_BRIDGE_CREDENTIALS"}:
+        return True
+    error = str(data.get("error", "")).strip().lower()
+    return (status == 404 and error == "bridge not found") or (
+        status == 403 and error == "invalid bridge credentials"
+    )
 
 
 def resolve_thread_id(explicit_thread_id: Optional[str]) -> Tuple[str, str]:
@@ -185,7 +247,7 @@ def main() -> int:
         print(json.dumps(result, ensure_ascii=True))
         return 0
 
-    assistant_id = str(
+    private_assistant_id = str(
         data.get("privateAssistantId")
         or data.get("acceptedPrivateAssistantId")
         or data.get("id")
@@ -194,7 +256,7 @@ def main() -> int:
 
     attach_payload = {
         "bridgeToken": bridge_identity["bridgeToken"],
-        "privateAssistantId": assistant_id,
+        "privateAssistantId": private_assistant_id,
         "cwd": selected_cwd,
     }
     if not attach_payload["privateAssistantId"]:
@@ -203,6 +265,32 @@ def main() -> int:
         f"{base_url}/api/bridges/{bridge_identity['bridgeId']}/agents/attach",
         attach_payload,
     )
+    if should_recover_stale_bridge(attach_status, attach_data) and bridge_identity.get("source") == "file":
+        recover_status, recover_data = register_bridge(base_url, bridge_identity)
+        result["bridgeRecovery"] = {
+            "status": recover_status,
+            "response": recover_data,
+        }
+        if 200 <= recover_status < 300:
+            bridge_identity = {
+                "bridgeId": str(recover_data.get("bridgeId", "")).strip(),
+                "bridgeToken": str(recover_data.get("bridgeToken", "")).strip(),
+                "source": "file",
+                "statePath": bridge_identity.get("statePath", get_bridge_state_path()),
+            }
+            if bridge_identity["bridgeId"] and bridge_identity["bridgeToken"]:
+                persist_bridge_identity(
+                    bridge_identity["statePath"],
+                    bridge_identity["bridgeId"],
+                    bridge_identity["bridgeToken"],
+                )
+                attach_status, attach_data = post_json(
+                    f"{base_url}/api/bridges/{bridge_identity['bridgeId']}/agents/attach",
+                    {
+                        **attach_payload,
+                        "bridgeToken": bridge_identity["bridgeToken"],
+                    },
+                )
     result["attach"] = {
         "status": attach_status,
         "bridgeId": bridge_identity["bridgeId"],

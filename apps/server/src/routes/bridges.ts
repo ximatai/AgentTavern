@@ -6,12 +6,30 @@ import type { Member } from "@agent-tavern/shared";
 import { db } from "../db/client";
 import { agentBindings, localBridges, members } from "../db/schema";
 import { createId, createInviteToken } from "../lib/id";
-import { resolveMemberRuntimeStatus } from "../lib/member-runtime";
+import { isBridgeFresh, resolveMemberRuntimeStatus } from "../lib/member-runtime";
 import { toPublicMember } from "../lib/public";
 import { broadcastToRoom } from "../realtime";
 import { now } from "./support";
 
 const bridgeRoutes = new Hono();
+
+const BRIDGE_ERROR_CODE = {
+  BRIDGE_NAME_REQUIRED: "BRIDGE_NAME_REQUIRED",
+  BRIDGE_INSTANCE_ID_REQUIRED: "BRIDGE_INSTANCE_ID_REQUIRED",
+  BRIDGE_TOKEN_REQUIRED: "BRIDGE_TOKEN_REQUIRED",
+  BRIDGE_TARGET_REQUIRED: "BRIDGE_TARGET_REQUIRED",
+  INVALID_BRIDGE_CREDENTIALS: "INVALID_BRIDGE_CREDENTIALS",
+  BRIDGE_NOT_FOUND: "BRIDGE_NOT_FOUND",
+  STALE_BRIDGE_INSTANCE: "STALE_BRIDGE_INSTANCE",
+  ATTACH_TARGET_MISMATCH: "ATTACH_TARGET_MISMATCH",
+  AGENT_BINDING_NOT_FOUND: "AGENT_BINDING_NOT_FOUND",
+  AGENT_BINDING_ALREADY_ATTACHED: "AGENT_BINDING_ALREADY_ATTACHED",
+  AGENT_BINDING_ATTACH_CONFLICT: "AGENT_BINDING_ATTACH_CONFLICT",
+} as const;
+
+function bridgeError(code: string, error: string) {
+  return { code, error };
+}
 
 function normalizeOptionalString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -87,6 +105,7 @@ function broadcastBindingMemberUpdates(params: {
   principalId: string | null;
   privateAssistantId: string | null;
   bridge: StoredBridge;
+  bindingStatus?: string;
 }): void {
   if (!params.principalId && !params.privateAssistantId) {
     return;
@@ -119,11 +138,28 @@ function broadcastBindingMemberUpdates(params: {
           member,
           resolveMemberRuntimeStatus(
             member,
-            { bridgeId: params.bridge.id, status: "active" },
+            { bridgeId: params.bridge.id, status: params.bindingStatus ?? "active" },
             params.bridge,
           ),
         ),
       },
+    });
+  }
+}
+
+function broadcastBridgeMemberUpdates(bridge: StoredBridge): void {
+  const bindings = db
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.bridgeId, bridge.id))
+    .all();
+
+  for (const binding of bindings) {
+    broadcastBindingMemberUpdates({
+      principalId: binding.principalId,
+      privateAssistantId: binding.privateAssistantId,
+      bridge,
+      bindingStatus: binding.status,
     });
   }
 }
@@ -146,11 +182,17 @@ bridgeRoutes.post("/api/bridges/register", async (c) => {
       : null;
 
   if (!bridgeName) {
-    return c.json({ error: "bridgeName is required" }, 400);
+    return c.json(
+      bridgeError(BRIDGE_ERROR_CODE.BRIDGE_NAME_REQUIRED, "bridgeName is required"),
+      400,
+    );
   }
 
   if (!bridgeInstanceId) {
-    return c.json({ error: "bridgeInstanceId is required" }, 400);
+    return c.json(
+      bridgeError(BRIDGE_ERROR_CODE.BRIDGE_INSTANCE_ID_REQUIRED, "bridgeInstanceId is required"),
+      400,
+    );
   }
 
   const timestamp = now();
@@ -163,7 +205,13 @@ bridgeRoutes.post("/api/bridges/register", async (c) => {
       .get();
 
     if (!bridge || bridge.bridgeToken !== existingBridgeToken) {
-      return c.json({ error: "invalid bridge credentials" }, 403);
+      return c.json(
+        bridgeError(
+          BRIDGE_ERROR_CODE.INVALID_BRIDGE_CREDENTIALS,
+          "invalid bridge credentials",
+        ),
+        403,
+      );
     }
 
     db
@@ -240,7 +288,13 @@ bridgeRoutes.post("/api/bridges/:bridgeId/heartbeat", async (c) => {
       : null;
 
   if (!bridgeToken || !bridgeInstanceId) {
-    return c.json({ error: "bridgeToken and bridgeInstanceId are required" }, 400);
+    return c.json(
+      bridgeError(
+        BRIDGE_ERROR_CODE.BRIDGE_INSTANCE_ID_REQUIRED,
+        "bridgeToken and bridgeInstanceId are required",
+      ),
+      400,
+    );
   }
 
   const bridge = db
@@ -250,17 +304,30 @@ bridgeRoutes.post("/api/bridges/:bridgeId/heartbeat", async (c) => {
     .get();
 
   if (!bridge) {
-    return c.json({ error: "bridge not found" }, 404);
+    return c.json(
+      bridgeError(BRIDGE_ERROR_CODE.BRIDGE_NOT_FOUND, "bridge not found"),
+      404,
+    );
   }
 
   if (bridge.bridgeToken !== bridgeToken) {
-    return c.json({ error: "invalid bridge credentials" }, 403);
+    return c.json(
+      bridgeError(
+        BRIDGE_ERROR_CODE.INVALID_BRIDGE_CREDENTIALS,
+        "invalid bridge credentials",
+      ),
+      403,
+    );
   }
 
   if (bridge.currentInstanceId && bridge.currentInstanceId !== bridgeInstanceId) {
-    return c.json({ error: "stale bridge instance" }, 409);
+    return c.json(
+      bridgeError(BRIDGE_ERROR_CODE.STALE_BRIDGE_INSTANCE, "stale bridge instance"),
+      409,
+    );
   }
 
+  const wasFresh = isBridgeFresh(bridge);
   const timestamp = now();
 
   db
@@ -283,6 +350,10 @@ bridgeRoutes.post("/api/bridges/:bridgeId/heartbeat", async (c) => {
 
   autoAttachPendingBindingsToSoleOnlineBridge(refreshedBridge);
 
+  if (!wasFresh && isBridgeFresh(refreshedBridge)) {
+    broadcastBridgeMemberUpdates(refreshedBridge);
+  }
+
   return c.json({
     bridgeId,
     bridgeInstanceId,
@@ -304,12 +375,18 @@ bridgeRoutes.post("/api/bridges/:bridgeId/agents/attach", async (c) => {
   const cwd = normalizeOptionalString(body?.cwd);
 
   if (!bridgeToken) {
-    return c.json({ error: "bridgeToken is required" }, 400);
+    return c.json(
+      bridgeError(BRIDGE_ERROR_CODE.BRIDGE_TOKEN_REQUIRED, "bridgeToken is required"),
+      400,
+    );
   }
 
   if (!backendThreadId && !memberId && !principalId && !privateAssistantId) {
     return c.json(
-      { error: "backendThreadId, memberId, principalId or privateAssistantId is required" },
+      bridgeError(
+        BRIDGE_ERROR_CODE.BRIDGE_TARGET_REQUIRED,
+        "backendThreadId, memberId, principalId or privateAssistantId is required",
+      ),
       400,
     );
   }
@@ -321,11 +398,20 @@ bridgeRoutes.post("/api/bridges/:bridgeId/agents/attach", async (c) => {
     .get();
 
   if (!bridge) {
-    return c.json({ error: "bridge not found" }, 404);
+    return c.json(
+      bridgeError(BRIDGE_ERROR_CODE.BRIDGE_NOT_FOUND, "bridge not found"),
+      404,
+    );
   }
 
   if (bridge.bridgeToken !== bridgeToken) {
-    return c.json({ error: "invalid bridge credentials" }, 403);
+    return c.json(
+      bridgeError(
+        BRIDGE_ERROR_CODE.INVALID_BRIDGE_CREDENTIALS,
+        "invalid bridge credentials",
+      ),
+      403,
+    );
   }
 
   const resolvedMember = memberId
@@ -363,17 +449,32 @@ bridgeRoutes.post("/api/bridges/:bridgeId/agents/attach", async (c) => {
   const uniqueBindingIds = new Set(resolvedBindings.map((binding) => binding!.id));
 
   if (uniqueBindingIds.size > 1) {
-    return c.json({ error: "attach targets do not match the same binding" }, 400);
+    return c.json(
+      bridgeError(
+        BRIDGE_ERROR_CODE.ATTACH_TARGET_MISMATCH,
+        "attach targets do not match the same binding",
+      ),
+      400,
+    );
   }
 
   const binding = bindingByThread ?? bindingByPrincipal ?? bindingByPrivateAssistant;
 
   if (!binding) {
-    return c.json({ error: "agent binding not found" }, 404);
+    return c.json(
+      bridgeError(BRIDGE_ERROR_CODE.AGENT_BINDING_NOT_FOUND, "agent binding not found"),
+      404,
+    );
   }
 
   if (binding.bridgeId && binding.bridgeId !== bridgeId) {
-    return c.json({ error: "agent binding already attached to another bridge" }, 409);
+    return c.json(
+      bridgeError(
+        BRIDGE_ERROR_CODE.AGENT_BINDING_ALREADY_ATTACHED,
+        "agent binding already attached to another bridge",
+      ),
+      409,
+    );
   }
 
   const timestamp = now();
@@ -404,10 +505,22 @@ bridgeRoutes.post("/api/bridges/:bridgeId/agents/attach", async (c) => {
       .get();
 
     if (latestBinding?.bridgeId && latestBinding.bridgeId !== bridgeId) {
-      return c.json({ error: "agent binding already attached to another bridge" }, 409);
+      return c.json(
+        bridgeError(
+          BRIDGE_ERROR_CODE.AGENT_BINDING_ALREADY_ATTACHED,
+          "agent binding already attached to another bridge",
+        ),
+        409,
+      );
     }
 
-    return c.json({ error: "agent binding attach conflict" }, 409);
+    return c.json(
+      bridgeError(
+        BRIDGE_ERROR_CODE.AGENT_BINDING_ATTACH_CONFLICT,
+        "agent binding attach conflict",
+      ),
+      409,
+    );
   }
 
   broadcastBindingMemberUpdates({
