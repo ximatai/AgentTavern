@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 
-import type { AgentBinding, Member, Principal, Room, RoomSecretaryMode } from "@agent-tavern/shared";
+import type { AgentBinding, Member, Citizen, Room, RoomSecretaryMode } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
 import {
@@ -12,28 +12,28 @@ import {
   members,
   mentions,
   messages,
-  principals,
+  citizens,
   roomSummaries,
   rooms,
 } from "../db/schema";
 import { createId, createInviteToken } from "../lib/id";
-import { resolveBindingForPrincipal } from "../lib/agent-binding-resolution";
+import { resolveBindingForCitizen } from "../lib/agent-binding-resolution";
 import { resolveMemberRuntimeStatus } from "../lib/member-runtime";
 import { toPublicMember } from "../lib/public";
 import { getRoomSummary } from "../lib/room-summary";
 import {
-  broadcastToPrincipal,
+  broadcastToCitizen,
   broadcastToRoom,
   issueWsToken,
   revokeWsTokensForMember,
-  verifyPrincipalToken,
+  verifyCitizenToken,
   verifyWsToken,
 } from "../realtime";
 import { isUniqueConstraintError, isValidDisplayName, now } from "./support";
 
 const roomRoutes = new Hono();
 
-function buildDirectRoomName(actor: Principal, peer: Principal): string {
+function buildDirectRoomName(actor: Citizen, peer: Citizen): string {
   return `${actor.globalDisplayName} · ${peer.globalDisplayName}`;
 }
 
@@ -66,7 +66,7 @@ function broadcastRoomUpdated(room: Room): void {
 }
 
 function resolveDisplayName(params: {
-  principal: Principal | null;
+  principal: Citizen | null;
   roomDisplayName: string | null;
   nickname: string | null;
 }) {
@@ -75,14 +75,14 @@ function resolveDisplayName(params: {
 
 function joinRoom(params: {
   roomId: string;
-  principal: Principal | null;
+  principal: Citizen | null;
   displayName: string;
 }) {
   if (params.principal) {
     const existingByPrincipal = db
       .select()
       .from(members)
-      .where(and(eq(members.roomId, params.roomId), eq(members.principalId, params.principal.id)))
+      .where(and(eq(members.roomId, params.roomId), eq(members.citizenId, params.principal.id)))
       .get() as Member | undefined;
 
     if (existingByPrincipal && (existingByPrincipal.membershipStatus ?? "active") === "left") {
@@ -118,7 +118,7 @@ function joinRoom(params: {
         .get() as Member;
       const wsToken = issueWsToken(restoredMember.id, params.roomId);
       const binding = params.principal.kind === "agent"
-        ? resolveBindingForPrincipal(params.principal.id)
+        ? resolveBindingForCitizen(params.principal.id)
         : null;
       const runtimeStatus = resolveMemberRuntimeStatus(restoredMember, binding, null);
       broadcastToRoom(params.roomId, {
@@ -165,7 +165,7 @@ function joinRoom(params: {
   const member: Member = {
     id: createId("mem"),
     roomId: params.roomId,
-    principalId: params.principal?.id ?? null,
+    citizenId: params.principal?.id ?? null,
     type: params.principal?.kind === "agent" ? "agent" : "human",
     roleKind: params.principal?.kind === "agent" ? "independent" : "none",
     displayName: params.displayName,
@@ -191,7 +191,7 @@ function joinRoom(params: {
 
   const wsToken = issueWsToken(member.id, params.roomId);
   const binding = params.principal?.kind === "agent"
-    ? resolveBindingForPrincipal(params.principal.id)
+    ? resolveBindingForCitizen(params.principal.id)
     : null;
   const runtimeStatus = resolveMemberRuntimeStatus(member, binding, null);
   broadcastToRoom(params.roomId, {
@@ -214,12 +214,12 @@ function joinRoom(params: {
 function leaveRoomByPrincipal(params: {
   room: Room;
   roomId: string;
-  principal: Principal;
+  principal: Citizen;
 }) {
   const existingMembership = db
     .select()
     .from(members)
-    .where(and(eq(members.roomId, params.roomId), eq(members.principalId, params.principal.id)))
+    .where(and(eq(members.roomId, params.roomId), eq(members.citizenId, params.principal.id)))
     .get() as Member | undefined;
 
   if (!existingMembership || (existingMembership.membershipStatus ?? "active") !== "active") {
@@ -227,7 +227,7 @@ function leaveRoomByPrincipal(params: {
       payload: {
         left: false,
         roomId: params.roomId,
-        principalId: params.principal.id,
+        citizenId: params.principal.id,
         memberId: null,
       },
     };
@@ -279,15 +279,15 @@ function leaveRoomByPrincipal(params: {
     payload: {
       left: true,
       roomId: params.roomId,
-      principalId: params.principal.id,
+      citizenId: params.principal.id,
       memberId: existingMembership.id,
     },
   };
 }
 
 function findReusableDirectRoom(params: {
-  actorPrincipalId: string;
-  peerPrincipalId: string;
+  actorCitizenId: string;
+  peerCitizenId: string;
 }): Room | null {
   const allRooms = db.select().from(rooms).where(eq(rooms.status, "active")).all() as Room[];
 
@@ -303,17 +303,17 @@ function findReusableDirectRoom(params: {
       continue;
     }
 
-    const principalIds = roomMembers.map((member) => member.principalId).filter(Boolean) as string[];
+    const citizenIds = roomMembers.map((member) => member.citizenId).filter(Boolean) as string[];
 
-    if (principalIds.length !== 2) {
+    if (citizenIds.length !== 2) {
       continue;
     }
 
-    const uniquePrincipalIds = new Set(principalIds);
+    const uniquePrincipalIds = new Set(citizenIds);
     if (
       uniquePrincipalIds.size === 2 &&
-      uniquePrincipalIds.has(params.actorPrincipalId) &&
-      uniquePrincipalIds.has(params.peerPrincipalId)
+      uniquePrincipalIds.has(params.actorCitizenId) &&
+      uniquePrincipalIds.has(params.peerCitizenId)
     ) {
       return room;
     }
@@ -365,7 +365,7 @@ function disbandRoom(params: {
     .where(eq(members.roomId, roomId))
     .all() as Member[];
   const activeMembers = roomMembers.filter((member) => (member.membershipStatus ?? "active") === "active");
-  const principalIds = [...new Set(activeMembers.map((member) => member.principalId).filter(Boolean))] as string[];
+  const citizenIds = [...new Set(activeMembers.map((member) => member.citizenId).filter(Boolean))] as string[];
   const messageIds = db
     .select({ id: messages.id })
     .from(messages)
@@ -465,10 +465,10 @@ function disbandRoom(params: {
     });
   }
 
-  for (const principalId of principalIds) {
-    broadcastToPrincipal(principalId, {
+  for (const citizenId of citizenIds) {
+    broadcastToCitizen(citizenId, {
       type: "rooms.changed",
-      principalId,
+      citizenId,
       timestamp,
       payload: {
         reason: "room_disbanded",
@@ -488,29 +488,29 @@ function disbandRoom(params: {
 roomRoutes.post("/api/rooms", async (c) => {
   const body = await c.req.json().catch(() => null);
   const name = typeof body?.name === "string" ? body.name.trim() : "";
-  const principalId = typeof body?.principalId === "string" ? body.principalId.trim() : "";
-  const principalToken = typeof body?.principalToken === "string" ? body.principalToken.trim() : "";
+  const citizenId = typeof body?.citizenId === "string" ? body.citizenId.trim() : "";
+  const citizenToken = typeof body?.citizenToken === "string" ? body.citizenToken.trim() : "";
 
-  if (!name || !principalId || !principalToken) {
-    return c.json({ error: "room name, principalId and principalToken are required" }, 400);
+  if (!name || !citizenId || !citizenToken) {
+    return c.json({ error: "room name, citizenId and citizenToken are required" }, 400);
   }
 
-  if (!verifyPrincipalToken(principalToken, principalId)) {
-    return c.json({ error: "invalid principal token" }, 403);
+  if (!verifyCitizenToken(citizenToken, citizenId)) {
+    return c.json({ error: "invalid citizen token" }, 403);
   }
 
   const principal = db
     .select()
-    .from(principals)
-    .where(eq(principals.id, principalId))
-    .get() as Principal | undefined;
+    .from(citizens)
+    .where(eq(citizens.id, citizenId))
+    .get() as Citizen | undefined;
 
   if (!principal) {
-    return c.json({ error: "principal not found" }, 404);
+    return c.json({ error: "citizen not found" }, 404);
   }
 
   if (principal.kind !== "human") {
-    return c.json({ error: "only human principals can create rooms" }, 403);
+    return c.json({ error: "only human citizens can create rooms" }, 403);
   }
 
   const createdAt = now();
@@ -525,7 +525,7 @@ roomRoutes.post("/api/rooms", async (c) => {
   const ownerMember: Member = {
     id: ownerMemberId,
     roomId: room.id,
-    principalId: principal.id,
+    citizenId: principal.id,
     type: "human",
     roleKind: "none",
     displayName: principal.globalDisplayName,
@@ -563,21 +563,21 @@ roomRoutes.post("/api/rooms", async (c) => {
 });
 
 roomRoutes.get("/api/me/rooms", (c) => {
-  const principalId = c.req.query("principalId")?.trim() ?? "";
-  const principalToken = c.req.query("principalToken")?.trim() ?? "";
+  const citizenId = c.req.query("citizenId")?.trim() ?? "";
+  const citizenToken = c.req.query("citizenToken")?.trim() ?? "";
 
-  if (!principalId || !principalToken) {
-    return c.json({ error: "principalId and principalToken are required" }, 400);
+  if (!citizenId || !citizenToken) {
+    return c.json({ error: "citizenId and citizenToken are required" }, 400);
   }
 
-  if (!verifyPrincipalToken(principalToken, principalId)) {
-    return c.json({ error: "invalid principal token" }, 403);
+  if (!verifyCitizenToken(citizenToken, citizenId)) {
+    return c.json({ error: "invalid citizen token" }, 403);
   }
 
   const joinedMembers = db
     .select()
     .from(members)
-    .where(eq(members.principalId, principalId))
+    .where(eq(members.citizenId, citizenId))
     .all()
     .filter((member) => (member.membershipStatus ?? "active") === "active") as Member[];
 
@@ -593,63 +593,59 @@ roomRoutes.get("/api/me/rooms", (c) => {
 
 roomRoutes.post("/api/direct-rooms", async (c) => {
   const body = await c.req.json().catch(() => null);
-  const actorPrincipalId =
-    typeof body?.actorPrincipalId === "string"
-      ? body.actorPrincipalId.trim()
-      : typeof body?.principalId === "string"
-        ? body.principalId.trim()
+  const actorCitizenId =
+    typeof body?.actorCitizenId === "string"
+      ? body.actorCitizenId.trim()
+      : typeof body?.citizenId === "string"
+        ? body.citizenId.trim()
         : "";
-  const actorPrincipalToken =
-    typeof body?.actorPrincipalToken === "string"
-      ? body.actorPrincipalToken.trim()
-      : typeof body?.principalToken === "string"
-        ? body.principalToken.trim()
+  const actorCitizenToken =
+    typeof body?.actorCitizenToken === "string"
+      ? body.actorCitizenToken.trim()
+      : typeof body?.citizenToken === "string"
+        ? body.citizenToken.trim()
         : "";
-  const peerPrincipalId =
-    typeof body?.peerPrincipalId === "string"
-      ? body.peerPrincipalId.trim()
-      : typeof body?.targetPrincipalId === "string"
-        ? body.targetPrincipalId.trim()
+  const peerCitizenId =
+    typeof body?.peerCitizenId === "string"
+      ? body.peerCitizenId.trim()
+      : typeof body?.targetCitizenId === "string"
+        ? body.targetCitizenId.trim()
         : "";
 
-  if (!actorPrincipalId || !actorPrincipalToken || !peerPrincipalId) {
-    return c.json({ error: "actorPrincipalId, actorPrincipalToken and peerPrincipalId are required" }, 400);
+  if (!actorCitizenId || !actorCitizenToken || !peerCitizenId) {
+    return c.json({ error: "actorCitizenId, actorCitizenToken and peerCitizenId are required" }, 400);
   }
 
-  if (actorPrincipalId === peerPrincipalId) {
+  if (actorCitizenId === peerCitizenId) {
     return c.json({ error: "actor and peer must be different" }, 400);
   }
 
-  if (!verifyPrincipalToken(actorPrincipalToken, actorPrincipalId)) {
-    return c.json({ error: "invalid principal token for actor" }, 403);
+  if (!verifyCitizenToken(actorCitizenToken, actorCitizenId)) {
+    return c.json({ error: "invalid citizen token for actor" }, 403);
   }
 
   const actor = db
     .select()
-    .from(principals)
-    .where(eq(principals.id, actorPrincipalId))
-    .get() as Principal | undefined;
+    .from(citizens)
+    .where(eq(citizens.id, actorCitizenId))
+    .get() as Citizen | undefined;
   const peer = db
     .select()
-    .from(principals)
-    .where(eq(principals.id, peerPrincipalId))
-    .get() as Principal | undefined;
+    .from(citizens)
+    .where(eq(citizens.id, peerCitizenId))
+    .get() as Citizen | undefined;
 
   if (!actor || !peer) {
-    return c.json({ error: "principal not found" }, 404);
+    return c.json({ error: "citizen not found" }, 404);
   }
 
-  if (actor.kind !== "human") {
-    return c.json({ error: "only human principals can create direct rooms" }, 403);
-  }
-
-  const reusable = findReusableDirectRoom({ actorPrincipalId, peerPrincipalId });
+  const reusable = findReusableDirectRoom({ actorCitizenId, peerCitizenId });
 
   if (reusable) {
     const actorMember = db
       .select()
       .from(members)
-      .where(and(eq(members.roomId, reusable.id), eq(members.principalId, actorPrincipalId)))
+      .where(and(eq(members.roomId, reusable.id), eq(members.citizenId, actorCitizenId)))
       .get() as Member | undefined;
 
     if (!actorMember || (actorMember.membershipStatus ?? "active") !== "active") {
@@ -658,9 +654,9 @@ roomRoutes.post("/api/direct-rooms", async (c) => {
 
     const wsToken = issueWsToken(actorMember.id, reusable.id);
 
-    broadcastToPrincipal(peerPrincipalId, {
+    broadcastToCitizen(peerCitizenId, {
       type: "rooms.changed",
-      principalId: peerPrincipalId,
+      citizenId: peerCitizenId,
       timestamp: now(),
       payload: {
         reason: "room_joined",
@@ -692,13 +688,13 @@ roomRoutes.post("/api/direct-rooms", async (c) => {
   const actorMember: Member = {
     id: createId("mem"),
     roomId: room.id,
-    principalId: actor.id,
-    type: "human",
-    roleKind: "none",
+    citizenId: actor.id,
+    type: actor.kind === "agent" ? "agent" : "human",
+    roleKind: actor.kind === "agent" ? "independent" : "none",
     displayName: actor.globalDisplayName,
     ownerMemberId: null,
     sourcePrivateAssistantId: null,
-    adapterType: null,
+    adapterType: actor.kind === "agent" ? (actor.backendType ?? "codex_cli") : null,
     adapterConfig: null,
     presenceStatus: "online",
     membershipStatus: "active",
@@ -709,7 +705,7 @@ roomRoutes.post("/api/direct-rooms", async (c) => {
   const peerMember: Member = {
     id: createId("mem"),
     roomId: room.id,
-    principalId: peer.id,
+    citizenId: peer.id,
     type: peer.kind === "agent" ? "agent" : "human",
     roleKind: peer.kind === "agent" ? "independent" : "none",
     displayName: peer.globalDisplayName,
@@ -723,16 +719,20 @@ roomRoutes.post("/api/direct-rooms", async (c) => {
     createdAt,
   };
 
-  room.ownerMemberId = actorMember.id;
+  room.ownerMemberId = actor.kind === "human"
+    ? actorMember.id
+    : peer.kind === "human"
+      ? peerMember.id
+      : null;
 
   db.insert(rooms).values(room).run();
   db.insert(members).values([actorMember, peerMember]).run();
 
   const wsToken = issueWsToken(actorMember.id, room.id);
 
-  broadcastToPrincipal(peerPrincipalId, {
+  broadcastToCitizen(peerCitizenId, {
     type: "rooms.changed",
-    principalId: peerPrincipalId,
+    citizenId: peerCitizenId,
     timestamp: now(),
     payload: {
       reason: "direct_room_created",
@@ -995,33 +995,33 @@ roomRoutes.post("/api/rooms/:roomId/join", async (c) => {
   }
 
   const body = await c.req.json().catch(() => null);
-  const principalId = typeof body?.principalId === "string" ? body.principalId.trim() : "";
-  const principalToken =
-    typeof body?.principalToken === "string" ? body.principalToken.trim() : "";
+  const citizenId = typeof body?.citizenId === "string" ? body.citizenId.trim() : "";
+  const citizenToken =
+    typeof body?.citizenToken === "string" ? body.citizenToken.trim() : "";
   const roomDisplayName =
     typeof body?.roomDisplayName === "string" ? body.roomDisplayName.trim() : "";
   const nickname = typeof body?.nickname === "string" ? body.nickname.trim() : "";
-  const principal = principalId
-    ? (db.select().from(principals).where(eq(principals.id, principalId)).get() as Principal | undefined)
+  const principal = citizenId
+    ? (db.select().from(citizens).where(eq(citizens.id, citizenId)).get() as Citizen | undefined)
     : undefined;
 
-  if (principalId && !principal) {
-    return c.json({ error: "principal not found" }, 404);
+  if (citizenId && !principal) {
+    return c.json({ error: "citizen not found" }, 404);
   }
 
-  if (principalId && !principalToken) {
-    return c.json({ error: "principalToken is required" }, 400);
+  if (citizenId && !citizenToken) {
+    return c.json({ error: "citizenToken is required" }, 400);
   }
 
-  if (principalId && !verifyPrincipalToken(principalToken, principalId)) {
-    return c.json({ error: "invalid principal token" }, 403);
+  if (citizenId && !verifyCitizenToken(citizenToken, citizenId)) {
+    return c.json({ error: "invalid citizen token" }, 403);
   }
 
   if (principal) {
     const existingMembership = db
       .select()
       .from(members)
-      .where(and(eq(members.roomId, roomId), eq(members.principalId, principal.id)))
+      .where(and(eq(members.roomId, roomId), eq(members.citizenId, principal.id)))
       .get();
 
     if (!existingMembership) {
@@ -1036,7 +1036,7 @@ roomRoutes.post("/api/rooms/:roomId/join", async (c) => {
   });
 
   if (!displayName) {
-    return c.json({ error: "principalId or nickname is required" }, 400);
+    return c.json({ error: "citizenId or nickname is required" }, 400);
   }
 
   if (!isValidDisplayName(displayName)) {
@@ -1072,26 +1072,26 @@ roomRoutes.post("/api/invites/:inviteToken/join", async (c) => {
   }
 
   const body = await c.req.json().catch(() => null);
-  const principalId = typeof body?.principalId === "string" ? body.principalId.trim() : "";
-  const principalToken =
-    typeof body?.principalToken === "string" ? body.principalToken.trim() : "";
+  const citizenId = typeof body?.citizenId === "string" ? body.citizenId.trim() : "";
+  const citizenToken =
+    typeof body?.citizenToken === "string" ? body.citizenToken.trim() : "";
   const roomDisplayName =
     typeof body?.roomDisplayName === "string" ? body.roomDisplayName.trim() : "";
   const nickname = typeof body?.nickname === "string" ? body.nickname.trim() : "";
-  const principal = principalId
-    ? (db.select().from(principals).where(eq(principals.id, principalId)).get() as Principal | undefined)
+  const principal = citizenId
+    ? (db.select().from(citizens).where(eq(citizens.id, citizenId)).get() as Citizen | undefined)
     : undefined;
 
-  if (principalId && !principal) {
-    return c.json({ error: "principal not found" }, 404);
+  if (citizenId && !principal) {
+    return c.json({ error: "citizen not found" }, 404);
   }
 
-  if (principalId && !principalToken) {
-    return c.json({ error: "principalToken is required" }, 400);
+  if (citizenId && !citizenToken) {
+    return c.json({ error: "citizenToken is required" }, 400);
   }
 
-  if (principalId && !verifyPrincipalToken(principalToken, principalId)) {
-    return c.json({ error: "invalid principal token" }, 403);
+  if (citizenId && !verifyCitizenToken(citizenToken, citizenId)) {
+    return c.json({ error: "invalid citizen token" }, 403);
   }
 
   const displayName = resolveDisplayName({
@@ -1101,7 +1101,7 @@ roomRoutes.post("/api/invites/:inviteToken/join", async (c) => {
   });
 
   if (!displayName) {
-    return c.json({ error: "principalId or nickname is required" }, 400);
+    return c.json({ error: "citizenId or nickname is required" }, 400);
   }
 
   if (!isValidDisplayName(displayName)) {
@@ -1130,26 +1130,26 @@ roomRoutes.post("/api/rooms/:roomId/leave", async (c) => {
   }
 
   const body = await c.req.json().catch(() => null);
-  const principalId = typeof body?.principalId === "string" ? body.principalId.trim() : "";
-  const principalToken =
-    typeof body?.principalToken === "string" ? body.principalToken.trim() : "";
+  const citizenId = typeof body?.citizenId === "string" ? body.citizenId.trim() : "";
+  const citizenToken =
+    typeof body?.citizenToken === "string" ? body.citizenToken.trim() : "";
 
-  if (!principalId || !principalToken) {
-    return c.json({ error: "principalId and principalToken are required" }, 400);
+  if (!citizenId || !citizenToken) {
+    return c.json({ error: "citizenId and citizenToken are required" }, 400);
   }
 
-  if (!verifyPrincipalToken(principalToken, principalId)) {
-    return c.json({ error: "invalid principal token" }, 403);
+  if (!verifyCitizenToken(citizenToken, citizenId)) {
+    return c.json({ error: "invalid citizen token" }, 403);
   }
 
   const principal = db
     .select()
-    .from(principals)
-    .where(eq(principals.id, principalId))
-    .get() as Principal | undefined;
+    .from(citizens)
+    .where(eq(citizens.id, citizenId))
+    .get() as Citizen | undefined;
 
   if (!principal) {
-    return c.json({ error: "principal not found" }, 404);
+    return c.json({ error: "citizen not found" }, 404);
   }
 
   const result = leaveRoomByPrincipal({ room: room as Room, roomId, principal });
@@ -1175,13 +1175,13 @@ roomRoutes.post("/api/rooms/:roomId/pull", async (c) => {
   const actorMemberId =
     typeof body?.actorMemberId === "string" ? body.actorMemberId.trim() : "";
   const wsToken = typeof body?.wsToken === "string" ? body.wsToken.trim() : "";
-  const targetPrincipalId =
-    typeof body?.targetPrincipalId === "string" ? body.targetPrincipalId.trim() : "";
+  const targetCitizenId =
+    typeof body?.targetCitizenId === "string" ? body.targetCitizenId.trim() : "";
   const roomDisplayName =
     typeof body?.roomDisplayName === "string" ? body.roomDisplayName.trim() : "";
 
-  if (!actorMemberId || !wsToken || !targetPrincipalId) {
-    return c.json({ error: "actorMemberId, wsToken and targetPrincipalId are required" }, 400);
+  if (!actorMemberId || !wsToken || !targetCitizenId) {
+    return c.json({ error: "actorMemberId, wsToken and targetCitizenId are required" }, 400);
   }
 
   const actor = db
@@ -1200,22 +1200,22 @@ roomRoutes.post("/api/rooms/:roomId/pull", async (c) => {
 
   const targetPrincipal = db
     .select()
-    .from(principals)
-    .where(eq(principals.id, targetPrincipalId))
-    .get() as Principal | undefined;
+    .from(citizens)
+    .where(eq(citizens.id, targetCitizenId))
+    .get() as Citizen | undefined;
 
   if (!targetPrincipal) {
-    return c.json({ error: "target principal not found" }, 404);
+    return c.json({ error: "target citizen not found" }, 404);
   }
 
   const existingMembership = db
     .select()
     .from(members)
-    .where(and(eq(members.roomId, roomId), eq(members.principalId, targetPrincipalId)))
+    .where(and(eq(members.roomId, roomId), eq(members.citizenId, targetCitizenId)))
     .get();
 
   if (existingMembership) {
-    return c.json({ error: "principal already in room" }, 409);
+    return c.json({ error: "citizen already in room" }, 409);
   }
 
   const displayName = roomDisplayName || targetPrincipal.globalDisplayName;

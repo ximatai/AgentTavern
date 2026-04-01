@@ -5,41 +5,41 @@ import type { RealtimeEvent } from "@agent-tavern/shared";
 import { WebSocket } from "ws";
 
 import { db } from "./db/client";
-import { members, principals } from "./db/schema";
+import { members, citizens } from "./db/schema";
 import { now } from "./routes/support";
 
 type ConnectionContext = {
   memberId?: string;
   roomId?: string;
-  principalId?: string;
+  citizenId?: string;
 };
 
 const roomSockets = new Map<string, Set<WebSocket>>();
-const principalSockets = new Map<string, Set<WebSocket>>();
+const citizenSockets = new Map<string, Set<WebSocket>>();
 const socketContexts = new Map<WebSocket, ConnectionContext>();
 const wsTokens = new Map<string, { memberId: string; roomId: string; active: boolean }>();
-const principalTokens = new Map<string, { principalId: string; active: boolean }>();
+const citizenTokens = new Map<string, { citizenId: string; active: boolean }>();
 
-function syncPrincipalPresence(principalId: string, status: "online" | "offline"): void {
-  db.update(principals).set({ status }).where(eq(principals.id, principalId)).run();
-  db.update(members).set({ presenceStatus: status }).where(eq(members.principalId, principalId)).run();
+function syncCitizenPresence(citizenId: string, status: "online" | "offline"): void {
+  db.update(citizens).set({ status }).where(eq(citizens.id, citizenId)).run();
+  db.update(members).set({ presenceStatus: status }).where(eq(members.citizenId, citizenId)).run();
 }
 
 function broadcastLobbyPresenceChanged(
-  changedPrincipalId: string,
+  changedCitizenId: string,
   status: "online" | "offline",
 ): void {
   const serialized = JSON.stringify({
     type: "lobby.presence.changed",
-    principalId: changedPrincipalId,
+    citizenId: changedCitizenId,
     timestamp: now(),
     payload: {
-      changedPrincipalId,
+      changedCitizenId,
       status,
     },
   } satisfies RealtimeEvent);
 
-  for (const sockets of principalSockets.values()) {
+  for (const sockets of citizenSockets.values()) {
     for (const socket of sockets) {
       if (socket.readyState === WebSocket.OPEN) {
         socket.send(serialized);
@@ -60,21 +60,21 @@ export function issueWsToken(memberId: string, roomId: string): string {
   return token;
 }
 
-export function issuePrincipalToken(principalId: string): string {
+export function issueCitizenToken(citizenId: string): string {
   const token = crypto.randomUUID();
 
-  principalTokens.set(token, {
-    principalId,
+  citizenTokens.set(token, {
+    citizenId,
     active: true,
   });
 
   return token;
 }
 
-export function verifyPrincipalToken(principalToken: string, principalId: string): boolean {
-  const tokenEntry = principalTokens.get(principalToken);
+export function verifyCitizenToken(citizenToken: string, citizenId: string): boolean {
+  const tokenEntry = citizenTokens.get(citizenToken);
 
-  return Boolean(tokenEntry && tokenEntry.active && tokenEntry.principalId === principalId);
+  return Boolean(tokenEntry && tokenEntry.active && tokenEntry.citizenId === citizenId);
 }
 
 export function verifyWsToken(
@@ -100,10 +100,10 @@ export function revokeWsTokensForMember(memberId: string, roomId: string): void 
   }
 }
 
-export function revokePrincipalTokensForPrincipal(principalId: string): void {
-  for (const [token, entry] of principalTokens.entries()) {
-    if (entry.principalId === principalId) {
-      principalTokens.set(token, { ...entry, active: false });
+export function revokeCitizenTokensForCitizen(citizenId: string): void {
+  for (const [token, entry] of citizenTokens.entries()) {
+    if (entry.citizenId === citizenId) {
+      citizenTokens.set(token, { ...entry, active: false });
     }
   }
 }
@@ -113,43 +113,43 @@ export function registerSocket(socket: WebSocket, request: IncomingMessage): boo
   const roomId = url.searchParams.get("roomId");
   const memberId = url.searchParams.get("memberId");
   const wsToken = url.searchParams.get("wsToken");
-  const principalId = url.searchParams.get("principalId");
-  const principalToken = url.searchParams.get("principalToken");
+  const citizenId = url.searchParams.get("citizenId");
+  const citizenToken = url.searchParams.get("citizenToken");
 
-  if (principalId && principalToken) {
-    const tokenEntry = principalTokens.get(principalToken);
+  if (citizenId && citizenToken) {
+    const tokenEntry = citizenTokens.get(citizenToken);
 
-    if (!tokenEntry || !tokenEntry.active || tokenEntry.principalId !== principalId) {
-      socket.close(1008, "invalid principal token");
+    if (!tokenEntry || !tokenEntry.active || tokenEntry.citizenId !== citizenId) {
+      socket.close(1008, "invalid citizen token");
       return false;
     }
 
-    let sockets = principalSockets.get(principalId);
+    let sockets = citizenSockets.get(citizenId);
 
     if (!sockets) {
       sockets = new Set();
-      principalSockets.set(principalId, sockets);
+      citizenSockets.set(citizenId, sockets);
     }
 
     sockets.add(socket);
-    socketContexts.set(socket, { principalId });
-    syncPrincipalPresence(principalId, "online");
-    broadcastLobbyPresenceChanged(principalId, "online");
+    socketContexts.set(socket, { citizenId });
+    syncCitizenPresence(citizenId, "online");
+    broadcastLobbyPresenceChanged(citizenId, "online");
 
     socket.on("close", () => {
       const context = socketContexts.get(socket);
 
-      if (!context?.principalId) {
+      if (!context?.citizenId) {
         return;
       }
 
-      const principalSet = principalSockets.get(context.principalId);
-      principalSet?.delete(socket);
+      const citizenSet = citizenSockets.get(context.citizenId);
+      citizenSet?.delete(socket);
 
-      if (principalSet?.size === 0) {
-        principalSockets.delete(context.principalId);
-        syncPrincipalPresence(context.principalId, "offline");
-        broadcastLobbyPresenceChanged(context.principalId, "offline");
+      if (citizenSet?.size === 0) {
+        citizenSockets.delete(context.citizenId);
+        syncCitizenPresence(context.citizenId, "offline");
+        broadcastLobbyPresenceChanged(context.citizenId, "offline");
       }
 
       socketContexts.delete(socket);
@@ -221,8 +221,8 @@ export function broadcastToRoom(roomId: string, event: RealtimeEvent): void {
   }
 }
 
-export function broadcastToPrincipal(principalId: string, event: RealtimeEvent): void {
-  const sockets = principalSockets.get(principalId);
+export function broadcastToCitizen(citizenId: string, event: RealtimeEvent): void {
+  const sockets = citizenSockets.get(citizenId);
 
   if (!sockets) {
     return;
@@ -247,6 +247,6 @@ export function isMemberOnline(memberId: string, roomId: string): boolean {
   return false;
 }
 
-export function isPrincipalOnline(principalId: string): boolean {
-  return (principalSockets.get(principalId)?.size ?? 0) > 0;
+export function isCitizenOnline(citizenId: string): boolean {
+  return (citizenSockets.get(citizenId)?.size ?? 0) > 0;
 }

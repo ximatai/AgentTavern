@@ -74,6 +74,24 @@ export function createStreamDeltaEvent(
   };
 }
 
+export function createReasoningDeltaEvent(
+  roomId: string,
+  sessionId: string,
+  messageId: string,
+  delta: string,
+): RealtimeEvent {
+  return {
+    type: "agent.stream.reasoning",
+    roomId,
+    timestamp: now(),
+    payload: {
+      sessionId,
+      messageId,
+      delta,
+    },
+  };
+}
+
 export function createMessageCreatedEvent(roomId: string, message: Message): RealtimeEvent {
   return {
     type: "message.created",
@@ -167,7 +185,7 @@ export function commitSessionMessage(params: {
     sender: {
       id: params.session.agentMemberId,
       roomId: params.session.roomId,
-      principalId: null,
+      citizenId: null,
       type: "agent",
       roleKind: "independent",
       displayName: "",

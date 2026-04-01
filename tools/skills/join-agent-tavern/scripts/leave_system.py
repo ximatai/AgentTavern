@@ -40,7 +40,7 @@ def main() -> int:
     display_name, display_name_source = resolve_display_name(args.display_name, cwd, login_key, backend_type)
 
     bootstrap_status, bootstrap_data = post_json(
-        f"{base_url}/api/principals/bootstrap",
+        f"{base_url}/api/citizens/bootstrap",
         {
             "kind": "agent",
             "loginKey": login_key,
@@ -68,11 +68,11 @@ def main() -> int:
         }, ensure_ascii=True))
         return 1
 
-    principal_id = bootstrap_data.get("principalId", "")
+    citizen_id = bootstrap_data.get("citizenId", "")
     leave_status, leave_data = post_json(
-        f"{base_url}/api/principals/{principal_id}/leave-system",
+        f"{base_url}/api/citizens/{citizen_id}/leave-system",
         {
-            "principalToken": bootstrap_data.get("principalToken", ""),
+            "citizenToken": bootstrap_data.get("citizenToken", ""),
         },
     )
     ok = 200 <= leave_status < 300
@@ -82,7 +82,7 @@ def main() -> int:
         "leftSystem": ok and bool(leave_data.get("leftSystem")),
         "status": leave_status,
         "baseUrl": base_url,
-        "principalId": principal_id,
+        "citizenId": citizen_id,
         "backendType": backend_type,
         "backendThreadId": thread_id,
         "threadIdSource": thread_id_source,

@@ -3,6 +3,7 @@ import type { AgentSession, AgentSessionKind, PublicMessage } from "@agent-taver
 export type SessionStream = PublicMessage & {
   sessionId: string;
   agentMemberId: string;
+  reasoningContent?: string;
 };
 
 export type SessionActor = {
@@ -14,6 +15,7 @@ export type SessionSnapshot = Omit<AgentSession, "kind"> & {
   kindIsProvisional?: boolean;
   lastError?: string | null;
   outputMessageId?: string | null;
+  reasoningText?: string;
 };
 
 export type RecentRoomRecord = {

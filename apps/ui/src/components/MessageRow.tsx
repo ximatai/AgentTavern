@@ -23,6 +23,7 @@ type MessageItem = PublicMessage | SessionStream;
 
 type MessageRowProps = {
   message: MessageItem;
+  reasoningContent: string;
   authorLabel: string;
   tone: "human" | "agent" | "notice" | "approval";
   isSelf: boolean;
@@ -38,6 +39,32 @@ type MessageRowProps = {
   onReply: (messageId: string) => void;
   memberMap: Map<string, PublicMember>;
 };
+
+function ReasoningBlock({
+  reasoningContent,
+  isStreaming,
+}: {
+  reasoningContent: string;
+  isStreaming: boolean;
+}) {
+  const { t } = useTranslation();
+  if (!reasoningContent) return null;
+
+  return (
+    <details className="reasoning-block">
+      <summary className="reasoning-summary">
+        <span>{t("chat.reasoning")}</span>
+        {isStreaming ? <span className="reasoning-status">{t("chat.reasoningStreaming")}</span> : null}
+      </summary>
+      <div className="reasoning-content">
+        <p>
+          {reasoningContent}
+          {isStreaming && <span className="stream-cursor">▌</span>}
+        </p>
+      </div>
+    </details>
+  );
+}
 
 function formatTime(iso: string): string {
   const d = new Date(iso);
@@ -155,6 +182,7 @@ function grantLabel(duration: ApprovalGrantDuration, t: (key: string) => string)
 
 export function MessageRow({
   message,
+  reasoningContent,
   authorLabel,
   tone,
   isSelf,
@@ -296,6 +324,7 @@ export function MessageRow({
                   <span>{replyTarget.content.slice(0, 60)}</span>
                 </button>
               )}
+              <ReasoningBlock reasoningContent={reasoningContent} isStreaming={isStreaming} />
               <StreamContent content={message.content} isStreaming={isStreaming} />
               <MessageAttachments attachments={message.attachments} />
             </div>
@@ -353,6 +382,7 @@ export function MessageRow({
               <span>{replyTarget.content.slice(0, 60)}</span>
             </button>
           )}
+          <ReasoningBlock reasoningContent={reasoningContent} isStreaming={isStreaming} />
           <StreamContent content={message.content} isStreaming={isStreaming} />
           <MessageAttachments attachments={message.attachments} />
         </div>

@@ -30,10 +30,10 @@ import {
   useSystemThemeListener,
 } from "./stores/settings";
 import { setMessageApi } from "./lib/feedback";
-import { usePrincipalStore } from "./stores/principal";
+import { useCitizenStore } from "./stores/citizen";
 import { useRoomStore } from "./stores/room";
 import { useRoomWebSocket } from "./hooks/useRoomWebSocket";
-import { usePrincipalWebSocket } from "./hooks/usePrincipalWebSocket";
+import { useCitizenWebSocket } from "./hooks/useCitizenWebSocket";
 import { usePollingSync } from "./hooks/usePollingSync";
 
 function FeedbackBridge() {
@@ -48,13 +48,13 @@ function FeedbackBridge() {
 
 function App() {
   const { t } = useTranslation();
-  const principal = usePrincipalStore((s) => s.principal);
+  const principal = useCitizenStore((s) => s.principal);
   const room = useRoomStore((s) => s.room);
   const themeId = useSettingsStore((s) => s.themeId);
   const antdThemeConfig = getAntdThemeConfig(themeId);
   useSystemThemeListener();
   useRoomWebSocket();
-  usePrincipalWebSocket();
+  useCitizenWebSocket();
   usePollingSync();
 
   useEffect(() => {
@@ -62,7 +62,7 @@ function App() {
   }, [themeId]);
 
   useEffect(() => {
-    usePrincipalStore.getState().restoreFromStorage();
+    useCitizenStore.getState().restoreFromStorage();
   }, []);
 
   useEffect(() => {

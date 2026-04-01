@@ -13,17 +13,48 @@ export type OpenAICompatibleFetch = typeof fetch;
 
 type OpenAICompatibleChunk = {
   id?: string;
+  error?: string | { message?: string; type?: string; code?: string } | Record<string, unknown>;
   choices?: Array<{
     delta?: {
       content?: string | Array<{ type?: string; text?: string }>;
+      reasoning_content?: string | Array<{ type?: string; text?: string }>;
     };
+    message?: {
+      content?: string | Array<{ type?: string; text?: string }>;
+      reasoning_content?: string | Array<{ type?: string; text?: string }>;
+    };
+    text?: string;
     finish_reason?: string | null;
   }>;
 };
 
-function extractDeltaText(chunk: OpenAICompatibleChunk): string {
-  const content = chunk.choices?.[0]?.delta?.content;
+function extractErrorText(errorValue: OpenAICompatibleChunk["error"]): string {
+  if (!errorValue) {
+    return "";
+  }
 
+  if (typeof errorValue === "string") {
+    return errorValue.trim();
+  }
+
+  if (typeof errorValue === "object") {
+    if ("message" in errorValue && typeof errorValue.message === "string" && errorValue.message.trim()) {
+      return errorValue.message.trim();
+    }
+
+    try {
+      return JSON.stringify(errorValue);
+    } catch {
+      return "";
+    }
+  }
+
+  return "";
+}
+
+function extractTextContent(
+  content: string | Array<{ type?: string; text?: string }> | undefined,
+): string {
   if (typeof content === "string") {
     return content;
   }
@@ -35,6 +66,32 @@ function extractDeltaText(chunk: OpenAICompatibleChunk): string {
   }
 
   return "";
+}
+
+function extractDeltaText(chunk: OpenAICompatibleChunk): string {
+  return extractTextContent(chunk.choices?.[0]?.delta?.content);
+}
+
+function extractDeltaReasoningText(chunk: OpenAICompatibleChunk): string {
+  return extractTextContent(chunk.choices?.[0]?.delta?.reasoning_content);
+}
+
+function extractNonStreamingText(chunk: OpenAICompatibleChunk): string {
+  const choice = chunk.choices?.[0];
+  if (!choice) {
+    return "";
+  }
+
+  return extractTextContent(choice.message?.content) || (typeof choice.text === "string" ? choice.text : "");
+}
+
+function extractNonStreamingReasoningText(chunk: OpenAICompatibleChunk): string {
+  const choice = chunk.choices?.[0];
+  if (!choice) {
+    return "";
+  }
+
+  return extractTextContent(choice.message?.reasoning_content);
 }
 
 function buildErrorMessage(status: number, bodyText: string): string {
@@ -93,6 +150,43 @@ export function createOpenAICompatibleAdapter(
           return;
         }
 
+        const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+        if (!contentType.includes("text/event-stream")) {
+          const bodyText = await response.text().catch(() => "");
+          if (!bodyText.trim()) {
+            yield { type: "completed", finalText: "" };
+            return;
+          }
+
+          let parsed: OpenAICompatibleChunk;
+          try {
+            parsed = JSON.parse(bodyText) as OpenAICompatibleChunk;
+          } catch {
+            yield {
+              type: "failed",
+              error: `openai-compatible backend emitted invalid JSON: ${bodyText.slice(0, 200)}`,
+            };
+            return;
+          }
+
+          const errorText = extractErrorText(parsed.error);
+          if (errorText) {
+            yield {
+              type: "failed",
+              error: `openai-compatible backend error: ${errorText}`,
+            };
+            return;
+          }
+
+          const reasoningText = extractNonStreamingReasoningText(parsed);
+          yield {
+            type: "completed",
+            finalText: extractNonStreamingText(parsed),
+            ...(reasoningText ? { reasoningText } : {}),
+          };
+          return;
+        }
+
         const decoder = new TextDecoder();
         const reader = response.body.getReader();
         let buffer = "";
@@ -136,10 +230,24 @@ export function createOpenAICompatibleAdapter(
               return;
             }
 
+            const errorText = extractErrorText(parsed.error);
+            if (errorText) {
+              yield {
+                type: "failed",
+                error: `openai-compatible backend error: ${errorText}`,
+              };
+              return;
+            }
+
             const text = extractDeltaText(parsed);
             if (text) {
               streamedAny = true;
               yield { type: "delta", text };
+            }
+
+            const reasoning = extractDeltaReasoningText(parsed);
+            if (reasoning) {
+              yield { type: "reasoning", text: reasoning };
             }
 
             if (parsed.choices?.[0]?.finish_reason) {

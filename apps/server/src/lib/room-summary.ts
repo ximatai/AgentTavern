@@ -46,6 +46,23 @@ export function normalizeRoomSummaryOutput(params: {
   return extractRoomSummaryBlock(params.visibleContent);
 }
 
+export function resolveVisibleReplyForSummaryOnly(params: {
+  visibleContent: string;
+  summaryText?: string | null;
+  allowSilentCompletion: boolean;
+}): string {
+  const trimmed = params.visibleContent.trim();
+  if (trimmed) {
+    return trimmed;
+  }
+
+  if (params.allowSilentCompletion) {
+    return "";
+  }
+
+  return params.summaryText?.trim() ? "收到" : "";
+}
+
 export function getRoomSummary(roomId: string): RoomSummary | null {
   const row = db
     .select()

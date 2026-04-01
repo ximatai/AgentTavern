@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 
-import { createPrincipalSocket, isRealtimeEvent } from "../api/ws";
-import { usePrincipalStore } from "../stores/principal";
+import { createCitizenSocket, isRealtimeEvent } from "../api/ws";
+import { useCitizenStore } from "../stores/citizen";
 import { useRoomStore } from "../stores/room";
 
 /**
@@ -11,12 +11,12 @@ import { useRoomStore } from "../stores/room";
  * Handles `private_assistants.changed` events by signaling the principal
  * store so consumers (e.g. AssistantManagementModal) can re-fetch.
  */
-export function usePrincipalWebSocket() {
+export function useCitizenWebSocket() {
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const reconnectAttemptRef = useRef(0);
   const recoveringTokenRef = useRef(false);
-  const principal = usePrincipalStore((s) => s.principal);
+  const principal = useCitizenStore((s) => s.principal);
 
   useEffect(() => {
     if (!principal) {
@@ -47,9 +47,9 @@ export function usePrincipalWebSocket() {
     const connect = () => {
       if (disposed) return;
 
-      const socket = createPrincipalSocket(
-        principal.principalId,
-        principal.principalToken,
+      const socket = createCitizenSocket(
+        principal.citizenId,
+        principal.citizenToken,
       );
       socketRef.current = socket;
 
@@ -73,7 +73,7 @@ export function usePrincipalWebSocket() {
 
         if (event.code === 1008 && !recoveringTokenRef.current) {
           recoveringTokenRef.current = true;
-          void usePrincipalStore.getState().restoreFromStorage();
+          void useCitizenStore.getState().restoreFromStorage();
           return;
         }
 
@@ -90,7 +90,7 @@ export function usePrincipalWebSocket() {
         if (!isRealtimeEvent(raw)) return;
 
         if (raw.type === "private_assistants.changed") {
-          usePrincipalStore.getState().markPrivateAssetsChanged();
+          useCitizenStore.getState().markPrivateAssetsChanged();
           return;
         }
 

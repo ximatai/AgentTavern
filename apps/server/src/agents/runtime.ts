@@ -3,6 +3,7 @@ import { and, desc, eq, inArray, ne, or } from "drizzle-orm";
 import {
   completedEventToAction,
   createLocalProcessAdapter,
+  createOpenAICompatibleAdapter,
   type AgentAdapter,
   type AgentMessageAction,
   type AgentRunInput,
@@ -16,6 +17,7 @@ import type {
   Member,
   Message,
   MessageAttachment,
+  OpenAICompatibleBackendConfig,
   Room,
 } from "@agent-tavern/shared";
 
@@ -27,15 +29,16 @@ import {
   localBridges,
   members,
   messages,
-  principals,
+  citizens,
   privateAssistants,
   rooms,
 } from "../db/schema";
 import { resolveBindingForMember } from "../lib/agent-binding-resolution";
 import { expireStalePendingBridgeTasks } from "../lib/bridge-task-maintenance";
 import { createId } from "../lib/id";
+import { backendRequiresBridge } from "../lib/member-runtime";
 import { insertMessage } from "../lib/message-records";
-import { getRoomSummary, normalizeRoomSummaryOutput } from "../lib/room-summary";
+import { getRoomSummary, normalizeRoomSummaryOutput, resolveVisibleReplyForSummaryOnly } from "../lib/room-summary";
 import { isVisibleRoomMember } from "../lib/member-visibility";
 import {
   MAX_MESSAGE_ATTACHMENTS,
@@ -54,6 +57,7 @@ import { toPublicMessage } from "../lib/public";
 import { broadcastToRoom } from "../realtime";
 import {
   completeSessionAction,
+  createReasoningDeltaEvent,
   createStreamDeltaEvent,
   failSession,
   markSessionRunning,
@@ -122,7 +126,7 @@ function parseLocalProcessConfig(raw: string | null): LocalProcessAdapterConfig 
 
 function toAgentBinding(row: {
   id: string;
-  principalId: string | null;
+  citizenId: string | null;
   privateAssistantId: string | null;
   bridgeId: string | null;
   backendType: string;
@@ -150,7 +154,7 @@ function toRoom(row: {
 function toMember(row: {
   id: string;
   roomId: string;
-  principalId: string | null;
+  citizenId: string | null;
   type: string;
   roleKind: string;
   displayName: string;
@@ -181,17 +185,22 @@ function toAgentSession(row: {
 }
 
 function resolveLocalAdapter(agent: Member): AgentAdapter | null {
-  if (agent.adapterType !== "local_process") {
-    return null;
+  if (agent.adapterType === "local_process") {
+    const config = parseLocalProcessConfig(agent.adapterConfig);
+
+    if (!config) {
+      return null;
+    }
+
+    return createLocalProcessAdapter(config);
   }
 
-  const config = parseLocalProcessConfig(agent.adapterConfig);
-
-  if (!config) {
-    return null;
+  if (agent.adapterType === "openai_compatible") {
+    const config = resolveDirectOpenAICompatibleConfig(agent);
+    return config ? createOpenAICompatibleAdapter(config) : null;
   }
 
-  return createLocalProcessAdapter(config);
+  return null;
 }
 
 function resolveBridgeBackendConfig(agent: Member, binding: AgentBinding): string | null {
@@ -208,16 +217,43 @@ function resolveBridgeBackendConfig(agent: Member, binding: AgentBinding): strin
     return assistant?.backendConfig ?? null;
   }
 
-  if (agent.principalId) {
+  if (agent.citizenId) {
     const principal = db
-      .select({ backendConfig: principals.backendConfig })
-      .from(principals)
-      .where(eq(principals.id, agent.principalId))
+      .select({ backendConfig: citizens.backendConfig })
+      .from(citizens)
+      .where(eq(citizens.id, agent.citizenId))
       .get();
     return principal?.backendConfig ?? null;
   }
 
   return null;
+}
+
+function resolveDirectOpenAICompatibleConfig(agent: Member): OpenAICompatibleBackendConfig | null {
+  const rawConfig = agent.sourcePrivateAssistantId
+    ? db
+        .select({ backendConfig: privateAssistants.backendConfig })
+        .from(privateAssistants)
+        .where(eq(privateAssistants.id, agent.sourcePrivateAssistantId))
+        .get()?.backendConfig ?? null
+    : agent.citizenId
+      ? db
+          .select({ backendConfig: citizens.backendConfig })
+          .from(citizens)
+          .where(eq(citizens.id, agent.citizenId))
+          .get()?.backendConfig ?? null
+      : null;
+
+  if (!rawConfig) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(rawConfig) as OpenAICompatibleBackendConfig;
+    return typeof parsed.baseUrl === "string" && typeof parsed.model === "string" ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 function buildPrompt(input: {
@@ -574,7 +610,7 @@ async function runAgentSession(sessionId: string): Promise<void> {
     contextMessages,
   };
 
-  if (typedBinding?.backendType && typedBinding.backendType !== "local_process") {
+  if (typedBinding?.backendType && backendRequiresBridge(typedBinding.backendType)) {
     if (!typedBinding.bridgeId || typedBinding.status !== "active") {
       failSession(
         typedSession,
@@ -633,6 +669,7 @@ async function runAgentSession(sessionId: string): Promise<void> {
 
   const runningSession = markSessionRunning(typedSession);
   let finalText = "";
+  let reasoningText = "";
   let completedAction: AgentMessageAction | null = null;
   let failedError: string | null = null;
 
@@ -647,12 +684,28 @@ async function runAgentSession(sessionId: string): Promise<void> {
         continue;
       }
 
+      if (event.type === "reasoning") {
+        reasoningText += event.text;
+        broadcastToRoom(
+          session.roomId,
+          createReasoningDeltaEvent(session.roomId, session.id, outputMessageId, event.text),
+        );
+        continue;
+      }
+
       if (event.type === "failed") {
         failedError = event.error;
         break;
       }
 
       if (event.type === "completed") {
+        if (event.reasoningText && !reasoningText) {
+          reasoningText = event.reasoningText;
+          broadcastToRoom(
+            session.roomId,
+            createReasoningDeltaEvent(session.roomId, session.id, outputMessageId, event.reasoningText),
+          );
+        }
         completedAction = completedEventToAction({
           event,
           streamedText: finalText,
@@ -668,15 +721,19 @@ async function runAgentSession(sessionId: string): Promise<void> {
     return;
   }
 
-  const parsedSummary = isSecretarySession(typedRoom, runningSession) &&
-      typedRoom.secretaryMode === "coordinate_and_summarize"
-    ? normalizeRoomSummaryOutput({
-        visibleContent: completedAction?.content ?? finalText,
-        summaryText: completedAction?.summaryText ?? null,
-      })
-    : { visibleContent: (completedAction?.content ?? finalText).trim(), summaryText: null };
-  const committedText = parsedSummary.visibleContent.trim();
+  const parsedSummary = normalizeRoomSummaryOutput({
+    visibleContent: completedAction?.content ?? finalText,
+    summaryText: isSecretarySession(typedRoom, runningSession) &&
+        typedRoom.secretaryMode === "coordinate_and_summarize"
+      ? completedAction?.summaryText ?? null
+      : null,
+  });
   const canCompleteSilently = allowsSilentCompletion(runningSession);
+  const committedText = resolveVisibleReplyForSummaryOnly({
+    visibleContent: parsedSummary.visibleContent,
+    summaryText: parsedSummary.summaryText,
+    allowSilentCompletion: canCompleteSilently,
+  });
   const generatedAttachments = Array.isArray(completedAction?.attachments)
     ? createGeneratedAttachments({
         roomId: typedSession.roomId,

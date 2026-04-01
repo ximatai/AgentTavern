@@ -31,7 +31,7 @@ runMigrations();
 const { app } = appModule;
 const { db } = dbClient;
   const {
-    principals,
+    citizens,
     rooms,
     members,
     messages,
@@ -45,9 +45,10 @@ const { db } = dbClient;
   localBridges,
   messageAttachments,
   privateAssistants,
+  serverConfigs,
 } = schema;
 const { createInviteToken } = ids;
-const { issuePrincipalToken, issueWsToken, registerSocket } = realtime;
+const { issueCitizenToken, issueWsToken, registerSocket } = realtime;
 
 function seedRoom(params: {
   roomId: string;
@@ -88,7 +89,7 @@ function markMemberOnline(memberId: string, roomId: string, wsToken: string): ()
   };
 }
 
-function markPrincipalOnline(principalId: string, principalToken: string): () => void {
+function markCitizenOnline(citizenId: string, citizenToken: string): () => void {
   const listeners = new Map<string, () => void>();
   const fakeSocket = {
     readyState: WebSocket.OPEN,
@@ -101,7 +102,7 @@ function markPrincipalOnline(principalId: string, principalToken: string): () =>
   };
 
   registerSocket(fakeSocket as never, {
-    url: `/?principalId=${principalId}&principalToken=${principalToken}`,
+    url: `/?citizenId=${citizenId}&citizenToken=${citizenToken}`,
   } as never);
 
   return () => {
@@ -171,7 +172,7 @@ test("a human room member can configure an independent agent as secretary", asyn
     {
       id: "mem_human_secretary_actor",
       roomId,
-      principalId: null,
+      citizenId: null,
       type: "human",
       roleKind: "none",
       displayName: "Alice",
@@ -187,7 +188,7 @@ test("a human room member can configure an independent agent as secretary", asyn
     {
       id: "mem_agent_secretary",
       roomId,
-      principalId: null,
+      citizenId: null,
       type: "agent",
       roleKind: "independent",
       displayName: "scribe",
@@ -244,7 +245,7 @@ test("room secretary must be an active independent agent", async () => {
     {
       id: "mem_human_secretary_actor_2",
       roomId,
-      principalId: null,
+      citizenId: null,
       type: "human",
       roleKind: "none",
       displayName: "Alice",
@@ -260,7 +261,7 @@ test("room secretary must be an active independent agent", async () => {
     {
       id: "mem_assistant_secretary_bad",
       roomId,
-      principalId: null,
+      citizenId: null,
       type: "agent",
       roleKind: "assistant",
       displayName: "helper",
@@ -311,7 +312,7 @@ test("room secretary observes human room messages without an explicit mention", 
     {
       id: "mem_human_secretary_requester",
       roomId,
-      principalId: null,
+      citizenId: null,
       type: "human",
       roleKind: "none",
       displayName: "Alice",
@@ -327,7 +328,7 @@ test("room secretary observes human room messages without an explicit mention", 
     {
       id: "mem_secretary_observer",
       roomId,
-      principalId: null,
+      citizenId: null,
       type: "agent",
       roleKind: "independent",
       displayName: "Scribe",
@@ -407,7 +408,7 @@ test("room secretary can silently complete an observe run", async () => {
     {
       id: "mem_human_secretary_silent",
       roomId,
-      principalId: null,
+      citizenId: null,
       type: "human",
       roleKind: "none",
       displayName: "Alice",
@@ -423,7 +424,7 @@ test("room secretary can silently complete an observe run", async () => {
     {
       id: "mem_secretary_silent",
       roomId,
-      principalId: null,
+      citizenId: null,
       type: "agent",
       roleKind: "independent",
       displayName: "Scribe",
@@ -496,7 +497,7 @@ test("room secretary does not add a second session when another agent is explici
     {
       id: "mem_human_secretary_guard",
       roomId,
-      principalId: null,
+      citizenId: null,
       type: "human",
       roleKind: "none",
       displayName: "Alice",
@@ -512,7 +513,7 @@ test("room secretary does not add a second session when another agent is explici
     {
       id: "mem_secretary_guard",
       roomId,
-      principalId: null,
+      citizenId: null,
       type: "agent",
       roleKind: "independent",
       displayName: "Scribe",
@@ -535,7 +536,7 @@ test("room secretary does not add a second session when another agent is explici
     {
       id: "mem_target_agent",
       roomId,
-      principalId: null,
+      citizenId: null,
       type: "agent",
       roleKind: "independent",
       displayName: "Planner",
@@ -610,7 +611,7 @@ test("room secretary in summarize mode stores hidden summary blocks separately f
     {
       id: "mem_human_secretary_summary",
       roomId,
-      principalId: null,
+      citizenId: null,
       type: "human",
       roleKind: "none",
       displayName: "Alice",
@@ -626,7 +627,7 @@ test("room secretary in summarize mode stores hidden summary blocks separately f
     {
       id: "mem_secretary_summary",
       roomId,
-      principalId: null,
+      citizenId: null,
       type: "agent",
       roleKind: "independent",
       displayName: "Scribe",
@@ -721,7 +722,7 @@ test("room summary artifact is injected into later agent prompts", async () => {
     {
       id: "mem_requester_summary_prompt",
       roomId,
-      principalId: null,
+      citizenId: null,
       type: "human",
       roleKind: "none",
       displayName: "Requester",
@@ -737,7 +738,7 @@ test("room summary artifact is injected into later agent prompts", async () => {
     {
       id: "mem_secretary_summary_seed",
       roomId,
-      principalId: null,
+      citizenId: null,
       type: "agent",
       roleKind: "independent",
       displayName: "Scribe",
@@ -761,7 +762,7 @@ test("room summary artifact is injected into later agent prompts", async () => {
     {
       id: "mem_planner_summary_prompt",
       roomId,
-      principalId: null,
+      citizenId: null,
       type: "agent",
       roleKind: "independent",
       displayName: "Planner",
@@ -836,7 +837,7 @@ test("room summary artifact is injected into later agent prompts", async () => {
   assert.ok(roomMessages.some((message) => /summary seen/i.test(message.content)));
 });
 
-test("a nickname can be reused after the previous principal leaves the room", async () => {
+test("a nickname can be reused after the previous citizen leaves the room", async () => {
   const roomId = "room_join_reuse_after_leave";
   const inviteToken = createInviteToken();
   seedRoom({
@@ -845,7 +846,7 @@ test("a nickname can be reused after the previous principal leaves the room", as
     inviteToken,
   });
 
-  const firstBootstrap = await app.request("http://localhost/api/principals/bootstrap", {
+  const firstBootstrap = await app.request("http://localho../api/citizens/bootstrap", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -857,7 +858,7 @@ test("a nickname can be reused after the previous principal leaves the room", as
   assert.equal(firstBootstrap.status, 200);
   const firstPrincipal = await firstBootstrap.json();
 
-  const secondBootstrap = await app.request("http://localhost/api/principals/bootstrap", {
+  const secondBootstrap = await app.request("http://localho../api/citizens/bootstrap", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -873,8 +874,8 @@ test("a nickname can be reused after the previous principal leaves the room", as
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      principalId: firstPrincipal.principalId,
-      principalToken: firstPrincipal.principalToken,
+      citizenId: firstPrincipal.citizenId,
+      citizenToken: firstPrincipal.citizenToken,
     }),
   });
   assert.equal(firstJoin.status, 200);
@@ -883,8 +884,8 @@ test("a nickname can be reused after the previous principal leaves the room", as
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      principalId: firstPrincipal.principalId,
-      principalToken: firstPrincipal.principalToken,
+      citizenId: firstPrincipal.citizenId,
+      citizenToken: firstPrincipal.citizenToken,
     }),
   });
   assert.equal(leaveResponse.status, 200);
@@ -893,8 +894,8 @@ test("a nickname can be reused after the previous principal leaves the room", as
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      principalId: secondPrincipal.principalId,
-      principalToken: secondPrincipal.principalToken,
+      citizenId: secondPrincipal.citizenId,
+      citizenToken: secondPrincipal.citizenToken,
     }),
   });
 
@@ -906,12 +907,12 @@ test("a nickname can be reused after the previous principal leaves the room", as
     .all()
     .filter((member) => (member.membershipStatus ?? "active") === "active");
   assert.equal(activeMembers.length, 1);
-  assert.equal(activeMembers[0]?.principalId, secondPrincipal.principalId);
+  assert.equal(activeMembers[0]?.citizenId, secondPrincipal.citizenId);
   assert.equal(activeMembers[0]?.displayName, "Alice");
 });
 
-test("principal bootstrap creates or restores a human principal and room join can inherit global display name", async () => {
-  const bootstrapResponse = await app.request("http://localhost/api/principals/bootstrap", {
+test("citizen bootstrap creates or restores a human citizen and room join can inherit global display name", async () => {
+  const bootstrapResponse = await app.request("http://localho../api/citizens/bootstrap", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -928,7 +929,7 @@ test("principal bootstrap creates or restores a human principal and room join ca
   assert.equal(bootstrapResult.globalDisplayName, "阿南");
   assert.equal(bootstrapResult.status, "offline");
 
-  const restoredResponse = await app.request("http://localhost/api/principals/bootstrap", {
+  const restoredResponse = await app.request("http://localho../api/citizens/bootstrap", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -940,21 +941,21 @@ test("principal bootstrap creates or restores a human principal and room join ca
 
   assert.equal(restoredResponse.status, 200);
   const restoredResult = await restoredResponse.json();
-  assert.equal(restoredResult.principalId, bootstrapResult.principalId);
+  assert.equal(restoredResult.citizenId, bootstrapResult.citizenId);
   assert.equal(restoredResult.globalDisplayName, "阿南二号");
   assert.equal(restoredResult.status, "offline");
 
   const persistedPrincipal = db
     .select()
-    .from(principals)
-    .where(eq(principals.id, bootstrapResult.principalId))
+    .from(citizens)
+    .where(eq(citizens.id, bootstrapResult.citizenId))
     .get();
   assert.equal(persistedPrincipal?.globalDisplayName, "阿南二号");
 
   const roomId = "room_principal_join";
   seedRoom({
     roomId,
-    name: "Principal Join Room",
+    name: "Citizen Join Room",
     inviteToken: createInviteToken(),
   });
 
@@ -962,8 +963,8 @@ test("principal bootstrap creates or restores a human principal and room join ca
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      principalId: bootstrapResult.principalId,
-      principalToken: bootstrapResult.principalToken,
+      citizenId: bootstrapResult.citizenId,
+      citizenToken: bootstrapResult.citizenToken,
     }),
   });
 
@@ -978,8 +979,8 @@ test("principal bootstrap creates or restores a human principal and room join ca
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        principalId: bootstrapResult.principalId,
-        principalToken: bootstrapResult.principalToken,
+        citizenId: bootstrapResult.citizenId,
+        citizenToken: bootstrapResult.citizenToken,
       }),
     },
   );
@@ -989,12 +990,12 @@ test("principal bootstrap creates or restores a human principal and room join ca
   assert.equal(joinResult.displayName, "阿南二号");
 
   const insertedMember = db.select().from(members).where(eq(members.id, joinResult.memberId)).get();
-  assert.equal(insertedMember?.principalId, bootstrapResult.principalId);
+  assert.equal(insertedMember?.citizenId, bootstrapResult.citizenId);
   assert.equal(insertedMember?.displayName, "阿南二号");
 });
 
-test("principal bootstrap syncs inherited member display names but preserves room-specific overrides", async () => {
-  const bootstrapResponse = await app.request("http://localhost/api/principals/bootstrap", {
+test("citizen bootstrap syncs inherited member display names but preserves room-specific overrides", async () => {
+  const bootstrapResponse = await app.request("http://localho../api/citizens/bootstrap", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -1020,8 +1021,8 @@ test("principal bootstrap syncs inherited member display names but preserves roo
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        principalId: principal.principalId,
-        principalToken: principal.principalToken,
+        citizenId: principal.citizenId,
+        citizenToken: principal.citizenToken,
       }),
     },
   );
@@ -1039,7 +1040,7 @@ test("principal bootstrap syncs inherited member display names but preserves roo
   db.insert(members).values({
     id: "mem_principal_rename_custom",
     roomId: customRoomId,
-    principalId: principal.principalId,
+    citizenId: principal.citizenId,
     type: "human",
     roleKind: "none",
     displayName: "自定义昵称",
@@ -1053,7 +1054,7 @@ test("principal bootstrap syncs inherited member display names but preserves roo
     createdAt: new Date("2026-03-30T08:00:00.000Z").toISOString(),
   }).run();
 
-  const renameResponse = await app.request("http://localhost/api/principals/bootstrap", {
+  const renameResponse = await app.request("http://localho../api/citizens/bootstrap", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -1073,7 +1074,7 @@ test("principal bootstrap syncs inherited member display names but preserves roo
 });
 
 test("principal lobby presence follows websocket connection instead of bootstrap", async () => {
-  const bootstrapResponse = await app.request("http://localhost/api/principals/bootstrap", {
+  const bootstrapResponse = await app.request("http://localho../api/citizens/bootstrap", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -1091,15 +1092,15 @@ test("principal lobby presence follows websocket connection instead of bootstrap
   assert.equal(initialLobbyResponse.status, 200);
   const initialLobby = await initialLobbyResponse.json();
   assert.equal(
-    initialLobby.principals.some((item: { id: string }) => item.id === principal.principalId),
+    initialLobby.citizens.some((item: { id: string }) => item.id === principal.citizenId),
     false,
   );
 
-  const disconnect = markPrincipalOnline(principal.principalId, principal.principalToken);
+  const disconnect = markCitizenOnline(principal.citizenId, principal.citizenToken);
 
   const onlinePrincipal = await waitFor(
     () =>
-      db.select().from(principals).where(eq(principals.id, principal.principalId)).get(),
+      db.select().from(citizens).where(eq(citizens.id, principal.citizenId)).get(),
     (value) => value?.status === "online",
   );
   assert.equal(onlinePrincipal?.status, "online");
@@ -1108,7 +1109,7 @@ test("principal lobby presence follows websocket connection instead of bootstrap
   assert.equal(onlineLobbyResponse.status, 200);
   const onlineLobby = await onlineLobbyResponse.json();
   assert.equal(
-    onlineLobby.principals.some((item: { id: string }) => item.id === principal.principalId),
+    onlineLobby.citizens.some((item: { id: string }) => item.id === principal.citizenId),
     true,
   );
 
@@ -1116,7 +1117,7 @@ test("principal lobby presence follows websocket connection instead of bootstrap
 
   const offlinePrincipal = await waitFor(
     () =>
-      db.select().from(principals).where(eq(principals.id, principal.principalId)).get(),
+      db.select().from(citizens).where(eq(citizens.id, principal.citizenId)).get(),
     (value) => value?.status === "offline",
   );
   assert.equal(offlinePrincipal?.status, "offline");
@@ -1125,13 +1126,13 @@ test("principal lobby presence follows websocket connection instead of bootstrap
   assert.equal(offlineLobbyResponse.status, 200);
   const offlineLobby = await offlineLobbyResponse.json();
   assert.equal(
-    offlineLobby.principals.some((item: { id: string }) => item.id === principal.principalId),
+    offlineLobby.citizens.some((item: { id: string }) => item.id === principal.citizenId),
     false,
   );
 });
 
-test("agent principal can leave a room with principal token", async () => {
-  const bootstrapResponse = await app.request("http://localhost/api/principals/bootstrap", {
+test("agent citizen can leave a room with citizen token", async () => {
+  const bootstrapResponse = await app.request("http://localho../api/citizens/bootstrap", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -1158,8 +1159,8 @@ test("agent principal can leave a room with principal token", async () => {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      principalId: principal.principalId,
-      principalToken: principal.principalToken,
+      citizenId: principal.citizenId,
+      citizenToken: principal.citizenToken,
     }),
   });
 
@@ -1171,8 +1172,8 @@ test("agent principal can leave a room with principal token", async () => {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      principalId: principal.principalId,
-      principalToken: principal.principalToken,
+      citizenId: principal.citizenId,
+      citizenToken: principal.citizenToken,
     }),
   });
 
@@ -1180,18 +1181,18 @@ test("agent principal can leave a room with principal token", async () => {
   assert.deepEqual(await leaveResponse.json(), {
     left: true,
     roomId,
-    principalId: principal.principalId,
+    citizenId: principal.citizenId,
     memberId: joinResult.memberId,
   });
   const departedMember = db.select().from(members).where(eq(members.id, joinResult.memberId)).get();
-  assert.equal(departedMember?.principalId, principal.principalId);
+  assert.equal(departedMember?.citizenId, principal.citizenId);
   assert.equal(departedMember?.presenceStatus, "offline");
   assert.equal(departedMember?.membershipStatus, "left");
   assert.ok(departedMember?.leftAt);
 });
 
-test("agent principal can leave the system and detach from all rooms", async () => {
-  const bootstrapResponse = await app.request("http://localhost/api/principals/bootstrap", {
+test("agent citizen can leave the system and detach from all rooms", async () => {
+  const bootstrapResponse = await app.request("http://localho../api/citizens/bootstrap", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -1227,7 +1228,7 @@ test("agent principal can leave the system and detach from all rooms", async () 
       attachedAt: new Date("2026-03-25T00:00:00.000Z").toISOString(),
       detachedAt: null,
     })
-    .where(eq(agentBindings.principalId, principal.principalId))
+    .where(eq(agentBindings.citizenId, principal.citizenId))
     .run();
 
   const roomA = { roomId: "room_leave_system_a", inviteToken: createInviteToken(), name: "Leave A" };
@@ -1240,22 +1241,22 @@ test("agent principal can leave the system and detach from all rooms", async () 
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        principalId: principal.principalId,
-        principalToken: principal.principalToken,
+        citizenId: principal.citizenId,
+        citizenToken: principal.citizenToken,
       }),
     });
     assert.equal(joinResponse.status, 200);
   }
 
-  db.update(principals).set({ status: "online" }).where(eq(principals.id, principal.principalId)).run();
+  db.update(citizens).set({ status: "online" }).where(eq(citizens.id, principal.citizenId)).run();
 
   const leaveResponse = await app.request(
-    `http://localhost/api/principals/${principal.principalId}/leave-system`,
+    `http://localho../api/citizens/${principal.citizenId}/leave-system`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        principalToken: principal.principalToken,
+        citizenToken: principal.citizenToken,
       }),
     },
   );
@@ -1268,7 +1269,7 @@ test("agent principal can leave the system and detach from all rooms", async () 
   const remainingMembers = db
     .select()
     .from(members)
-    .where(eq(members.principalId, principal.principalId))
+    .where(eq(members.citizenId, principal.citizenId))
     .all();
   assert.equal(remainingMembers.length, 0);
 
@@ -1278,22 +1279,22 @@ test("agent principal can leave the system and detach from all rooms", async () 
     .where(eq(members.displayName, "LeaveSystemBot"))
     .all();
   assert.ok(departedMembers.length >= 2);
-  assert.ok(departedMembers.every((member) => member.principalId === null));
+  assert.ok(departedMembers.every((member) => member.citizenId === null));
   assert.ok(departedMembers.every((member) => member.presenceStatus === "offline"));
   assert.ok(departedMembers.every((member) => member.membershipStatus === "left"));
   assert.ok(departedMembers.every((member) => Boolean(member.leftAt)));
 
   const refreshedPrincipal = db
     .select()
-    .from(principals)
-    .where(eq(principals.id, principal.principalId))
+    .from(citizens)
+    .where(eq(citizens.id, principal.citizenId))
     .get();
   assert.equal(refreshedPrincipal?.status, "offline");
 
   const refreshedBinding = db
     .select()
     .from(agentBindings)
-    .where(eq(agentBindings.principalId, principal.principalId))
+    .where(eq(agentBindings.citizenId, principal.citizenId))
     .get();
   assert.equal(refreshedBinding?.bridgeId, null);
   assert.equal(refreshedBinding?.status, "detached");
@@ -1311,7 +1312,7 @@ test("human member can disband a room and archive its active runtime state", asy
     ownerMemberId: "mem_disband_owner",
   });
 
-  db.insert(principals).values([
+  db.insert(citizens).values([
     {
       id: "prn_disband_owner",
       kind: "human",
@@ -1340,7 +1341,7 @@ test("human member can disband a room and archive its active runtime state", asy
     {
       id: "mem_disband_owner",
       roomId,
-      principalId: "prn_disband_owner",
+      citizenId: "prn_disband_owner",
       type: "human",
       roleKind: "none",
       displayName: "OwnerDisband",
@@ -1356,7 +1357,7 @@ test("human member can disband a room and archive its active runtime state", asy
     {
       id: "mem_disband_peer",
       roomId,
-      principalId: "prn_disband_peer",
+      citizenId: "prn_disband_peer",
       type: "human",
       roleKind: "none",
       displayName: "PeerDisband",
@@ -1372,7 +1373,7 @@ test("human member can disband a room and archive its active runtime state", asy
     {
       id: "mem_disband_assistant",
       roomId,
-      principalId: null,
+      citizenId: null,
       type: "agent",
       roleKind: "assistant",
       displayName: "DisbandAssistant",
@@ -1452,7 +1453,7 @@ test("human member can disband a room and archive its active runtime state", asy
   }).run();
 
   const ownerWsToken = issueWsToken("mem_disband_owner", roomId);
-  const ownerPrincipalToken = issuePrincipalToken("prn_disband_owner");
+  const ownerPrincipalToken = issueCitizenToken("prn_disband_owner");
 
   const response = await app.request(`http://localhost/api/rooms/${roomId}/disband`, {
     method: "POST",
@@ -1477,7 +1478,7 @@ test("human member can disband a room and archive its active runtime state", asy
   const mention = db.select().from(mentions).where(eq(mentions.id, "men_disband_pending")).get();
   const authorization = db.select().from(agentAuthorizations).where(eq(agentAuthorizations.id, "aut_disband_active")).get();
   const joinedRoomsResponse = await app.request(
-    `http://localhost/api/me/rooms?principalId=prn_disband_owner&principalToken=${ownerPrincipalToken}`,
+    `http://localhost/api/me/rooms?citizenId=prn_disband_owner&citizenToken=${ownerPrincipalToken}`,
   );
 
   assert.equal(archivedRoom?.status, "archived");
@@ -1507,7 +1508,7 @@ test("archived rooms reject invite joins and new messages", async () => {
     ownerMemberId: "mem_disband_actor_only",
   });
 
-  db.insert(principals).values({
+  db.insert(citizens).values({
     id: "prn_disband_actor_only",
     kind: "human",
     loginKey: "actor-only@example.com",
@@ -1522,7 +1523,7 @@ test("archived rooms reject invite joins and new messages", async () => {
   db.insert(members).values({
     id: "mem_disband_actor_only",
     roomId,
-    principalId: "prn_disband_actor_only",
+    citizenId: "prn_disband_actor_only",
     type: "human",
     roleKind: "none",
     displayName: "ActorOnly",
@@ -1570,8 +1571,8 @@ test("archived rooms reject invite joins and new messages", async () => {
   assert.deepEqual(await messageResponse.json(), { error: "room is archived" });
 });
 
-test("direct room reuses the same two-principal room and room pull adds a lobby principal into an existing room", async () => {
-  const aliceResponse = await app.request("http://localhost/api/principals/bootstrap", {
+test("direct room reuses the same two-citizen room and room pull adds a lobby citizen into an existing room", async () => {
+  const aliceResponse = await app.request("http://localho../api/citizens/bootstrap", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -1580,7 +1581,7 @@ test("direct room reuses the same two-principal room and room pull adds a lobby 
       globalDisplayName: "阿南",
     }),
   });
-  const bobResponse = await app.request("http://localhost/api/principals/bootstrap", {
+  const bobResponse = await app.request("http://localho../api/citizens/bootstrap", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -1589,7 +1590,7 @@ test("direct room reuses the same two-principal room and room pull adds a lobby 
       globalDisplayName: "小白",
     }),
   });
-  const carolResponse = await app.request("http://localhost/api/principals/bootstrap", {
+  const carolResponse = await app.request("http://localho../api/citizens/bootstrap", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -1607,9 +1608,9 @@ test("direct room reuses the same two-principal room and room pull adds a lobby 
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      actorPrincipalId: alice.principalId,
-      actorPrincipalToken: alice.principalToken,
-      peerPrincipalId: bob.principalId,
+      actorCitizenId: alice.citizenId,
+      actorCitizenToken: alice.citizenToken,
+      peerCitizenId: bob.citizenId,
     }),
   });
 
@@ -1621,9 +1622,9 @@ test("direct room reuses the same two-principal room and room pull adds a lobby 
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      actorPrincipalId: alice.principalId,
-      actorPrincipalToken: alice.principalToken,
-      peerPrincipalId: bob.principalId,
+      actorCitizenId: alice.citizenId,
+      actorCitizenToken: alice.citizenToken,
+      peerCitizenId: bob.citizenId,
     }),
   });
 
@@ -1638,8 +1639,8 @@ test("direct room reuses the same two-principal room and room pull adds a lobby 
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        principalId: alice.principalId,
-        principalToken: alice.principalToken,
+        citizenId: alice.citizenId,
+        citizenToken: alice.citizenToken,
         roomDisplayName: "阿南主持人",
       }),
     },
@@ -1664,7 +1665,7 @@ test("direct room reuses the same two-principal room and room pull adds a lobby 
     body: JSON.stringify({
       actorMemberId: actorMember.id,
       wsToken: actorToken,
-      targetPrincipalId: carol.principalId,
+      targetCitizenId: carol.citizenId,
     }),
   });
 
@@ -1678,11 +1679,11 @@ test("direct room reuses the same two-principal room and room pull adds a lobby 
     .where(eq(members.roomId, firstDirectRoom.room.id))
     .all();
   assert.equal(roomMembers.length, 3);
-  assert.ok(roomMembers.find((member) => member.principalId === carol.principalId));
+  assert.ok(roomMembers.find((member) => member.citizenId === carol.citizenId));
 });
 
-test("agent principals cannot initiate direct rooms because room owners must be human", async () => {
-  const agentResponse = await app.request("http://localhost/api/principals/bootstrap", {
+test("agent citizens can initiate direct rooms with humans", async () => {
+  const agentResponse = await app.request("http://localho../api/citizens/bootstrap", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -1693,7 +1694,7 @@ test("agent principals cannot initiate direct rooms because room owners must be 
       backendThreadId: "thread_agent_principal_finance",
     }),
   });
-  const humanResponse = await app.request("http://localhost/api/principals/bootstrap", {
+  const humanResponse = await app.request("http://localho../api/citizens/bootstrap", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -1709,12 +1710,12 @@ test("agent principals cannot initiate direct rooms because room owners must be 
   assert.equal(agent.status, "offline");
   assert.equal(human.status, "offline");
 
-  const disconnectAgent = markPrincipalOnline(agent.principalId, agent.principalToken);
+  const disconnectAgent = markCitizenOnline(agent.citizenId, agent.citizenToken);
 
   const lobbyResponse = await app.request("http://localhost/api/presence/lobby");
   assert.equal(lobbyResponse.status, 200);
   const lobby = await lobbyResponse.json();
-  const lobbyAgent = lobby.principals.find((item: { id: string }) => item.id === agent.principalId);
+  const lobbyAgent = lobby.citizens.find((item: { id: string }) => item.id === agent.citizenId);
   assert.ok(lobbyAgent);
   assert.equal(lobbyAgent.backendType, "codex_cli");
   assert.equal(lobbyAgent.runtimeStatus, "pending_bridge");
@@ -1723,22 +1724,47 @@ test("agent principals cannot initiate direct rooms because room owners must be 
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      actorPrincipalId: agent.principalId,
-      actorPrincipalToken: agent.principalToken,
-      peerPrincipalId: human.principalId,
+      actorCitizenId: agent.citizenId,
+      actorCitizenToken: agent.citizenToken,
+      peerCitizenId: human.citizenId,
     }),
   });
 
-  assert.equal(directRoomResponse.status, 403);
-  assert.deepEqual(await directRoomResponse.json(), {
-    error: "only human principals can create direct rooms",
+  assert.equal(directRoomResponse.status, 200);
+  const directRoom = await directRoomResponse.json();
+  assert.equal(directRoom.reused, false);
+
+  const roomMembers = db
+    .select()
+    .from(members)
+    .where(eq(members.roomId, directRoom.room.id))
+    .all();
+  const actorMember = roomMembers.find((member) => member.citizenId === agent.citizenId);
+  const peerMember = roomMembers.find((member) => member.citizenId === human.citizenId);
+  assert.equal(directRoom.room.ownerMemberId, peerMember?.id);
+  assert.equal(actorMember?.type, "agent");
+  assert.equal(actorMember?.roleKind, "independent");
+  assert.equal(actorMember?.adapterType, "codex_cli");
+  assert.equal(peerMember?.type, "human");
+  assert.equal(peerMember?.roleKind, "none");
+
+  const leaveResponse = await app.request(`http://localhost/api/rooms/${directRoom.room.id}/leave`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      citizenId: agent.citizenId,
+      citizenToken: agent.citizenToken,
+    }),
   });
+  assert.equal(leaveResponse.status, 200);
+  const leavePayload = await leaveResponse.json();
+  assert.equal(leavePayload.left, true);
 
   disconnectAgent();
 });
 
-test("agent principal with active binding appears in lobby without principal websocket", async () => {
-  const agentResponse = await app.request("http://localhost/api/principals/bootstrap", {
+test("agent citizen with active binding appears in lobby without citizen websocket", async () => {
+  const agentResponse = await app.request("http://localho../api/citizens/bootstrap", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -1781,14 +1807,14 @@ test("agent principal with active binding appears in lobby without principal web
   const lobbyResponse = await app.request("http://localhost/api/presence/lobby");
   assert.equal(lobbyResponse.status, 200);
   const lobby = await lobbyResponse.json();
-  const lobbyAgent = lobby.principals.find((item: { id: string }) => item.id === agent.principalId);
+  const lobbyAgent = lobby.citizens.find((item: { id: string }) => item.id === agent.citizenId);
   assert.ok(lobbyAgent);
   assert.equal(lobbyAgent.status, "online");
   assert.equal(lobbyAgent.runtimeStatus, "ready");
 });
 
-test("claude agent principals also cannot initiate direct rooms", async () => {
-  const agentResponse = await app.request("http://localhost/api/principals/bootstrap", {
+test("claude agent citizens can also initiate direct rooms", async () => {
+  const agentResponse = await app.request("http://localho../api/citizens/bootstrap", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -1799,7 +1825,7 @@ test("claude agent principals also cannot initiate direct rooms", async () => {
       backendThreadId: "thread_agent_principal_claude",
     }),
   });
-  const humanResponse = await app.request("http://localhost/api/principals/bootstrap", {
+  const humanResponse = await app.request("http://localho../api/citizens/bootstrap", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -1817,12 +1843,12 @@ test("claude agent principals also cannot initiate direct rooms", async () => {
   assert.equal(agent.backendThreadId, "thread_agent_principal_claude");
   assert.equal(human.status, "offline");
 
-  const disconnectAgent = markPrincipalOnline(agent.principalId, agent.principalToken);
+  const disconnectAgent = markCitizenOnline(agent.citizenId, agent.citizenToken);
 
   const lobbyResponse = await app.request("http://localhost/api/presence/lobby");
   assert.equal(lobbyResponse.status, 200);
   const lobby = await lobbyResponse.json();
-  const lobbyAgent = lobby.principals.find((item: { id: string }) => item.id === agent.principalId);
+  const lobbyAgent = lobby.citizens.find((item: { id: string }) => item.id === agent.citizenId);
   assert.ok(lobbyAgent);
   assert.equal(lobbyAgent.backendType, "claude_code");
   assert.equal(lobbyAgent.runtimeStatus, "pending_bridge");
@@ -1831,16 +1857,25 @@ test("claude agent principals also cannot initiate direct rooms", async () => {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      actorPrincipalId: agent.principalId,
-      actorPrincipalToken: agent.principalToken,
-      peerPrincipalId: human.principalId,
+      actorCitizenId: agent.citizenId,
+      actorCitizenToken: agent.citizenToken,
+      peerCitizenId: human.citizenId,
     }),
   });
 
-  assert.equal(directRoomResponse.status, 403);
-  assert.deepEqual(await directRoomResponse.json(), {
-    error: "only human principals can create direct rooms",
-  });
+  assert.equal(directRoomResponse.status, 200);
+  const directRoom = await directRoomResponse.json();
+  const roomMembers = db
+    .select()
+    .from(members)
+    .where(eq(members.roomId, directRoom.room.id))
+    .all();
+  const actorMember = roomMembers.find((member) => member.citizenId === agent.citizenId);
+  const peerMember = roomMembers.find((member) => member.citizenId === human.citizenId);
+  assert.equal(directRoom.room.ownerMemberId, peerMember?.id);
+  assert.equal(actorMember?.type, "agent");
+  assert.equal(actorMember?.roleKind, "independent");
+  assert.equal(actorMember?.adapterType, "claude_code");
 
   disconnectAgent();
 });
@@ -1861,7 +1896,7 @@ test("room owner can transfer ownership to another active human member", async (
     {
       id: "mem_owner_transfer_current",
       roomId,
-      principalId: null,
+      citizenId: null,
       type: "human",
       roleKind: "none",
       displayName: "Alice",
@@ -1877,7 +1912,7 @@ test("room owner can transfer ownership to another active human member", async (
     {
       id: "mem_owner_transfer_next",
       roomId,
-      principalId: null,
+      citizenId: null,
       type: "human",
       roleKind: "none",
       displayName: "Bob",
@@ -1922,7 +1957,7 @@ test("room owner cannot leave before transferring ownership", async () => {
     ownerMemberId: "mem_owner_leave_guard",
   });
 
-  db.insert(principals).values([
+  db.insert(citizens).values([
     {
       id: "prn_owner_leave_guard",
       kind: "human",
@@ -1951,7 +1986,7 @@ test("room owner cannot leave before transferring ownership", async () => {
     {
       id: "mem_owner_leave_guard",
       roomId,
-      principalId: "prn_owner_leave_guard",
+      citizenId: "prn_owner_leave_guard",
       type: "human",
       roleKind: "none",
       displayName: "Alice",
@@ -1967,7 +2002,7 @@ test("room owner cannot leave before transferring ownership", async () => {
     {
       id: "mem_owner_leave_guard_peer",
       roomId,
-      principalId: "prn_owner_leave_guard_peer",
+      citizenId: "prn_owner_leave_guard_peer",
       type: "human",
       roleKind: "none",
       displayName: "Bob",
@@ -1982,13 +2017,13 @@ test("room owner cannot leave before transferring ownership", async () => {
     },
   ]).run();
 
-  const principalToken = issuePrincipalToken("prn_owner_leave_guard");
+  const citizenToken = issueCitizenToken("prn_owner_leave_guard");
   const response = await app.request(`http://localhost/api/rooms/${roomId}/leave`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      principalId: "prn_owner_leave_guard",
-      principalToken,
+      citizenId: "prn_owner_leave_guard",
+      citizenToken,
     }),
   });
 
@@ -1998,8 +2033,8 @@ test("room owner cannot leave before transferring ownership", async () => {
   });
 });
 
-test("openai-compatible agent principal bootstrap stores backendConfig and auto-generates backendThreadId", async () => {
-  const agentResponse = await app.request("http://localhost/api/principals/bootstrap", {
+test("openai-compatible agent citizen bootstrap stores backendConfig and auto-generates backendThreadId", async () => {
+  const agentResponse = await app.request("http://localho../api/citizens/bootstrap", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -2025,8 +2060,8 @@ test("openai-compatible agent principal bootstrap stores backendConfig and auto-
 
   const storedPrincipal = db
     .select()
-    .from(principals)
-    .where(eq(principals.id, agent.principalId))
+    .from(citizens)
+    .where(eq(citizens.id, agent.citizenId))
     .get();
   assert.equal(storedPrincipal?.backendType, "openai_compatible");
   assert.equal(
@@ -2040,32 +2075,191 @@ test("openai-compatible agent principal bootstrap stores backendConfig and auto-
   const binding = db
     .select()
     .from(agentBindings)
-    .where(eq(agentBindings.principalId, agent.principalId))
+    .where(eq(agentBindings.citizenId, agent.citizenId))
     .get();
   assert.equal(binding?.backendType, "openai_compatible");
   assert.equal(binding?.backendThreadId, agent.backendThreadId);
 
-  const disconnectAgent = markPrincipalOnline(agent.principalId, agent.principalToken);
+  const disconnectAgent = markCitizenOnline(agent.citizenId, agent.citizenToken);
 
   const lobbyResponse = await app.request("http://localhost/api/presence/lobby");
   assert.equal(lobbyResponse.status, 200);
   const lobby = await lobbyResponse.json();
-  const lobbyAgent = lobby.principals.find((item: { id: string }) => item.id === agent.principalId);
+  const lobbyAgent = lobby.citizens.find((item: { id: string }) => item.id === agent.citizenId);
   assert.ok(lobbyAgent);
   assert.equal(lobbyAgent.backendType, "openai_compatible");
   assert.deepEqual(lobbyAgent.backendConfig, {
     baseUrl: "http://127.0.0.1:1234/v1",
     model: "qwen2.5-7b-instruct",
   });
-  assert.equal(lobbyAgent.runtimeStatus, "pending_bridge");
+  assert.equal(lobbyAgent.runtimeStatus, "ready");
 
   disconnectAgent();
 });
 
-test("agent principal bootstrap rejects a bound backendThreadId without leaving a principal record", async () => {
+test("citizen can create an openai-compatible agent citizen from a shared server config", async () => {
+  const ownerResponse = await app.request("http://localho../api/citizens/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "agent-citizen-owner@example.com",
+      globalDisplayName: "OwnerUser",
+    }),
+  });
+  const consumerResponse = await app.request("http://localho../api/citizens/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "agent-citizen-consumer@example.com",
+      globalDisplayName: "ConsumerUser",
+    }),
+  });
+  const owner = await ownerResponse.json();
+  const consumer = await consumerResponse.json();
+
+  const configCreateResponse = await app.request("http://localhost/api/me/server-configs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      citizenId: owner.citizenId,
+      citizenToken: owner.citizenToken,
+      name: "Shared Citizen Config",
+      backendType: "openai_compatible",
+      visibility: "shared",
+      config: {
+        baseUrl: "http://127.0.0.1:4444/v1/",
+        model: "citizen-qwen",
+        apiKey: "citizen-secret",
+      },
+    }),
+  });
+  assert.equal(configCreateResponse.status, 201);
+  const createdConfig = await configCreateResponse.json();
+
+  const createCitizenResponse = await app.request("http://localhost/api/me/agent-citizens", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      actorCitizenId: consumer.citizenId,
+      actorCitizenToken: consumer.citizenToken,
+      loginKey: "agent:shared-citizen",
+      globalDisplayName: "SharedCitizen",
+      serverConfigId: createdConfig.id,
+    }),
+  });
+
+  assert.equal(createCitizenResponse.status, 201);
+  const createdCitizen = await createCitizenResponse.json();
+  assert.equal(createdCitizen.kind, "agent");
+  assert.equal(createdCitizen.backendType, "openai_compatible");
+  assert.match(createdCitizen.backendThreadId, /^oai_/);
+  assert.deepEqual(createdCitizen.backendConfig, {
+    baseUrl: "http://127.0.0.1:4444/v1",
+    model: "citizen-qwen",
+  });
+
+  const storedPrincipal = db
+    .select()
+    .from(citizens)
+    .where(eq(citizens.id, createdCitizen.citizenId))
+    .get();
+  assert.equal(storedPrincipal?.kind, "agent");
+  assert.equal(storedPrincipal?.loginKey, "agent:shared-citizen");
+  assert.equal(storedPrincipal?.sourceServerConfigId, createdConfig.id);
+  assert.equal(
+    storedPrincipal?.backendConfig,
+    JSON.stringify({
+      baseUrl: "http://127.0.0.1:4444/v1",
+      model: "citizen-qwen",
+      apiKey: "citizen-secret",
+    }),
+  );
+
+  const storedBinding = db
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.citizenId, createdCitizen.citizenId))
+    .get();
+  assert.equal(storedBinding?.backendType, "openai_compatible");
+  assert.equal(storedBinding?.backendThreadId, createdCitizen.backendThreadId);
+
+  const disconnectAgent = markCitizenOnline(createdCitizen.citizenId, createdCitizen.citizenToken);
+  const lobbyResponse = await app.request("http://localhost/api/presence/lobby");
+  assert.equal(lobbyResponse.status, 200);
+  const lobby = await lobbyResponse.json();
+  const lobbyAgent = lobby.citizens.find((item: { id: string }) => item.id === createdCitizen.citizenId);
+  assert.ok(lobbyAgent);
+  assert.deepEqual(lobbyAgent.backendConfig, {
+    baseUrl: "http://127.0.0.1:4444/v1",
+    model: "citizen-qwen",
+  });
+  disconnectAgent();
+});
+
+test("citizen cannot create an agent citizen from another citizen's private server config", async () => {
+  const ownerResponse = await app.request("http://localho../api/citizens/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "agent-citizen-private-owner@example.com",
+      globalDisplayName: "PrivateOwner",
+    }),
+  });
+  const consumerResponse = await app.request("http://localho../api/citizens/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "agent-citizen-private-consumer@example.com",
+      globalDisplayName: "PrivateConsumer",
+    }),
+  });
+  const owner = await ownerResponse.json();
+  const consumer = await consumerResponse.json();
+
+  const configCreateResponse = await app.request("http://localhost/api/me/server-configs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      citizenId: owner.citizenId,
+      citizenToken: owner.citizenToken,
+      name: "Private Citizen Config",
+      backendType: "openai_compatible",
+      visibility: "private",
+      config: {
+        baseUrl: "http://127.0.0.1:4545/v1/",
+        model: "private-qwen",
+        apiKey: "private-secret",
+      },
+    }),
+  });
+  assert.equal(configCreateResponse.status, 201);
+  const createdConfig = await configCreateResponse.json();
+
+  const createCitizenResponse = await app.request("http://localhost/api/me/agent-citizens", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      actorCitizenId: consumer.citizenId,
+      actorCitizenToken: consumer.citizenToken,
+      loginKey: "agent:private-citizen",
+      globalDisplayName: "PrivateCitizen",
+      serverConfigId: createdConfig.id,
+    }),
+  });
+  assert.equal(createCitizenResponse.status, 403);
+  assert.deepEqual(await createCitizenResponse.json(), {
+    error: "server config is not available to this citizen",
+  });
+});
+
+test("agent citizen bootstrap rejects a bound backendThreadId without leaving a citizen record", async () => {
   const createdAt = new Date("2026-03-25T00:30:00.000Z").toISOString();
 
-  db.insert(principals).values({
+  db.insert(citizens).values({
     id: "prn_existing_bound_agent",
     kind: "agent",
     loginKey: "agent:existing-bound",
@@ -2078,7 +2272,7 @@ test("agent principal bootstrap rejects a bound backendThreadId without leaving 
 
   db.insert(agentBindings).values({
     id: "agb_existing_bound_agent",
-    principalId: "prn_existing_bound_agent",
+    citizenId: "prn_existing_bound_agent",
     privateAssistantId: null,
     bridgeId: null,
     backendType: "codex_cli",
@@ -2089,7 +2283,7 @@ test("agent principal bootstrap rejects a bound backendThreadId without leaving 
     detachedAt: null,
   }).run();
 
-  const response = await app.request("http://localhost/api/principals/bootstrap", {
+  const response = await app.request("http://localho../api/citizens/bootstrap", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -2108,16 +2302,16 @@ test("agent principal bootstrap rejects a bound backendThreadId without leaving 
 
   const leakedPrincipal = db
     .select()
-    .from(principals)
-    .where(eq(principals.loginKey, "agent:new-conflict"))
+    .from(citizens)
+    .where(eq(citizens.loginKey, "agent:new-conflict"))
     .get();
   assert.equal(leakedPrincipal, undefined);
 });
 
-test("agent principal bootstrap keeps an existing principal unchanged when backendThreadId is already bound elsewhere", async () => {
+test("agent citizen bootstrap keeps an existing principal unchanged when backendThreadId is already bound elsewhere", async () => {
   const createdAt = new Date("2026-03-25T00:40:00.000Z").toISOString();
 
-  db.insert(principals).values([
+  db.insert(citizens).values([
     {
       id: "prn_existing_update_agent",
       kind: "agent",
@@ -2143,7 +2337,7 @@ test("agent principal bootstrap keeps an existing principal unchanged when backe
   db.insert(agentBindings).values([
     {
       id: "agb_existing_update_agent",
-      principalId: "prn_existing_update_agent",
+      citizenId: "prn_existing_update_agent",
       privateAssistantId: null,
       bridgeId: null,
       backendType: "codex_cli",
@@ -2155,7 +2349,7 @@ test("agent principal bootstrap keeps an existing principal unchanged when backe
     },
     {
       id: "agb_existing_conflict_agent",
-      principalId: "prn_existing_conflict_agent",
+      citizenId: "prn_existing_conflict_agent",
       privateAssistantId: null,
       bridgeId: null,
       backendType: "codex_cli",
@@ -2167,7 +2361,7 @@ test("agent principal bootstrap keeps an existing principal unchanged when backe
     },
   ]).run();
 
-  const response = await app.request("http://localhost/api/principals/bootstrap", {
+  const response = await app.request("http://localho../api/citizens/bootstrap", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -2186,8 +2380,8 @@ test("agent principal bootstrap keeps an existing principal unchanged when backe
 
   const principalAfter = db
     .select()
-    .from(principals)
-    .where(eq(principals.id, "prn_existing_update_agent"))
+    .from(citizens)
+    .where(eq(citizens.id, "prn_existing_update_agent"))
     .get();
   const bindingAfter = db
     .select()
@@ -2200,8 +2394,8 @@ test("agent principal bootstrap keeps an existing principal unchanged when backe
   assert.equal(bindingAfter?.backendThreadId, "thread_update_original");
 });
 
-test("principal can invite a private codex assistant, accept it, and adopt it into a room", async () => {
-  const bootstrapResponse = await app.request("http://localhost/api/principals/bootstrap", {
+test("citizen can invite a private codex assistant, accept it, and adopt it into a room", async () => {
+  const bootstrapResponse = await app.request("http://localho../api/citizens/bootstrap", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -2216,8 +2410,8 @@ test("principal can invite a private codex assistant, accept it, and adopt it in
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      principalId: principal.principalId,
-      principalToken: principal.principalToken,
+      citizenId: principal.citizenId,
+      citizenToken: principal.citizenToken,
       name: "账本助理",
       backendType: "codex_cli",
     }),
@@ -2227,7 +2421,7 @@ test("principal can invite a private codex assistant, accept it, and adopt it in
   const privateAssistantInvite = await inviteResponse.json();
 
   const listedInvitesResponse = await app.request(
-    `http://localhost/api/me/assistants/invites?principalId=${principal.principalId}&principalToken=${principal.principalToken}`,
+    `http://localhost/api/me/assistants/invites?citizenId=${principal.citizenId}&citizenToken=${principal.citizenToken}`,
   );
   assert.equal(listedInvitesResponse.status, 200);
   const listedInvites = await listedInvitesResponse.json();
@@ -2249,7 +2443,7 @@ test("principal can invite a private codex assistant, accept it, and adopt it in
   const privateAssistant = await acceptInviteResponse.json();
 
   const listedResponse = await app.request(
-    `http://localhost/api/me/assistants?principalId=${principal.principalId}&principalToken=${principal.principalToken}`,
+    `http://localhost/api/me/assistants?citizenId=${principal.citizenId}&citizenToken=${principal.citizenToken}`,
   );
   assert.equal(listedResponse.status, 200);
   const listedAssistants = await listedResponse.json();
@@ -2267,8 +2461,8 @@ test("principal can invite a private codex assistant, accept it, and adopt it in
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      principalId: principal.principalId,
-      principalToken: principal.principalToken,
+      citizenId: principal.citizenId,
+      citizenToken: principal.citizenToken,
     }),
   });
   assert.equal(joinResponse.status, 403);
@@ -2278,8 +2472,8 @@ test("principal can invite a private codex assistant, accept it, and adopt it in
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        principalId: principal.principalId,
-        principalToken: principal.principalToken,
+        citizenId: principal.citizenId,
+        citizenToken: principal.citizenToken,
       }),
     },
   );
@@ -2347,8 +2541,8 @@ test("principal can invite a private codex assistant, accept it, and adopt it in
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      principalId: principal.principalId,
-      principalToken: principal.principalToken,
+      citizenId: principal.citizenId,
+      citizenToken: principal.citizenToken,
       roomDisplayName: "房主二号",
     }),
   });
@@ -2359,8 +2553,8 @@ test("principal can invite a private codex assistant, accept it, and adopt it in
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        principalId: principal.principalId,
-        principalToken: principal.principalToken,
+        citizenId: principal.citizenId,
+        citizenToken: principal.citizenToken,
         roomDisplayName: "房主二号",
       }),
     },
@@ -2435,7 +2629,7 @@ test("principal can invite a private codex assistant, accept it, and adopt it in
   assert.equal(reAdoptedMember.id, adoptedMember.id);
 
   const deleteResponse = await app.request(
-    `http://localhost/api/me/assistants/${privateAssistant.id}?principalId=${principal.principalId}&principalToken=${principal.principalToken}`,
+    `http://localhost/api/me/assistants/${privateAssistant.id}?citizenId=${principal.citizenId}&citizenToken=${principal.citizenToken}`,
     {
       method: "DELETE",
     },
@@ -2469,7 +2663,7 @@ test("principal can invite a private codex assistant, accept it, and adopt it in
 });
 
 test("private assistants can be paused and resumed by the owner", async () => {
-  const principalResponse = await app.request("http://localhost/api/principals/bootstrap", {
+  const principalResponse = await app.request("http://localho../api/citizens/bootstrap", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -2485,8 +2679,8 @@ test("private assistants can be paused and resumed by the owner", async () => {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      principalId: principal.principalId,
-      principalToken: principal.principalToken,
+      citizenId: principal.citizenId,
+      citizenToken: principal.citizenToken,
       name: "暂停助理",
       backendType: "openai_compatible",
       backendConfig: {
@@ -2511,8 +2705,8 @@ test("private assistants can be paused and resumed by the owner", async () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        principalId: principal.principalId,
-        principalToken: principal.principalToken,
+        citizenId: principal.citizenId,
+        citizenToken: principal.citizenToken,
       }),
     },
   );
@@ -2523,8 +2717,8 @@ test("private assistants can be paused and resumed by the owner", async () => {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      principalId: principal.principalId,
-      principalToken: principal.principalToken,
+      citizenId: principal.citizenId,
+      citizenToken: principal.citizenToken,
     }),
   });
   assert.equal(pauseResponse.status, 200);
@@ -2548,8 +2742,8 @@ test("private assistants can be paused and resumed by the owner", async () => {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      principalId: principal.principalId,
-      principalToken: principal.principalToken,
+      citizenId: principal.citizenId,
+      citizenToken: principal.citizenToken,
     }),
   });
   assert.equal(resumeResponse.status, 200);
@@ -2570,8 +2764,8 @@ test("private assistants can be paused and resumed by the owner", async () => {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      principalId: principal.principalId,
-      principalToken: principal.principalToken,
+      citizenId: principal.citizenId,
+      citizenToken: principal.citizenToken,
     }),
   });
   assert.equal(pauseAgainResponse.status, 200);
@@ -2608,8 +2802,8 @@ test("private assistants can be paused and resumed by the owner", async () => {
   assert.equal(unavailableMessage?.messageType, "system_notice");
 });
 
-test("principal can directly connect an openai-compatible private assistant from the web ui", async () => {
-  const bootstrapResponse = await app.request("http://localhost/api/principals/bootstrap", {
+test("citizen can directly connect an openai-compatible private assistant from the web ui", async () => {
+  const bootstrapResponse = await app.request("http://localho../api/citizens/bootstrap", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -2624,8 +2818,8 @@ test("principal can directly connect an openai-compatible private assistant from
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      principalId: principal.principalId,
-      principalToken: principal.principalToken,
+      citizenId: principal.citizenId,
+      citizenToken: principal.citizenToken,
       name: "本地模型助理",
       backendType: "openai_compatible",
       backendConfig: {
@@ -2648,7 +2842,7 @@ test("principal can directly connect an openai-compatible private assistant from
   );
 
   const listedResponse = await app.request(
-    `http://localhost/api/me/assistants?principalId=${principal.principalId}&principalToken=${principal.principalToken}`,
+    `http://localhost/api/me/assistants?citizenId=${principal.citizenId}&citizenToken=${principal.citizenToken}`,
   );
   assert.equal(listedResponse.status, 200);
   const listedAssistants = await listedResponse.json();
@@ -2662,6 +2856,307 @@ test("principal can directly connect an openai-compatible private assistant from
     .get();
   assert.equal(storedBinding?.backendType, "openai_compatible");
   assert.equal(storedBinding?.backendThreadId, assistant.backendThreadId);
+});
+
+test("citizen can manage private and shared server configs", async () => {
+  const ownerResponse = await app.request("http://localho../api/citizens/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "server-config-owner@example.com",
+      globalDisplayName: "ServerConfigOwner",
+    }),
+  });
+  const peerResponse = await app.request("http://localho../api/citizens/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "server-config-peer@example.com",
+      globalDisplayName: "ServerConfigPeer",
+    }),
+  });
+  const owner = await ownerResponse.json();
+  const peer = await peerResponse.json();
+
+  const createResponse = await app.request("http://localhost/api/me/server-configs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      citizenId: owner.citizenId,
+      citizenToken: owner.citizenToken,
+      name: "Team Shared Qwen",
+      backendType: "openai_compatible",
+      visibility: "shared",
+      config: {
+        baseUrl: "http://127.0.0.1:1234/v1/",
+        model: "qwen-team",
+        apiKey: "secret-token",
+        headers: {
+          Authorization: "Bearer hidden-token",
+        },
+      },
+    }),
+  });
+
+  assert.equal(createResponse.status, 201);
+  const createdConfig = await createResponse.json();
+  assert.equal(createdConfig.visibility, "shared");
+  assert.equal(createdConfig.config.apiKey, "secret-token");
+
+  const ownListResponse = await app.request(
+    `http://localhost/api/me/server-configs?citizenId=${owner.citizenId}&citizenToken=${owner.citizenToken}`,
+  );
+  assert.equal(ownListResponse.status, 200);
+  const ownList = await ownListResponse.json();
+  assert.equal(ownList.length, 1);
+  assert.equal(ownList[0].id, createdConfig.id);
+
+  const sharedListResponse = await app.request(
+    `http://localhost/api/server-configs/shared?citizenId=${peer.citizenId}&citizenToken=${peer.citizenToken}`,
+  );
+  assert.equal(sharedListResponse.status, 200);
+  const sharedList = await sharedListResponse.json();
+  const sharedConfig = sharedList.find((item: { id: string }) => item.id === createdConfig.id);
+  assert.ok(sharedConfig);
+  assert.equal(sharedConfig.config.baseUrl, "http://127.0.0.1:1234/v1");
+  assert.equal(sharedConfig.config.model, "qwen-team");
+  assert.equal(sharedConfig.config.apiKey, undefined);
+  assert.equal(sharedConfig.config.headers, undefined);
+  assert.equal(sharedConfig.hasAuth, true);
+
+  const patchResponse = await app.request(
+    `http://localhost/api/me/server-configs/${createdConfig.id}`,
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        citizenId: owner.citizenId,
+        citizenToken: owner.citizenToken,
+        visibility: "private",
+        config: {
+          baseUrl: "http://127.0.0.1:2234/v1/",
+          model: "qwen-owner",
+        },
+      }),
+    },
+  );
+  assert.equal(patchResponse.status, 200);
+  const patched = await patchResponse.json();
+  assert.equal(patched.visibility, "private");
+  assert.equal(patched.config.baseUrl, "http://127.0.0.1:2234/v1");
+  assert.equal(patched.config.model, "qwen-owner");
+
+  const sharedListAfterPatchResponse = await app.request(
+    `http://localhost/api/server-configs/shared?citizenId=${peer.citizenId}&citizenToken=${peer.citizenToken}`,
+  );
+  assert.equal(sharedListAfterPatchResponse.status, 200);
+  const sharedListAfterPatch = await sharedListAfterPatchResponse.json();
+  assert.equal(
+    sharedListAfterPatch.some((item: { id: string }) => item.id === createdConfig.id),
+    false,
+  );
+
+  const deleteResponse = await app.request(
+    `http://localhost/api/me/server-configs/${createdConfig.id}?citizenId=${owner.citizenId}&citizenToken=${owner.citizenToken}`,
+    {
+      method: "DELETE",
+    },
+  );
+  assert.equal(deleteResponse.status, 200);
+  assert.equal(
+    db.select().from(serverConfigs).where(eq(serverConfigs.id, createdConfig.id)).get(),
+    undefined,
+  );
+});
+
+test("citizen can test an openai-compatible server config before saving", async () => {
+  const bootstrapResponse = await app.request("http://localho../api/citizens/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "server-config-test@example.com",
+      globalDisplayName: "ServerConfigTest",
+    }),
+  });
+  const citizen = await bootstrapResponse.json();
+
+  const originalFetch = globalThis.fetch;
+  const calls: Array<{ url: string; init?: RequestInit }> = [];
+  globalThis.fetch = (async (url, init) => {
+    calls.push({ url: String(url), init });
+    return new Response(
+      JSON.stringify({
+        id: "chatcmpl_test",
+        choices: [{ message: { role: "assistant", content: "pong" }, finish_reason: "stop" }],
+      }),
+      {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      },
+    );
+  }) as typeof fetch;
+
+  try {
+    const testResponse = await app.request("http://localhost/api/me/server-configs/test", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        citizenId: citizen.citizenId,
+        citizenToken: citizen.citizenToken,
+        backendType: "openai_compatible",
+        config: {
+          baseUrl: "http://127.0.0.1:1234/v1/",
+          model: "qwen-test",
+          apiKey: "secret-token",
+        },
+      }),
+    });
+
+    assert.equal(testResponse.status, 200);
+    assert.deepEqual(await testResponse.json(), { ok: true });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]?.url, "http://127.0.0.1:1234/v1/chat/completions");
+    assert.deepEqual(calls[0]?.init?.headers, {
+      "content-type": "application/json",
+      accept: "application/json",
+      authorization: "Bearer secret-token",
+    });
+    assert.deepEqual(JSON.parse(String(calls[0]?.init?.body)), {
+      model: "qwen-test",
+      stream: false,
+      messages: [{ role: "user", content: "ping" }],
+      max_tokens: 1,
+      temperature: 0,
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("server config test returns backend errors clearly", async () => {
+  const bootstrapResponse = await app.request("http://localho../api/citizens/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "server-config-test-fail@example.com",
+      globalDisplayName: "ServerConfigTestFail",
+    }),
+  });
+  const citizen = await bootstrapResponse.json();
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response('{"error":"bad model"}', {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    })) as typeof fetch;
+
+  try {
+    const testResponse = await app.request("http://localhost/api/me/server-configs/test", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        citizenId: citizen.citizenId,
+        citizenToken: citizen.citizenToken,
+        backendType: "openai_compatible",
+        config: {
+          baseUrl: "http://127.0.0.1:1234/v1/",
+          model: "missing-model",
+        },
+      }),
+    });
+
+    assert.equal(testResponse.status, 400);
+    assert.deepEqual(await testResponse.json(), {
+      error: 'openai-compatible backend request failed (400): {"error":"bad model"}',
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("citizen can create an openai-compatible private assistant from a shared server config", async () => {
+  const ownerResponse = await app.request("http://localho../api/citizens/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "shared-config-owner@example.com",
+      globalDisplayName: "SharedOwner",
+    }),
+  });
+  const consumerResponse = await app.request("http://localho../api/citizens/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "shared-config-consumer@example.com",
+      globalDisplayName: "SharedConsumer",
+    }),
+  });
+  const owner = await ownerResponse.json();
+  const consumer = await consumerResponse.json();
+
+  const configCreateResponse = await app.request("http://localhost/api/me/server-configs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      citizenId: owner.citizenId,
+      citizenToken: owner.citizenToken,
+      name: "Shared Assistant Config",
+      backendType: "openai_compatible",
+      visibility: "shared",
+      config: {
+        baseUrl: "http://127.0.0.1:3333/v1/",
+        model: "shared-qwen",
+        apiKey: "shared-secret",
+      },
+    }),
+  });
+  assert.equal(configCreateResponse.status, 201);
+  const createdConfig = await configCreateResponse.json();
+
+  const createAssistantResponse = await app.request("http://localhost/api/me/assistants", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      citizenId: consumer.citizenId,
+      citizenToken: consumer.citizenToken,
+      name: "SharedAPIAssistant",
+      serverConfigId: createdConfig.id,
+    }),
+  });
+
+  assert.equal(createAssistantResponse.status, 201);
+  const assistant = await createAssistantResponse.json();
+  assert.equal(assistant.backendType, "openai_compatible");
+
+  const storedAssistant = db
+    .select()
+    .from(privateAssistants)
+    .where(eq(privateAssistants.id, assistant.id))
+    .get();
+  assert.equal(storedAssistant?.ownerCitizenId, consumer.citizenId);
+  assert.equal(
+    storedAssistant?.backendConfig,
+    JSON.stringify({
+      baseUrl: "http://127.0.0.1:3333/v1",
+      model: "shared-qwen",
+      apiKey: "shared-secret",
+    }),
+  );
+
+  const storedBinding = db
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.privateAssistantId, assistant.id))
+    .get();
+  assert.equal(storedBinding?.backendType, "openai_compatible");
+  assert.match(storedBinding?.backendThreadId ?? "", /^oai_/);
 });
 
 test("uploads draft attachments and sends an attachment-only message", async () => {
@@ -3162,17 +3657,17 @@ test("mentioning an assistant while the owner is offline expires approval flow",
   assert.equal(offlineSystemMessage?.systemData?.title, "Owner unavailable");
 });
 
-test("mentioning an assistant keeps approval pending when the owner principal is online", async () => {
+test("mentioning an assistant keeps approval pending when the owner citizen is online", async () => {
   const roomId = "room_owner_principal_online";
   const createdAt = new Date("2026-03-25T01:10:00.000Z").toISOString();
 
   seedRoom({
     roomId,
-    name: "Owner Principal Online Room",
+    name: "Owner Citizen Online Room",
     inviteToken: createInviteToken(),
   });
 
-  db.insert(principals).values({
+  db.insert(citizens).values({
     id: "prn_owner_principal_online",
     kind: "human",
     loginKey: "owner-principal-online@example.com",
@@ -3188,7 +3683,7 @@ test("mentioning an assistant keeps approval pending when the owner principal is
     {
       id: "mem_requester_principal_online",
       roomId,
-      principalId: null,
+      citizenId: null,
       type: "human",
       roleKind: "none",
       displayName: "Requester",
@@ -3204,7 +3699,7 @@ test("mentioning an assistant keeps approval pending when the owner principal is
     {
       id: "mem_owner_principal_online",
       roomId,
-      principalId: "prn_owner_principal_online",
+      citizenId: "prn_owner_principal_online",
       type: "human",
       roleKind: "none",
       displayName: "Owner",
@@ -3220,7 +3715,7 @@ test("mentioning an assistant keeps approval pending when the owner principal is
     {
       id: "mem_assistant_principal_online",
       roomId,
-      principalId: null,
+      citizenId: null,
       type: "agent",
       roleKind: "assistant",
       displayName: "AssistB",
@@ -3236,8 +3731,8 @@ test("mentioning an assistant keeps approval pending when the owner principal is
   ]).run();
 
   const requesterWsToken = issueWsToken("mem_requester_principal_online", roomId);
-  const ownerPrincipalToken = issuePrincipalToken("prn_owner_principal_online");
-  const disconnectOwner = markPrincipalOnline("prn_owner_principal_online", ownerPrincipalToken);
+  const ownerPrincipalToken = issueCitizenToken("prn_owner_principal_online");
+  const disconnectOwner = markCitizenOnline("prn_owner_principal_online", ownerPrincipalToken);
 
   const response = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
     method: "POST",
@@ -4219,6 +4714,275 @@ test("mentioning an independent agent triggers execution and commits a reply", a
   );
 });
 
+test("mentioning an openai-compatible agent executes directly without bridge", async () => {
+  const roomId = "room_openai_direct_agent";
+  const createdAt = new Date("2026-03-25T04:05:00.000Z").toISOString();
+  const originalFetch = globalThis.fetch;
+
+  seedRoom({
+    roomId,
+    name: "OpenAI Direct Agent Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(citizens).values({
+    id: "prn_openai_direct_agent",
+    kind: "agent",
+    loginKey: "agent:openai-direct",
+    globalDisplayName: "OpenAIDirect",
+    backendType: "openai_compatible",
+    backendThreadId: "thread_openai_direct_agent",
+    backendConfig: JSON.stringify({
+      baseUrl: "http://127.0.0.1:1234/v1",
+      model: "qwen-test",
+    }),
+    sourceServerConfigId: null,
+    status: "offline",
+    createdAt,
+  }).run();
+
+  db.insert(agentBindings).values({
+    id: "agb_openai_direct_agent",
+    citizenId: "prn_openai_direct_agent",
+    privateAssistantId: null,
+    bridgeId: null,
+    backendType: "openai_compatible",
+    backendThreadId: "thread_openai_direct_agent",
+    cwd: null,
+    status: "pending_bridge",
+    attachedAt: createdAt,
+    detachedAt: null,
+  }).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_requester_openai_direct",
+      roomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "RequesterOpenAI",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_openai_direct",
+      roomId,
+      citizenId: "prn_openai_direct_agent",
+      type: "agent",
+      roleKind: "independent",
+      displayName: "OpenAIDirect",
+      ownerMemberId: null,
+      adapterType: "openai_compatible",
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+  ]).run();
+
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: "direct openai reply",
+            },
+            finish_reason: "stop",
+          },
+        ],
+      }),
+      {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      },
+    )) as typeof fetch;
+
+  try {
+    const requesterToken = issueWsToken("mem_requester_openai_direct", roomId);
+
+    const response = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        senderMemberId: "mem_requester_openai_direct",
+        wsToken: requesterToken,
+        content: "@OpenAIDirect please help",
+      }),
+    });
+
+    assert.equal(response.status, 201);
+
+    const session = await waitFor(
+      () =>
+        db
+          .select()
+          .from(agentSessions)
+          .where(eq(agentSessions.roomId, roomId))
+          .get(),
+      (value) => Boolean(value && value.status === "completed"),
+    );
+
+    const roomMessages = db
+      .select()
+      .from(messages)
+      .where(eq(messages.roomId, roomId))
+      .all();
+
+    assert.equal(session?.status, "completed");
+    assert.ok(
+      roomMessages.some(
+        (message) =>
+          message.messageType === "agent_text" &&
+          message.content === "direct openai reply",
+      ),
+    );
+    assert.ok(
+      roomMessages.every(
+        (message) =>
+          message.messageType !== "system_notice" ||
+          !String(message.systemData ?? "").includes("bridge_"),
+      ),
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("summary-only reply falls back to a short visible acknowledgement", async () => {
+  const roomId = "room_openai_summary_only_reply";
+  const createdAt = new Date("2026-03-25T04:06:00.000Z").toISOString();
+  const originalFetch = globalThis.fetch;
+
+  seedRoom({
+    roomId,
+    name: "OpenAI Summary Only Reply Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(citizens).values({
+    id: "prn_openai_summary_only",
+    kind: "agent",
+    loginKey: "agent:openai-summary-only",
+    globalDisplayName: "OpenAISummaryOnly",
+    backendType: "openai_compatible",
+    backendThreadId: "thread_openai_summary_only",
+    backendConfig: JSON.stringify({
+      baseUrl: "http://127.0.0.1:1234/v1",
+      model: "qwen-test",
+    }),
+    sourceServerConfigId: null,
+    status: "offline",
+    createdAt,
+  }).run();
+
+  db.insert(agentBindings).values({
+    id: "agb_openai_summary_only",
+    citizenId: "prn_openai_summary_only",
+    privateAssistantId: null,
+    bridgeId: null,
+    backendType: "openai_compatible",
+    backendThreadId: "thread_openai_summary_only",
+    cwd: null,
+    status: "pending_bridge",
+    attachedAt: createdAt,
+    detachedAt: null,
+  }).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_requester_openai_summary_only",
+      roomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "RequesterSummaryOnly",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_openai_summary_only",
+      roomId,
+      citizenId: "prn_openai_summary_only",
+      type: "agent",
+      roleKind: "independent",
+      displayName: "OpenAISummaryOnly",
+      ownerMemberId: null,
+      adapterType: "openai_compatible",
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+  ]).run();
+
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: "[[ROOM_SUMMARY]]User greeted the room; no new question.[[/ROOM_SUMMARY]]",
+            },
+            finish_reason: "stop",
+          },
+        ],
+      }),
+      {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      },
+    )) as typeof fetch;
+
+  try {
+    const requesterToken = issueWsToken("mem_requester_openai_summary_only", roomId);
+
+    const response = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        senderMemberId: "mem_requester_openai_summary_only",
+        wsToken: requesterToken,
+        content: "@OpenAISummaryOnly 你好",
+      }),
+    });
+
+    assert.equal(response.status, 201);
+
+    const session = await waitFor(
+      () =>
+        db
+          .select()
+          .from(agentSessions)
+          .where(eq(agentSessions.roomId, roomId))
+          .get(),
+      (value) => value?.status === "completed",
+    );
+
+    const roomMessages = db
+      .select()
+      .from(messages)
+      .where(eq(messages.roomId, roomId))
+      .all();
+
+    assert.equal(session?.status, "completed");
+    assert.ok(
+      roomMessages.some(
+        (message) =>
+          message.messageType === "agent_text" &&
+          message.content === "收到",
+      ),
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("agent prompts exclude hidden offline private assistants from the room roster", async () => {
   const roomId = "room_hidden_offline_private_assistant_prompt";
   const createdAt = new Date("2026-03-25T04:05:00.000Z").toISOString();
@@ -4462,7 +5226,7 @@ test("private assistant projections reject concurrent runs across rooms for the 
     {
       id: "mem_private_assistant_a",
       roomId: "room_private_concurrent_a",
-      principalId: null,
+      citizenId: null,
       type: "agent",
       roleKind: "assistant",
       displayName: "SharedPrivateAgent",
@@ -4476,7 +5240,7 @@ test("private assistant projections reject concurrent runs across rooms for the 
     {
       id: "mem_private_assistant_b",
       roomId: "room_private_concurrent_b",
-      principalId: null,
+      citizenId: null,
       type: "agent",
       roleKind: "assistant",
       displayName: "SharedPrivateAgent",
@@ -4580,7 +5344,7 @@ test("private assistant projections do not treat same-room pending sessions as d
     {
       id: "mem_same_room_assistant",
       roomId: "room_private_same_room_busy",
-      principalId: null,
+      citizenId: null,
       type: "agent",
       roleKind: "assistant",
       displayName: "SameRoomAssistant",
@@ -4800,6 +5564,145 @@ test("bridge register creates a reusable bridge identity and heartbeat refreshes
   });
 });
 
+test("bridge reconnect with a new instance fails accepted tasks from the old instance", async () => {
+  const createdAt = new Date("2026-03-25T04:40:00.000Z").toISOString();
+
+  db.insert(rooms).values({
+    id: "room_bridge_reconnect_running",
+    name: "Bridge Reconnect Running",
+    inviteToken: createInviteToken(),
+    status: "active",
+    createdAt,
+  }).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_bridge_reconnect_owner",
+      roomId: "room_bridge_reconnect_running",
+      type: "human",
+      roleKind: "none",
+      displayName: "Owner",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "offline",
+      createdAt,
+    },
+    {
+      id: "mem_bridge_reconnect_agent",
+      roomId: "room_bridge_reconnect_running",
+      type: "agent",
+      roleKind: "assistant",
+      displayName: "ReconnectAgent",
+      ownerMemberId: "mem_bridge_reconnect_owner",
+      sourcePrivateAssistantId: "pa_bridge_reconnect_running",
+      adapterType: "codex_cli",
+      adapterConfig: null,
+      presenceStatus: "offline",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(messages).values({
+    id: "msg_bridge_reconnect_trigger",
+    roomId: "room_bridge_reconnect_running",
+    senderMemberId: "mem_bridge_reconnect_owner",
+    messageType: "user_text",
+    content: "@ReconnectAgent continue",
+    replyToMessageId: null,
+    createdAt,
+  }).run();
+
+  db.insert(localBridges).values({
+    id: "brg_bridge_reconnect_running",
+    bridgeName: "Reconnect Bridge",
+    bridgeToken: "bridge_reconnect_running_token",
+    currentInstanceId: "binst_bridge_reconnect_old",
+    status: "online",
+    platform: "macOS",
+    version: "0.1.0",
+    metadata: null,
+    lastSeenAt: createdAt,
+    createdAt,
+    updatedAt: createdAt,
+  }).run();
+
+  db.insert(agentSessions).values({
+    id: "ags_bridge_reconnect_running",
+    roomId: "room_bridge_reconnect_running",
+    agentMemberId: "mem_bridge_reconnect_agent",
+    triggerMessageId: "msg_bridge_reconnect_trigger",
+    requesterMemberId: "mem_bridge_reconnect_owner",
+    approvalId: null,
+    approvalRequired: false,
+    status: "running",
+    startedAt: createdAt,
+    endedAt: null,
+  }).run();
+
+  db.insert(bridgeTasks).values({
+    id: "btsk_bridge_reconnect_running",
+    bridgeId: "brg_bridge_reconnect_running",
+    sessionId: "ags_bridge_reconnect_running",
+    roomId: "room_bridge_reconnect_running",
+    agentMemberId: "mem_bridge_reconnect_agent",
+    requesterMemberId: "mem_bridge_reconnect_owner",
+    backendType: "codex_cli",
+    backendThreadId: "thread_bridge_reconnect_running",
+    cwd: null,
+    outputMessageId: "msg_bridge_reconnect_output",
+    prompt: "continue",
+    contextPayload: "[]",
+    status: "accepted",
+    createdAt,
+    assignedAt: createdAt,
+    assignedInstanceId: "binst_bridge_reconnect_old",
+    acceptedAt: createdAt,
+    acceptedInstanceId: "binst_bridge_reconnect_old",
+    completedAt: null,
+    failedAt: null,
+  }).run();
+
+  const reconnectResponse = await app.request("http://localhost/api/bridges/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      bridgeId: "brg_bridge_reconnect_running",
+      bridgeToken: "bridge_reconnect_running_token",
+      bridgeInstanceId: "binst_bridge_reconnect_new",
+      bridgeName: "Reconnect Bridge",
+      platform: "macOS",
+      version: "0.1.1",
+    }),
+  });
+
+  assert.equal(reconnectResponse.status, 200);
+
+  const task = db
+    .select()
+    .from(bridgeTasks)
+    .where(eq(bridgeTasks.id, "btsk_bridge_reconnect_running"))
+    .get();
+  const session = db
+    .select()
+    .from(agentSessions)
+    .where(eq(agentSessions.id, "ags_bridge_reconnect_running"))
+    .get();
+  const allMessages = db
+    .select()
+    .from(messages)
+    .where(eq(messages.roomId, "room_bridge_reconnect_running"))
+    .all();
+
+  assert.equal(task?.status, "failed");
+  assert.equal(session?.status, "failed");
+  assert.match(
+    allMessages.at(-1)?.content ?? "",
+    /could not be resumed automatically/i,
+  );
+});
+
 test("bridge heartbeat auto-attaches pending bindings when it is the sole online bridge", async () => {
   const createdAt = new Date("2026-03-25T04:30:00.000Z").toISOString();
 
@@ -4819,7 +5722,7 @@ test("bridge heartbeat auto-attaches pending bindings when it is the sole online
     updatedAt: createdAt,
   }).run();
 
-  db.insert(principals).values({
+  db.insert(citizens).values({
     id: "prn_auto_attach",
     kind: "agent",
     loginKey: "agent:auto-attach",
@@ -4832,7 +5735,7 @@ test("bridge heartbeat auto-attaches pending bindings when it is the sole online
 
   db.insert(agentBindings).values({
     id: "agb_auto_attach",
-    principalId: "prn_auto_attach",
+    citizenId: "prn_auto_attach",
     privateAssistantId: null,
     bridgeId: null,
     backendType: "codex_cli",
@@ -4903,7 +5806,7 @@ test("bridge heartbeat broadcasts member.updated when a stale attached bridge be
     updatedAt: staleSeenAt,
   }).run();
 
-  db.insert(principals).values({
+  db.insert(citizens).values({
     id: "prn_heartbeat_recovery",
     kind: "agent",
     loginKey: "agent:heartbeat-recovery",
@@ -4918,7 +5821,7 @@ test("bridge heartbeat broadcasts member.updated when a stale attached bridge be
     {
       id: "mem_human_bridge_heartbeat_recovery",
       roomId,
-      principalId: null,
+      citizenId: null,
       type: "human",
       roleKind: "none",
       displayName: "Owner",
@@ -4934,7 +5837,7 @@ test("bridge heartbeat broadcasts member.updated when a stale attached bridge be
     {
       id: "mem_agent_bridge_heartbeat_recovery",
       roomId,
-      principalId: "prn_heartbeat_recovery",
+      citizenId: "prn_heartbeat_recovery",
       type: "agent",
       roleKind: "independent",
       displayName: "RecoveredAgent",
@@ -4951,7 +5854,7 @@ test("bridge heartbeat broadcasts member.updated when a stale attached bridge be
 
   db.insert(agentBindings).values({
     id: "agb_heartbeat_recovery",
-    principalId: "prn_heartbeat_recovery",
+    citizenId: "prn_heartbeat_recovery",
     privateAssistantId: null,
     bridgeId: "brg_heartbeat_recovery",
     backendType: "codex_cli",
@@ -5020,7 +5923,7 @@ test("bridge heartbeat does not auto-attach pending bindings when multiple bridg
     },
   ]).run();
 
-  db.insert(principals).values({
+  db.insert(citizens).values({
     id: "prn_auto_attach_conflict",
     kind: "agent",
     loginKey: "agent:auto-attach-conflict",
@@ -5033,7 +5936,7 @@ test("bridge heartbeat does not auto-attach pending bindings when multiple bridg
 
   db.insert(agentBindings).values({
     id: "agb_auto_attach_conflict",
-    principalId: "prn_auto_attach_conflict",
+    citizenId: "prn_auto_attach_conflict",
     privateAssistantId: null,
     bridgeId: null,
     backendType: "codex_cli",
@@ -5090,7 +5993,7 @@ test("bridge can attach an existing agent binding by backendThreadId", async () 
     createdAt: originalAttachedAt,
   }).run();
 
-  db.insert(principals).values({
+  db.insert(citizens).values({
     id: "prn_attach_agent",
     kind: "agent",
     loginKey: "agent:attach",
@@ -5104,7 +6007,7 @@ test("bridge can attach an existing agent binding by backendThreadId", async () 
   db.insert(members).values({
     id: "mem_attach_agent",
     roomId: "room_attach_binding",
-    principalId: "prn_attach_agent",
+    citizenId: "prn_attach_agent",
     type: "agent",
     roleKind: "independent",
     displayName: "AttachAgent",
@@ -5117,7 +6020,7 @@ test("bridge can attach an existing agent binding by backendThreadId", async () 
 
   db.insert(agentBindings).values({
     id: "agb_attach",
-    principalId: "prn_attach_agent",
+    citizenId: "prn_attach_agent",
     privateAssistantId: null,
     bridgeId: null,
     backendType: "codex_cli",
@@ -5190,7 +6093,7 @@ test("bridge attach returns 409 when the binding is already owned by another bri
     createdAt,
   }).run();
 
-  db.insert(principals).values({
+  db.insert(citizens).values({
     id: "prn_attach_owner_conflict",
     kind: "agent",
     loginKey: "agent:attach-owner-conflict",
@@ -5204,7 +6107,7 @@ test("bridge attach returns 409 when the binding is already owned by another bri
   db.insert(members).values({
     id: "mem_attach_owner_conflict",
     roomId: "room_attach_owner_conflict",
-    principalId: "prn_attach_owner_conflict",
+    citizenId: "prn_attach_owner_conflict",
     type: "agent",
     roleKind: "independent",
     displayName: "AttachOwnerConflict",
@@ -5217,7 +6120,7 @@ test("bridge attach returns 409 when the binding is already owned by another bri
 
   db.insert(agentBindings).values({
     id: "agb_attach_owner_conflict",
-    principalId: "prn_attach_owner_conflict",
+    citizenId: "prn_attach_owner_conflict",
     privateAssistantId: null,
     bridgeId: "brg_attach_owner_a",
     backendType: "codex_cli",
@@ -5258,7 +6161,7 @@ test("unattached codex binding fails with a local bridge requirement message", a
     inviteToken: createInviteToken(),
   });
 
-  db.insert(principals).values({
+  db.insert(citizens).values({
     id: "prn_codex_agent",
     kind: "agent",
     loginKey: "agent:codex-pending",
@@ -5285,7 +6188,7 @@ test("unattached codex binding fails with a local bridge requirement message", a
     {
       id: "mem_codex_agent",
       roomId,
-      principalId: "prn_codex_agent",
+      citizenId: "prn_codex_agent",
       type: "agent",
       roleKind: "independent",
       displayName: "CodexAgent",
@@ -5299,7 +6202,7 @@ test("unattached codex binding fails with a local bridge requirement message", a
 
   db.insert(agentBindings).values({
     id: "agb_codex_pending_bridge",
-    principalId: "prn_codex_agent",
+    citizenId: "prn_codex_agent",
     privateAssistantId: null,
     bridgeId: null,
     backendType: "codex_cli",
@@ -5351,6 +6254,20 @@ test("unattached codex binding fails with a local bridge requirement message", a
 test("attached codex binding can be pulled and completed through bridge task endpoints", async () => {
   const roomId = "room_codex_bridge_task";
   const createdAt = new Date("2026-03-25T07:00:00.000Z").toISOString();
+  const requesterToken = issueWsToken("mem_requester_bridge_task", roomId);
+  const sent: string[] = [];
+  const listeners = new Map<string, () => void>();
+  const fakeSocket = {
+    readyState: WebSocket.OPEN,
+    close() {},
+    send(payload: string) {
+      sent.push(payload);
+    },
+    on(event: string, handler: () => void) {
+      listeners.set(event, handler);
+      return this;
+    },
+  };
 
   seedRoom({
     roomId,
@@ -5372,7 +6289,7 @@ test("attached codex binding can be pulled and completed through bridge task end
     updatedAt: createdAt,
   }).run();
 
-  db.insert(principals).values({
+  db.insert(citizens).values({
     id: "prn_codex_bridge_task",
     kind: "agent",
     loginKey: "agent:bridge-task",
@@ -5399,7 +6316,7 @@ test("attached codex binding can be pulled and completed through bridge task end
     {
       id: "mem_codex_bridge_task",
       roomId,
-      principalId: "prn_codex_bridge_task",
+      citizenId: "prn_codex_bridge_task",
       type: "agent",
       roleKind: "independent",
       displayName: "BridgeCodex",
@@ -5413,7 +6330,7 @@ test("attached codex binding can be pulled and completed through bridge task end
 
   db.insert(agentBindings).values({
     id: "agb_codex_bridge_task",
-    principalId: "prn_codex_bridge_task",
+    citizenId: "prn_codex_bridge_task",
     privateAssistantId: null,
     bridgeId: "brg_codex_task",
     backendType: "codex_cli",
@@ -5424,7 +6341,10 @@ test("attached codex binding can be pulled and completed through bridge task end
     detachedAt: null,
   }).run();
 
-  const requesterToken = issueWsToken("mem_requester_bridge_task", roomId);
+  registerSocket(fakeSocket as never, {
+    url: `/?roomId=${roomId}&memberId=mem_requester_bridge_task&wsToken=${requesterToken}`,
+  } as never);
+
   const messageResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -5515,6 +6435,22 @@ test("attached codex binding can be pulled and completed through bridge task end
 
   assert.equal(deltaResponse.status, 200);
 
+  const reasoningDeltaResponse = await app.request(
+    `http://localhost/api/bridges/brg_codex_task/tasks/${pulled.task.id}/delta`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_codex_task_token",
+        bridgeInstanceId: "binst_codex_task",
+        kind: "reasoning",
+        delta: "thinking through the request",
+      }),
+    },
+  );
+
+  assert.equal(reasoningDeltaResponse.status, 200);
+
   const completeResponse = await app.request(
     `http://localhost/api/bridges/brg_codex_task/tasks/${pulled.task.id}/complete`,
     {
@@ -5571,6 +6507,16 @@ test("attached codex binding can be pulled and completed through bridge task end
         message.content === "final bridge output",
     ),
   );
+
+  const reasoningEvent = sent
+    .map((payload) => JSON.parse(payload))
+    .find((event) => event.type === "agent.stream.reasoning");
+
+  assert.equal(reasoningEvent?.payload?.sessionId, session?.id);
+  assert.equal(reasoningEvent?.payload?.messageId, task?.outputMessageId);
+  assert.equal(reasoningEvent?.payload?.delta, "thinking through the request");
+
+  listeners.get("close")?.();
 });
 
 test("bridge-completed agent replies can mention another independent agent and trigger a follow-up session", async () => {
@@ -5597,7 +6543,7 @@ test("bridge-completed agent replies can mention another independent agent and t
     updatedAt: createdAt,
   }).run();
 
-  db.insert(principals).values([
+  db.insert(citizens).values([
     {
       id: "prn_bridge_followup_alpha",
       kind: "agent",
@@ -5636,7 +6582,7 @@ test("bridge-completed agent replies can mention another independent agent and t
     {
       id: "mem_bridge_followup_alpha",
       roomId,
-      principalId: "prn_bridge_followup_alpha",
+      citizenId: "prn_bridge_followup_alpha",
       type: "agent",
       roleKind: "independent",
       displayName: "Alpha",
@@ -5649,7 +6595,7 @@ test("bridge-completed agent replies can mention another independent agent and t
     {
       id: "mem_bridge_followup_beta",
       roomId,
-      principalId: "prn_bridge_followup_beta",
+      citizenId: "prn_bridge_followup_beta",
       type: "agent",
       roleKind: "independent",
       displayName: "Beta",
@@ -5664,7 +6610,7 @@ test("bridge-completed agent replies can mention another independent agent and t
   db.insert(agentBindings).values([
     {
       id: "agb_bridge_followup_alpha",
-      principalId: "prn_bridge_followup_alpha",
+      citizenId: "prn_bridge_followup_alpha",
       privateAssistantId: null,
       bridgeId: "brg_bridge_followup",
       backendType: "codex_cli",
@@ -5676,7 +6622,7 @@ test("bridge-completed agent replies can mention another independent agent and t
     },
     {
       id: "agb_bridge_followup_beta",
-      principalId: "prn_bridge_followup_beta",
+      citizenId: "prn_bridge_followup_beta",
       privateAssistantId: null,
       bridgeId: "brg_bridge_followup",
       backendType: "codex_cli",
@@ -5798,7 +6744,7 @@ test("bridge tasks can upload agent-generated attachments and commit an attachme
     updatedAt: createdAt,
   }).run();
 
-  db.insert(principals).values({
+  db.insert(citizens).values({
     id: "prn_bridge_attachment",
     kind: "agent",
     loginKey: "agent:bridge-attachment",
@@ -5825,7 +6771,7 @@ test("bridge tasks can upload agent-generated attachments and commit an attachme
     {
       id: "mem_agent_bridge_attachment",
       roomId,
-      principalId: "prn_bridge_attachment",
+      citizenId: "prn_bridge_attachment",
       type: "agent",
       roleKind: "independent",
       displayName: "AttachmentAgent",
@@ -5839,7 +6785,7 @@ test("bridge tasks can upload agent-generated attachments and commit an attachme
 
   db.insert(agentBindings).values({
     id: "agb_bridge_attachment",
-    principalId: "prn_bridge_attachment",
+    citizenId: "prn_bridge_attachment",
     privateAssistantId: null,
     bridgeId: "brg_bridge_attachment",
     backendType: "codex_cli",
@@ -5951,7 +6897,7 @@ test("bridge task completion rejects inline generated attachments without upload
     inviteToken: createInviteToken(),
   });
 
-  db.insert(principals).values([
+  db.insert(citizens).values([
     {
       id: "prn_bridge_inline_requester",
       kind: "human",
@@ -5978,7 +6924,7 @@ test("bridge task completion rejects inline generated attachments without upload
     {
       id: "mem_bridge_inline_requester",
       roomId,
-      principalId: "prn_bridge_inline_requester",
+      citizenId: "prn_bridge_inline_requester",
       type: "human",
       roleKind: "none",
       displayName: "Requester",
@@ -5992,7 +6938,7 @@ test("bridge task completion rejects inline generated attachments without upload
     {
       id: "mem_bridge_inline_agent",
       roomId,
-      principalId: "prn_bridge_inline_agent",
+      citizenId: "prn_bridge_inline_agent",
       type: "agent",
       roleKind: "independent",
       displayName: "InlineAgent",
@@ -6024,7 +6970,7 @@ test("bridge task completion rejects inline generated attachments without upload
     .insert(agentBindings)
     .values({
       id: "agb_inline_attachment",
-      principalId: "prn_bridge_inline_agent",
+      citizenId: "prn_bridge_inline_agent",
       privateAssistantId: null,
       bridgeId: "brg_inline_attachment",
       backendType: "codex_cli",
@@ -6124,7 +7070,7 @@ test("bridge task completion rejects agent-generated attachments exceeding total
     updatedAt: createdAt,
   }).run();
 
-  db.insert(principals).values({
+  db.insert(citizens).values({
     id: "prn_bridge_attachment_limit",
     kind: "agent",
     loginKey: "agent:bridge-attachment-limit",
@@ -6151,7 +7097,7 @@ test("bridge task completion rejects agent-generated attachments exceeding total
     {
       id: "mem_agent_bridge_attachment_limit",
       roomId,
-      principalId: "prn_bridge_attachment_limit",
+      citizenId: "prn_bridge_attachment_limit",
       type: "agent",
       roleKind: "independent",
       displayName: "AttachmentLimitAgent",
@@ -6165,7 +7111,7 @@ test("bridge task completion rejects agent-generated attachments exceeding total
 
   db.insert(agentBindings).values({
     id: "agb_bridge_attachment_limit",
-    principalId: "prn_bridge_attachment_limit",
+    citizenId: "prn_bridge_attachment_limit",
     privateAssistantId: null,
     bridgeId: "brg_bridge_attachment_limit",
     backendType: "codex_cli",
@@ -6293,7 +7239,7 @@ test("bridge-backed room secretary can silently complete an observe run", async 
     updatedAt: freshSeenAt,
   }).run();
 
-  db.insert(principals).values({
+  db.insert(citizens).values({
     id: "prn_bridge_secretary_silent",
     kind: "agent",
     loginKey: "agent:bridge-secretary-silent",
@@ -6308,7 +7254,7 @@ test("bridge-backed room secretary can silently complete an observe run", async 
     {
       id: "mem_human_bridge_secretary_requester",
       roomId,
-      principalId: null,
+      citizenId: null,
       type: "human",
       roleKind: "none",
       displayName: "Requester",
@@ -6324,7 +7270,7 @@ test("bridge-backed room secretary can silently complete an observe run", async 
     {
       id: "mem_bridge_secretary_silent",
       roomId,
-      principalId: "prn_bridge_secretary_silent",
+      citizenId: "prn_bridge_secretary_silent",
       type: "agent",
       roleKind: "independent",
       displayName: "BridgeSecretary",
@@ -6341,7 +7287,7 @@ test("bridge-backed room secretary can silently complete an observe run", async 
 
   db.insert(agentBindings).values({
     id: "agb_bridge_secretary_silent",
-    principalId: "prn_bridge_secretary_silent",
+    citizenId: "prn_bridge_secretary_silent",
     privateAssistantId: null,
     bridgeId: "brg_bridge_secretary_silent",
     backendType: "codex_cli",
@@ -6454,7 +7400,7 @@ test("bridge-backed summarizing secretary can update summary without posting a v
     updatedAt: freshSeenAt,
   }).run();
 
-  db.insert(principals).values({
+  db.insert(citizens).values({
     id: "prn_bridge_secretary_summary",
     kind: "agent",
     loginKey: "agent:bridge-secretary-summary",
@@ -6469,7 +7415,7 @@ test("bridge-backed summarizing secretary can update summary without posting a v
     {
       id: "mem_human_bridge_secretary_summary",
       roomId,
-      principalId: null,
+      citizenId: null,
       type: "human",
       roleKind: "none",
       displayName: "Requester",
@@ -6485,7 +7431,7 @@ test("bridge-backed summarizing secretary can update summary without posting a v
     {
       id: "mem_bridge_secretary_summary",
       roomId,
-      principalId: "prn_bridge_secretary_summary",
+      citizenId: "prn_bridge_secretary_summary",
       type: "agent",
       roleKind: "independent",
       displayName: "BridgeSecretary",
@@ -6502,7 +7448,7 @@ test("bridge-backed summarizing secretary can update summary without posting a v
 
   db.insert(agentBindings).values({
     id: "agb_bridge_secretary_summary",
-    principalId: "prn_bridge_secretary_summary",
+    citizenId: "prn_bridge_secretary_summary",
     privateAssistantId: null,
     bridgeId: "brg_bridge_secretary_summary",
     backendType: "codex_cli",
@@ -6615,7 +7561,7 @@ test("attached claude private assistant binding persists refreshed backendThread
     updatedAt: createdAt,
   }).run();
 
-  db.insert(principals).values({
+  db.insert(citizens).values({
     id: "prn_owner_claude_task",
     kind: "human",
     loginKey: "owner-claude-task@example.com",
@@ -6630,7 +7576,7 @@ test("attached claude private assistant binding persists refreshed backendThread
     {
       id: "mem_owner_claude_task",
       roomId,
-      principalId: "prn_owner_claude_task",
+      citizenId: "prn_owner_claude_task",
       type: "human",
       roleKind: "none",
       displayName: "OwnerClaudeTask",
@@ -6658,8 +7604,8 @@ test("attached claude private assistant binding persists refreshed backendThread
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      principalId: "prn_owner_claude_task",
-      principalToken: issuePrincipalToken("prn_owner_claude_task"),
+      citizenId: "prn_owner_claude_task",
+      citizenToken: issueCitizenToken("prn_owner_claude_task"),
       name: "ClaudeHelper",
       backendType: "claude_code",
     }),
@@ -6809,7 +7755,7 @@ test("attached codex binding emits a waiting notice when its bridge heartbeat is
     updatedAt: staleSeenAt,
   }).run();
 
-  db.insert(principals).values({
+  db.insert(citizens).values({
     id: "prn_codex_waiting",
     kind: "agent",
     loginKey: "agent:waiting",
@@ -6836,7 +7782,7 @@ test("attached codex binding emits a waiting notice when its bridge heartbeat is
     {
       id: "mem_codex_waiting",
       roomId,
-      principalId: "prn_codex_waiting",
+      citizenId: "prn_codex_waiting",
       type: "agent",
       roleKind: "independent",
       displayName: "WaitingCodex",
@@ -6850,7 +7796,7 @@ test("attached codex binding emits a waiting notice when its bridge heartbeat is
 
   db.insert(agentBindings).values({
     id: "agb_codex_waiting",
-    principalId: "prn_codex_waiting",
+    citizenId: "prn_codex_waiting",
     privateAssistantId: null,
     bridgeId: "brg_codex_waiting",
     backendType: "codex_cli",

@@ -6,7 +6,7 @@ import { createRoomSocket, isRealtimeEvent } from "../api/ws";
 import { useApprovalStore } from "../stores/approval";
 import { useConnectionStore } from "../stores/connection";
 import { useMessageStore } from "../stores/message";
-import { usePrincipalStore } from "../stores/principal";
+import { useCitizenStore } from "../stores/citizen";
 import { useRoomStore } from "../stores/room";
 import { useSessionStore } from "../stores/session";
 
@@ -22,6 +22,7 @@ import { useSessionStore } from "../stores/session";
  * Event dispatch:
  *   agent.session.started   → sessionStore.startSession
  *   agent.stream.delta      → sessionStore.updateStream
+ *   agent.stream.reasoning  → sessionStore.updateReasoning
  *   agent.message.committed → sessionStore.commitMessage (removes stream)
  *   agent.session.completed → sessionStore.updateSession
  *   agent.session.failed    → sessionStore.updateSession (with error)
@@ -96,8 +97,8 @@ export function useRoomWebSocket() {
           useConnectionStore.getState().setStatus("disconnected");
           void (async () => {
             try {
-              await usePrincipalStore.getState().restoreFromStorage();
-              const refreshedPrincipal = usePrincipalStore.getState().principal;
+              await useCitizenStore.getState().restoreFromStorage();
+              const refreshedPrincipal = useCitizenStore.getState().principal;
               if (refreshedPrincipal) {
                 await useRoomStore.getState().joinExistingRoom(room.id);
               } else {
@@ -150,7 +151,7 @@ export function useRoomWebSocket() {
   return socketRef;
 }
 
-function handleEvent(event: RealtimeEvent): void {
+export function handleEvent(event: RealtimeEvent): void {
   switch (event.type) {
     // ── Agent streaming events ──
     case "agent.session.started": {
@@ -160,6 +161,11 @@ function handleEvent(event: RealtimeEvent): void {
     case "agent.stream.delta": {
       const { sessionId, messageId, delta } = event.payload;
       useSessionStore.getState().updateStream({ sessionId, messageId, delta });
+      break;
+    }
+    case "agent.stream.reasoning": {
+      const { sessionId, messageId, delta } = event.payload;
+      useSessionStore.getState().updateReasoning({ sessionId, messageId, delta });
       break;
     }
     case "agent.message.committed": {

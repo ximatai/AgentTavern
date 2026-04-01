@@ -11,7 +11,7 @@ import { useTranslation } from "react-i18next";
 
 import { toast } from "../lib/feedback";
 import { copyText } from "../lib/clipboard";
-import { usePrincipalStore } from "../stores/principal";
+import { useCitizenStore } from "../stores/citizen";
 import {
   getPrivateAssistants,
   getAssistantInvites,
@@ -26,6 +26,8 @@ import type {
   PrivateAssistantRecord,
   PrivateAssistantInviteRecord,
 } from "../api/assistants";
+import { getMyServerConfigs, getSharedServerConfigs } from "../api/server-configs";
+import type { ServerConfigRecord, SharedServerConfigRecord } from "../api/server-configs";
 import type { AgentBackendType } from "@agent-tavern/shared";
 
 import "../styles/assistant-management.css";
@@ -69,19 +71,24 @@ function buildInvitePrompt(
 interface AssistantManagementModalProps {
   open: boolean;
   onClose: () => void;
+  onOpenModelConnections: () => void;
 }
 
-export function AssistantManagementModal({ open, onClose }: AssistantManagementModalProps) {
+export function AssistantManagementModal({
+  open,
+  onClose,
+  onOpenModelConnections,
+}: AssistantManagementModalProps) {
   const { t } = useTranslation();
-  const principal = usePrincipalStore((s) => s.principal);
+  const principal = useCitizenStore((s) => s.principal);
 
   const [assistants, setAssistants] = useState<PrivateAssistantRecord[]>([]);
   const [invites, setInvites] = useState<PrivateAssistantInviteRecord[]>([]);
+  const [serverConfigs, setServerConfigs] = useState<ServerConfigRecord[]>([]);
+  const [sharedServerConfigs, setSharedServerConfigs] = useState<SharedServerConfigRecord[]>([]);
   const [nameInput, setNameInput] = useState("");
   const [managedNameInput, setManagedNameInput] = useState("");
-  const [managedBaseUrl, setManagedBaseUrl] = useState("");
-  const [managedModel, setManagedModel] = useState("");
-  const [managedApiKey, setManagedApiKey] = useState("");
+  const [managedServerConfigId, setManagedServerConfigId] = useState<string>("");
   const [creatingManaged, setCreatingManaged] = useState(false);
   const [creating, setCreating] = useState(false);
   const [copyingId, setCopyingId] = useState<string | null>(null);
@@ -89,27 +96,36 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
   const [removingInviteId, setRemovingInviteId] = useState<string | null>(null);
   const [togglingAssistantId, setTogglingAssistantId] = useState<string | null>(null);
   const [inviteBackendType, setInviteBackendType] = useState<AgentBackendType>("claude_code");
+  const [createMode, setCreateMode] = useState<"managed" | "invite">("managed");
 
   const refreshData = useCallback(async () => {
     if (!principal) {
       setAssistants([]);
       setInvites([]);
+      setServerConfigs([]);
+      setSharedServerConfigs([]);
       return;
     }
     try {
-      const [items, inviteItems] = await Promise.all([
-        getPrivateAssistants(principal.principalId, principal.principalToken),
-        getAssistantInvites(principal.principalId, principal.principalToken),
+      const [items, inviteItems, ownServerConfigs, sharedConfigs] = await Promise.all([
+        getPrivateAssistants(principal.citizenId, principal.citizenToken),
+        getAssistantInvites(principal.citizenId, principal.citizenToken),
+        getMyServerConfigs(principal.citizenId, principal.citizenToken),
+        getSharedServerConfigs(principal.citizenId, principal.citizenToken),
       ]);
       setAssistants(sortByCreatedAt(items));
       setInvites(sortByCreatedAt(inviteItems));
+      setServerConfigs(sortByCreatedAt(ownServerConfigs));
+      setSharedServerConfigs(sortByCreatedAt(sharedConfigs));
     } catch {
       setAssistants([]);
       setInvites([]);
+      setServerConfigs([]);
+      setSharedServerConfigs([]);
     }
   }, [principal]);
 
-  const privateAssetsVersion = usePrincipalStore((s) => s.privateAssetsVersion);
+  const privateAssetsVersion = useCitizenStore((s) => s.privateAssetsVersion);
 
   useEffect(() => {
     if (open) {
@@ -121,6 +137,23 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
     () => invites.filter((invite) => invite.status === "pending"),
     [invites],
   );
+  const availableServerConfigOptions = useMemo(() => {
+    const ownOptions = serverConfigs.map((config) => ({
+      value: config.id,
+      label: `${config.name} · ${config.config.model}`,
+    }));
+    const sharedOptions = sharedServerConfigs.map((config) => ({
+      value: config.id,
+      label: `${config.name} · ${config.config.model} · ${t("assistantPanel.sharedSourceLabel")}`,
+    }));
+    return [...ownOptions, ...sharedOptions];
+  }, [serverConfigs, sharedServerConfigs, t]);
+
+  useEffect(() => {
+    if (!availableServerConfigOptions.some((item) => item.value === managedServerConfigId)) {
+      setManagedServerConfigId(availableServerConfigOptions[0]?.value ?? "");
+    }
+  }, [availableServerConfigOptions, managedServerConfigId]);
 
   async function handleCreate() {
     const name = nameInput.trim();
@@ -128,8 +161,8 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
     setCreating(true);
     try {
       const created = await createAssistantInvite(
-        principal.principalId,
-        principal.principalToken,
+        principal.citizenId,
+        principal.citizenToken,
         name,
         inviteBackendType,
       );
@@ -149,27 +182,18 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
 
   async function handleCreateManaged() {
     const name = managedNameInput.trim();
-    const baseUrl = managedBaseUrl.trim();
-    const model = managedModel.trim();
-    if (!name || !baseUrl || !model || !principal) return;
+    if (!name || !managedServerConfigId || !principal) return;
 
     setCreatingManaged(true);
     try {
       const created = await createManagedAssistant(
-        principal.principalId,
-        principal.principalToken,
+        principal.citizenId,
+        principal.citizenToken,
         name,
-        {
-          baseUrl,
-          model,
-          ...(managedApiKey.trim() ? { apiKey: managedApiKey.trim() } : {}),
-        },
+        { serverConfigId: managedServerConfigId },
       );
       setAssistants((prev) => sortByCreatedAt([...prev, created]));
       setManagedNameInput("");
-      setManagedBaseUrl("");
-      setManagedModel("");
-      setManagedApiKey("");
       toast().success(t("assistantPanel.directCreateSuccess"));
     } catch (err) {
       toast().error(err instanceof Error ? err.message : t("assistantPanel.directCreateFailed"));
@@ -201,7 +225,7 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
       onOk: async () => {
         setRemovingId(assistant.id);
         try {
-          await removePrivateAssistant(assistant.id, principal.principalId, principal.principalToken);
+          await removePrivateAssistant(assistant.id, principal.citizenId, principal.citizenToken);
           setAssistants((prev) => prev.filter((a) => a.id !== assistant.id));
           toast().success(t("assistantPanel.removeSuccess"));
         } catch (err) {
@@ -219,8 +243,8 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
     setTogglingAssistantId(assistant.id);
     try {
       const updated = assistant.status === "paused"
-        ? await resumePrivateAssistant(assistant.id, principal.principalId, principal.principalToken)
-        : await pausePrivateAssistant(assistant.id, principal.principalId, principal.principalToken);
+        ? await resumePrivateAssistant(assistant.id, principal.citizenId, principal.citizenToken)
+        : await pausePrivateAssistant(assistant.id, principal.citizenId, principal.citizenToken);
       setAssistants((prev) =>
         sortByCreatedAt(prev.map((item) => (item.id === assistant.id ? updated : item))),
       );
@@ -247,7 +271,7 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
 
     setRemovingInviteId(inviteId);
     try {
-      await removeAssistantInvite(inviteId, principal.principalId, principal.principalToken);
+      await removeAssistantInvite(inviteId, principal.citizenId, principal.citizenToken);
       setInvites((prev) => prev.filter((invite) => invite.id !== inviteId));
       toast().success(t("assistantPanel.removeInviteSuccess"));
     } catch (err) {
@@ -296,6 +320,9 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
         {/* Connected assistants */}
         {assistants.length > 0 ? (
           <div className="am-section">
+            <div className="am-section-header">
+              <span className="am-section-title">{t("assistantPanel.connectedTitle")}</span>
+            </div>
             <div className="am-list">
               {assistants.map((assistant) => (
                 <div key={assistant.id} className="am-list-item">
@@ -359,8 +386,8 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
                     <div className="am-item-meta">
                       <Tag className="am-backend-tag">{backendTypeLabel(invite.backendType)}</Tag>
                       <Tag className="am-status-tag">{inviteStatusLabel(invite.status)}</Tag>
-                      <Text type="secondary" className="am-invite-prompt">
-                        {buildInvitePrompt(invite)}
+                      <Text type="secondary" className="am-item-summary">
+                        {t("assistantPanel.pendingHint")}
                       </Text>
                     </div>
                   </div>
@@ -400,97 +427,126 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
         ) : null}
 
         <div className="am-invite-section">
-          <Text type="secondary" className="am-invite-label">
-            {t("assistantPanel.directLabel")}
-          </Text>
-          <div className="am-source-hint">
-            <span className="am-source-icon" aria-hidden="true">
-              <ApiOutlined />
-            </span>
-            <Text type="secondary">{t("login.backendOpenAICompatible")}</Text>
+          <div className="am-section-header am-section-header-tight">
+            <span className="am-section-title">{t("assistantPanel.createTitle")}</span>
+            <div className="am-mode-switch" role="tablist" aria-label={t("assistantPanel.createModeLabel")}>
+              <button
+                type="button"
+                className={`am-mode-switch-button ${createMode === "managed" ? "is-active" : ""}`}
+                onClick={() => setCreateMode("managed")}
+              >
+                {t("assistantPanel.createModeManaged")}
+              </button>
+              <button
+                type="button"
+                className={`am-mode-switch-button ${createMode === "invite" ? "is-active" : ""}`}
+                onClick={() => setCreateMode("invite")}
+              >
+                {t("assistantPanel.createModeInvite")}
+              </button>
+            </div>
           </div>
-          <div className="am-form-grid">
-            <Input
-              value={managedNameInput}
-              onChange={(e) => setManagedNameInput(e.target.value)}
-              placeholder={t("assistantPanel.namePlaceholder")}
-            />
-            <Input
-              value={managedBaseUrl}
-              onChange={(e) => setManagedBaseUrl(e.target.value)}
-              placeholder={t("login.backendBaseUrlPlaceholder")}
-            />
-            <Input
-              value={managedModel}
-              onChange={(e) => setManagedModel(e.target.value)}
-              placeholder={t("login.backendModelPlaceholder")}
-            />
-            <Input.Password
-              value={managedApiKey}
-              onChange={(e) => setManagedApiKey(e.target.value)}
-              placeholder={t("login.backendApiKeyPlaceholder")}
-            />
-          </div>
-          <div className="am-inline-actions">
-            <Tag className="am-backend-tag">{t("login.backendOpenAICompatible")}</Tag>
-            <Button
-              type="primary"
-              loading={creatingManaged}
-              onClick={handleCreateManaged}
-              icon={<PlusOutlined />}
-              className="am-create-btn"
-            >
-              {t("assistantPanel.directCreate")}
-            </Button>
-          </div>
-          <Text type="secondary" className="am-invite-tip">
-            {t("assistantPanel.directTip")}
-          </Text>
+          {createMode === "managed" ? (
+            <div className="am-create-card">
+              <Text type="secondary" className="am-invite-label">
+                {t("assistantPanel.directLabel")}
+              </Text>
+              <div className="am-source-hint">
+                <span className="am-source-icon" aria-hidden="true">
+                  <ApiOutlined />
+                </span>
+                <Text type="secondary">{t("assistantPanel.directHint")}</Text>
+              </div>
+              <div className="am-form-grid">
+                <Input
+                  value={managedNameInput}
+                  onChange={(e) => setManagedNameInput(e.target.value)}
+                  placeholder={t("assistantPanel.namePlaceholder")}
+                />
+                <Select
+                  value={managedServerConfigId || undefined}
+                  onChange={setManagedServerConfigId}
+                  placeholder={t("assistantPanel.selectServerConfigPlaceholder")}
+                  options={availableServerConfigOptions}
+                />
+              </div>
+              {availableServerConfigOptions.length === 0 ? (
+                <div className="am-empty-inline">
+                  <Text type="secondary">{t("assistantPanel.noModelConnectionHint")}</Text>
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      onClose();
+                      onOpenModelConnections();
+                    }}
+                  >
+                    {t("assistantPanel.openModelConnections")}
+                  </Button>
+                </div>
+              ) : null}
+              <div className="am-inline-actions">
+                <Tag className="am-backend-tag">{t("login.backendOpenAICompatible")}</Tag>
+                <Button
+                  type="primary"
+                  loading={creatingManaged}
+                  onClick={() => void handleCreateManaged()}
+                  icon={<PlusOutlined />}
+                  className="am-create-btn"
+                  disabled={!managedServerConfigId}
+                >
+                  {t("assistantPanel.directCreate")}
+                </Button>
+              </div>
+              <Text type="secondary" className="am-invite-tip">
+                {t("assistantPanel.directTip")}
+              </Text>
+            </div>
+          ) : (
+            <div className="am-create-card">
+              <Text type="secondary" className="am-invite-label">
+                {t("assistantPanel.inviteLabel")}
+              </Text>
+              <div className="am-source-hint">
+                <span className="am-source-icon" aria-hidden="true">
+                  <RobotOutlined />
+                </span>
+                <Text type="secondary">{t("assistantPanel.externalAgentLabel")}</Text>
+              </div>
+              <div className="am-invite-form">
+                <Input
+                  value={nameInput}
+                  onChange={(e) => setNameInput(e.target.value)}
+                  placeholder={t("assistantPanel.namePlaceholder")}
+                  onPressEnter={handleCreate}
+                  className="am-name-input"
+                />
+                <Select
+                  value={inviteBackendType}
+                  onChange={setInviteBackendType}
+                  style={{ width: 156 }}
+                  options={[
+                    { value: "claude_code", label: t("assistantPanel.backendClaudeCode") },
+                    { value: "codex_cli", label: t("assistantPanel.backendCodex") },
+                    { value: "opencode", label: t("assistantPanel.backendOpenCode") },
+                  ]}
+                />
+                <Button
+                  type="primary"
+                  loading={creating}
+                  onClick={handleCreate}
+                  icon={<PlusOutlined />}
+                  className="am-create-btn"
+                >
+                  {t("assistantPanel.createInvite")}
+                </Button>
+              </div>
+              <Text type="secondary" className="am-invite-tip">
+                {t("assistantPanel.inviteTip")}
+              </Text>
+            </div>
+          )}
         </div>
 
-        {/* Create invite section */}
-        <div className="am-invite-section">
-          <Text type="secondary" className="am-invite-label">
-            {t("assistantPanel.inviteLabel")}
-          </Text>
-          <div className="am-source-hint">
-            <span className="am-source-icon" aria-hidden="true">
-              <RobotOutlined />
-            </span>
-            <Text type="secondary">{t("assistantPanel.externalAgentLabel")}</Text>
-          </div>
-          <div className="am-invite-form">
-            <Input
-              value={nameInput}
-              onChange={(e) => setNameInput(e.target.value)}
-              placeholder={t("assistantPanel.namePlaceholder")}
-              onPressEnter={handleCreate}
-              className="am-name-input"
-            />
-            <Select
-              value={inviteBackendType}
-              onChange={setInviteBackendType}
-              style={{ width: 156 }}
-              options={[
-                { value: "claude_code", label: t("assistantPanel.backendClaudeCode") },
-                { value: "codex_cli", label: t("assistantPanel.backendCodex") },
-                { value: "opencode", label: t("assistantPanel.backendOpenCode") },
-              ]}
-            />
-            <Button
-              type="primary"
-              loading={creating}
-              onClick={handleCreate}
-              icon={<PlusOutlined />}
-              className="am-create-btn"
-            >
-              {t("assistantPanel.createInvite")}
-            </Button>
-          </div>
-          <Text type="secondary" className="am-invite-tip">
-            {t("assistantPanel.inviteTip")}
-          </Text>
-        </div>
       </div>
     </Modal>
   );

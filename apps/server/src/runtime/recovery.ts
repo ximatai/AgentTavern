@@ -3,7 +3,10 @@ import { and, eq } from "drizzle-orm";
 import type { Approval, Message } from "@agent-tavern/shared";
 
 import { db, sqlite } from "../db/client";
-import { expireStalePendingBridgeTasks } from "../lib/bridge-task-maintenance";
+import {
+  expireStalePendingBridgeTasks,
+  failAcceptedBridgeTasksAfterRuntimeReset,
+} from "../lib/bridge-task-maintenance";
 import { cleanupExpiredDraftAttachments } from "../lib/message-attachments";
 import { insertMessage } from "../lib/message-records";
 import {
@@ -16,7 +19,7 @@ import {
   localBridges,
   members,
   mentions,
-  principals,
+  citizens,
 } from "../db/schema";
 
 function now(): string {
@@ -32,9 +35,9 @@ export function recoverRuntimeState(): {
 } {
   // On server restart, all in-memory sockets are gone. Persisted "online" state
   // must be folded back before runtime recovery continues.
-  db.update(principals)
+  db.update(citizens)
     .set({ status: "offline" })
-    .where(eq(principals.status, "online"))
+    .where(eq(citizens.status, "online"))
     .run();
 
   db.update(members)
@@ -50,9 +53,12 @@ export function recoverRuntimeState(): {
   const pendingApprovals = db.select().from(approvals).where(eq(approvals.status, "pending")).all();
   const expiredDraftAttachments = cleanupExpiredDraftAttachments();
   const expiredBridgeTasksResult = expireStalePendingBridgeTasks();
+  const failedAcceptedBridgeTasksResult = failAcceptedBridgeTasksAfterRuntimeReset();
 
-  let rejectedSessions = expiredBridgeTasksResult.failedSessions;
-  let systemMessages = expiredBridgeTasksResult.failedSessions;
+  let rejectedSessions =
+    expiredBridgeTasksResult.failedSessions + failedAcceptedBridgeTasksResult.failedSessions;
+  let systemMessages =
+    expiredBridgeTasksResult.failedSessions + failedAcceptedBridgeTasksResult.failedSessions;
 
   for (const approvalRow of pendingApprovals) {
     const approval = approvalRow as Approval;
@@ -117,6 +123,7 @@ export function recoverRuntimeState(): {
     rejectedSessions,
     systemMessages,
     expiredDraftAttachments,
-    expiredBridgeTasks: expiredBridgeTasksResult.expiredTasks,
+    expiredBridgeTasks:
+      expiredBridgeTasksResult.expiredTasks + failedAcceptedBridgeTasksResult.failedTasks,
   };
 }

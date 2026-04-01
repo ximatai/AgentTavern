@@ -1,7 +1,7 @@
 export type RoomStatus = "active" | "archived";
 export type RoomSecretaryMode = "off" | "coordinate" | "coordinate_and_summarize";
 
-export type PrincipalKind = "human" | "agent";
+export type CitizenKind = "human" | "agent";
 
 export type MemberType = "human" | "agent";
 
@@ -109,6 +109,7 @@ export type AgentBindingStatus =
 export type PrivateAssistantStatus = AgentBindingStatus | "paused";
 
 export type BridgeStatus = "online" | "offline";
+export type ServerConfigVisibility = "private" | "shared";
 
 export type BridgeTaskStatus =
   | "pending"
@@ -118,21 +119,22 @@ export type BridgeTaskStatus =
   | "failed";
 export type BridgeTaskKind = "message_reply" | "room_observe" | "summary_refresh";
 
-export type Principal = {
+export type Citizen = {
   id: string;
-  kind: PrincipalKind;
+  kind: CitizenKind;
   loginKey: string;
   globalDisplayName: string;
   backendType?: AgentBackendType | null;
   backendThreadId?: string | null;
   backendConfig?: string | null;
+  sourceServerConfigId?: string | null;
   status: PresenceStatus;
   createdAt: string;
 };
 
 export type PrivateAssistant = {
   id: string;
-  ownerPrincipalId: string;
+  ownerCitizenId: string;
   name: string;
   backendType: AgentBackendType;
   backendThreadId: string | null;
@@ -143,7 +145,7 @@ export type PrivateAssistant = {
 
 export type PrivateAssistantInvite = {
   id: string;
-  ownerPrincipalId: string;
+  ownerCitizenId: string;
   name: string;
   backendType: AgentBackendType;
   inviteToken: string;
@@ -153,6 +155,17 @@ export type PrivateAssistantInvite = {
   createdAt: string;
   expiresAt: string | null;
   acceptedAt: string | null;
+};
+
+export type ServerConfig = {
+  id: string;
+  ownerCitizenId: string;
+  name: string;
+  backendType: AgentBackendType;
+  configPayload: string;
+  visibility: ServerConfigVisibility;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type Room = {
@@ -178,7 +191,7 @@ export type RoomSummary = {
 export type Member = {
   id: string;
   roomId: string;
-  principalId: string | null;
+  citizenId: string | null;
   type: MemberType;
   roleKind: AgentRoleKind;
   displayName: string;
@@ -259,7 +272,7 @@ export type AgentSession = {
 
 export type AgentBinding = {
   id: string;
-  principalId: string | null;
+  citizenId: string | null;
   privateAssistantId: string | null;
   bridgeId: string | null;
   backendType: AgentBackendType;

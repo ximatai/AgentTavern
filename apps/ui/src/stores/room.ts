@@ -17,11 +17,11 @@ import {
   transferRoomOwnership as transferRoomOwnershipAPI,
   updateRoomSecretary as updateRoomSecretaryAPI,
 } from "../api/rooms";
-import { getLobbyPresence } from "../api/principals";
+import { getLobbyPresence } from "../api/citizens";
 import type { JoinResult } from "../api/rooms";
-import type { LobbyPrincipal } from "../api/principals";
+import type { LobbyCitizen } from "../api/citizens";
 import type { RecentRoomRecord } from "../types";
-import { usePrincipalStore } from "./principal";
+import { useCitizenStore } from "./citizen";
 import { useMessageStore } from "./message";
 import { useSessionStore } from "./session";
 import { useApprovalStore } from "./approval";
@@ -57,7 +57,7 @@ interface RoomState {
   roomSummary: RoomSummary | null;
   self: JoinResult | null;
   members: PublicMember[];
-  lobbyPrincipals: LobbyPrincipal[];
+  lobbyCitizens: LobbyCitizen[];
   recentRooms: RecentRoomRecord[];
 }
 
@@ -67,12 +67,12 @@ interface RoomActions {
   joinRoom: (inviteToken: string) => Promise<JoinResult>;
   joinExistingRoom: (roomId: string) => Promise<JoinResult>;
   openRecentRoom: (roomId: string) => Promise<JoinResult>;
-  startDirectRoom: (targetPrincipalId: string) => Promise<JoinResult>;
+  startDirectRoom: (targetCitizenId: string) => Promise<JoinResult>;
   pullPrincipal: (
     roomId: string,
     actorMemberId: string,
     wsToken: string,
-    targetPrincipalId: string,
+    targetCitizenId: string,
   ) => Promise<JoinResult>;
   updateRoomSecretary: (params: {
     secretaryMode: Room["secretaryMode"];
@@ -138,7 +138,7 @@ export const useRoomStore = create<RoomStore>()((set, get) => ({
   roomSummary: null,
   self: null,
   members: [],
-  lobbyPrincipals: [],
+  lobbyCitizens: [],
   recentRooms: [],
 
   hydrateRoom: async (roomId: string) => {
@@ -155,10 +155,10 @@ export const useRoomStore = create<RoomStore>()((set, get) => ({
   },
 
   createRoom: async (name: string) => {
-    const principal = usePrincipalStore.getState().principal;
+    const principal = useCitizenStore.getState().principal;
     if (!principal) throw new Error("Not authenticated");
 
-    const created = await createRoomAPI(name, principal.principalId, principal.principalToken);
+    const created = await createRoomAPI(name, principal.citizenId, principal.citizenToken);
     const joinResult = created.join;
     await get().hydrateRoom(joinResult.roomId);
     set({ self: joinResult });
@@ -176,13 +176,13 @@ export const useRoomStore = create<RoomStore>()((set, get) => ({
   },
 
   joinRoom: async (inviteToken: string) => {
-    const principal = usePrincipalStore.getState().principal;
+    const principal = useCitizenStore.getState().principal;
     if (!principal) throw new Error("Not authenticated");
 
     const joinResult = await joinRoomAPI(
       inviteToken,
-      principal.principalId,
-      principal.principalToken,
+      principal.citizenId,
+      principal.citizenToken,
     );
 
     await get().hydrateRoom(joinResult.roomId);
@@ -196,13 +196,13 @@ export const useRoomStore = create<RoomStore>()((set, get) => ({
   },
 
   joinExistingRoom: async (roomId: string) => {
-    const principal = usePrincipalStore.getState().principal;
+    const principal = useCitizenStore.getState().principal;
     if (!principal) throw new Error("Not authenticated");
 
     const joinResult = await joinExistingRoomAPI(
       roomId,
-      principal.principalId,
-      principal.principalToken,
+      principal.citizenId,
+      principal.citizenToken,
     );
 
     await get().hydrateRoom(joinResult.roomId);
@@ -215,14 +215,14 @@ export const useRoomStore = create<RoomStore>()((set, get) => ({
     return get().joinExistingRoom(roomId);
   },
 
-  startDirectRoom: async (targetPrincipalId: string) => {
-    const principal = usePrincipalStore.getState().principal;
+  startDirectRoom: async (targetCitizenId: string) => {
+    const principal = useCitizenStore.getState().principal;
     if (!principal) throw new Error("Not authenticated");
 
     const result = await createDirectRoomAPI({
-      actorPrincipalId: principal.principalId,
-      actorPrincipalToken: principal.principalToken,
-      peerPrincipalId: targetPrincipalId,
+      actorCitizenId: principal.citizenId,
+      actorCitizenToken: principal.citizenToken,
+      peerCitizenId: targetCitizenId,
     });
 
     await get().hydrateRoom(result.room.id);
@@ -244,9 +244,9 @@ export const useRoomStore = create<RoomStore>()((set, get) => ({
     roomId: string,
     actorMemberId: string,
     wsToken: string,
-    targetPrincipalId: string,
+    targetCitizenId: string,
   ) => {
-    return pullPrincipalAPI(roomId, actorMemberId, wsToken, targetPrincipalId);
+    return pullPrincipalAPI(roomId, actorMemberId, wsToken, targetCitizenId);
   },
 
   updateRoomSecretary: async ({ secretaryMode, secretaryMemberId }) => {
@@ -312,10 +312,10 @@ export const useRoomStore = create<RoomStore>()((set, get) => ({
 
   leaveRoom: async () => {
     const room = get().room;
-    const principal = usePrincipalStore.getState().principal;
+    const principal = useCitizenStore.getState().principal;
     if (!room || !principal) throw new Error("Room not ready");
 
-    await leaveRoomAPI(room.id, principal.principalId, principal.principalToken);
+    await leaveRoomAPI(room.id, principal.citizenId, principal.citizenToken);
     await get().refreshJoinedRooms();
     get().clearCurrentRoom(room.id);
   },
@@ -361,21 +361,21 @@ export const useRoomStore = create<RoomStore>()((set, get) => ({
   refreshLobbyPresence: async () => {
     try {
       const payload = await getLobbyPresence();
-      set({ lobbyPrincipals: payload.principals });
+      set({ lobbyCitizens: payload.citizens });
     } catch {
-      set({ lobbyPrincipals: [] });
+      set({ lobbyCitizens: [] });
     }
   },
 
   refreshJoinedRooms: async () => {
-    const principal = usePrincipalStore.getState().principal;
+    const principal = useCitizenStore.getState().principal;
     if (!principal) {
       set({ recentRooms: [] });
       return;
     }
 
     try {
-      const payload = await getJoinedRoomsAPI(principal.principalId, principal.principalToken);
+      const payload = await getJoinedRoomsAPI(principal.citizenId, principal.citizenToken);
       set((state) => ({
         recentRooms: mergeJoinedRooms(state.recentRooms, payload.rooms),
       }));
@@ -443,7 +443,7 @@ export const useRoomStore = create<RoomStore>()((set, get) => ({
   },
 
   restoreRecentRooms: () => {
-    const principal = usePrincipalStore.getState().principal;
+    const principal = useCitizenStore.getState().principal;
     if (!principal) {
       set({ recentRooms: [] });
       return;
@@ -474,7 +474,7 @@ export const useRoomStore = create<RoomStore>()((set, get) => ({
   },
 
   persistRecentRooms: () => {
-    const principal = usePrincipalStore.getState().principal;
+    const principal = useCitizenStore.getState().principal;
     const { recentRooms } = get();
     if (!principal) return;
 
@@ -488,7 +488,7 @@ export const useRoomStore = create<RoomStore>()((set, get) => ({
       roomSummary: null,
       self: null,
       members: [],
-      lobbyPrincipals: [],
+      lobbyCitizens: [],
     });
   },
 }));

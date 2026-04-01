@@ -4,7 +4,7 @@ import { PlusOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 
 import { useRoomStore } from "../stores/room";
-import { usePrincipalStore } from "../stores/principal";
+import { useCitizenStore } from "../stores/citizen";
 import { LoginModal } from "./LoginModal";
 import { RoomModal } from "./RoomModal";
 import type { RecentRoomRecord } from "../types";
@@ -60,7 +60,7 @@ export function ChatSidebar() {
   const room = useRoomStore((s) => s.room);
   const recentRooms = useRoomStore((s) => s.recentRooms);
   const openRecentRoom = useRoomStore((s) => s.openRecentRoom);
-  const principal = usePrincipalStore((s) => s.principal);
+  const principal = useCitizenStore((s) => s.principal);
   const [showRoomModal, setShowRoomModal] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
 

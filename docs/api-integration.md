@@ -9,7 +9,7 @@
 - 业务语义以接口行为和约束为准，不以页面形态为准
 - 已注明“尚未落地实现”的部分视为目标接口，不等于当前代码已支持
 - 本地 Bridge 与恢复相关接口细节需要同时参考 `docs/local-bridge-design.md`
-- 当前产品入口默认按“Web 面向 human，agent 通过 URL / CLI / skill / Bridge 接入”的方向推进
+- 当前产品入口默认按“Web 面向 human，默认 Agent 接入结果为 assistant；显式高级路径再创建 agent citizen”的方向推进
 
 ## 2. 目标
 
@@ -31,14 +31,15 @@
 入口说明：
 
 - human 当前优先通过 Web UI 完成 bootstrap 与大厅操作
-- agent principal 的产品化入口仍在收口，长期应以 URL、CLI、skill、本地 Bridge 为主
+- agent 侧当前同时存在外部接入与手动配置接入两条路径
+- `OpenAI Compatible API` 属于通用接入方式；当前已落地的是 Web 直连 `assistant`，目标方向上也可用于创建 `agent citizen`
 
 状态说明：
 
-- 当前已落地：`principal bootstrap`、`presence lobby`、direct room、room pull 的服务端接口基线
-- 目标方向：把 agent principal 的 URL / CLI / skill / Bridge 入口收口成清晰产品路径
+- 当前已落地：`citizen bootstrap`、`presence lobby`、direct room、room pull、Web 直连 assistant 的服务端接口基线
+- 目标方向：把 `server config -> citizen / assistant` 的创建路径与外部接入路径收口成清晰产品路径
 
-#### `POST /api/principals/bootstrap`
+#### `POS../api/citizens/bootstrap`
 
 首次访问登记或恢复轻身份。
 
@@ -56,8 +57,8 @@
 
 ```json
 {
-  "principalId": "prn_xxx",
-  "principalToken": "ptok_xxx",
+  "citizenId": "prn_xxx",
+  "citizenToken": "ptok_xxx",
   "kind": "human",
   "loginKey": "alice@example.com",
   "globalDisplayName": "阿南",
@@ -83,12 +84,12 @@
 
 - 一等公民统一分为 `human | agent`
 - `assistant` 不出现在大厅中
-- 返回结果按 principal 去重，不按连接数展开
-- 大厅返回的是 principal，不是 room member
+- 返回结果按 citizen 去重，不按连接数展开
+- 大厅返回的是 citizen，不是 room member
 
 #### `POST /api/rooms/:roomId/pull`
 
-从大厅直接把一个在线 principal 拉入房间。
+从大厅直接把一个在线 citizen 拉入房间。
 
 请求体：
 
@@ -96,7 +97,7 @@
 {
   "actorMemberId": "mem_xxx",
   "wsToken": "local_session_xxx",
-  "targetPrincipalId": "prn_xxx"
+  "targetCitizenId": "prn_xxx"
 }
 ```
 
@@ -104,26 +105,27 @@
 
 - 房间内任何现有成员都可执行
 - 被拉入者进入房间后仍需生成唯一 `memberId`
-- 若房间显示名冲突，需要为该 principal 分配或提示设置房间显示名
+- 若房间显示名冲突，需要为该 citizen 分配或提示设置房间显示名
 - 行为需要写入房间系统消息，保证透明
 
 #### `POST /api/direct-rooms`
 
-为两个 principal 创建或复用一个两人聊天房。
+为两个 citizen 创建或复用一个两人聊天房。
 
 请求体：
 
 ```json
 {
-  "actorPrincipalId": "prn_alice",
-  "actorPrincipalToken": "ptok_xxx",
-  "peerPrincipalId": "prn_bob"
+  "actorCitizenId": "prn_alice",
+  "actorCitizenToken": "ptok_xxx",
+  "peerCitizenId": "prn_bob"
 }
 ```
 
 约束：
 
 - 两人私聊本质上仍然是房间
+- `human` 与 `agent citizen` 都可以作为 actor 或 peer
 - 若双方已存在仅包含这两人的房间，应优先复用
 - 后续该房间可继续拉入更多成员
 
@@ -163,15 +165,15 @@
 说明：
 
 - 当前支持两种入口：
-  - principal 通过 `principalId + principalToken` 加入
-  - 未登记 principal 的访客通过 `nickname` 临时加入
+  - citizen 通过 `citizenId + citizenToken` 加入
+  - 未登记 citizen 的访客通过 `nickname` 临时加入
 
 请求体：
 
 ```json
 {
-  "principalId": "prn_xxx",
-  "principalToken": "ptok_xxx",
+  "citizenId": "prn_xxx",
+  "citizenToken": "ptok_xxx",
   "roomDisplayName": "阿南"
 }
 ```
@@ -189,8 +191,8 @@
 
 约束：
 
-- `roomDisplayName` 可为空；为空时继承 principal 的 `globalDisplayName`
-- principal 通过该接口加入时，当前要求已具备该房间的既有成员关系
+- `roomDisplayName` 可为空；为空时继承 citizen 的 `globalDisplayName`
+- citizen 通过该接口加入时，当前要求已具备该房间的既有成员关系
 - 首次通过邀请加入应走 `POST /api/invites/:inviteToken/join`
 - 同一房间内最终 `displayName` 必须唯一
 - `displayName` 不允许包含空格和 `@`
@@ -208,7 +210,7 @@
 
 #### `GET /api/me/assistants`
 
-获取当前 principal 名下的私有助理列表。
+获取当前 citizen 名下的私有助理列表。
 
 说明：
 
@@ -219,7 +221,7 @@
 
 #### `GET /api/me/assistants/invites`
 
-获取当前 principal 名下的私有助理接入邀请列表。
+获取当前 citizen 名下的私有助理接入邀请列表。
 
 说明：
 
@@ -234,8 +236,8 @@
 
 ```json
 {
-  "principalId": "prn_xxx",
-  "principalToken": "ptok_xxx",
+  "citizenId": "prn_xxx",
+  "citizenToken": "ptok_xxx",
   "name": "BackendThread",
   "backendType": "claude_code"
 }
@@ -249,7 +251,7 @@
 说明：
 
 - 当前实现的是“先创建 invite，再 accept”的两段式流程
-- 直接 `POST /api/me/assistants` 仍属于目标方向，不是当前已落地接口
+- 当前也已支持通过 `POST /api/me/assistants` 直接创建 OpenAI Compatible 私有助理
 
 #### `POST /api/private-assistant-invites/:inviteToken/accept`
 
@@ -268,7 +270,7 @@
 ```json
 {
   "id": "pa_xxx",
-  "ownerPrincipalId": "prn_xxx",
+  "ownerCitizenId": "prn_xxx",
   "name": "BackendThread",
   "backendType": "claude_code",
   "backendThreadId": "thread_xxx",
@@ -319,8 +321,8 @@
 
 ```json
 {
-  "principalId": "prn_xxx",
-  "principalToken": "ptok_xxx",
+  "citizenId": "prn_xxx",
+  "citizenToken": "ptok_xxx",
   "roomDisplayName": "阿南"
 }
 ```
@@ -332,9 +334,9 @@
 当前推荐的人与 Agent 入房主链路是通用房间邀请：
 
 - 分享 `/join/<inviteToken>` 给目标主体
-- 若对方尚未登记，会先完成 principal bootstrap
-- 若对方已登记，则直接用现有 principal 接受邀请并加入房间
-- 该邀请同时适用于 human 与 agent principal
+- 若对方尚未登记，会先完成当前 `citizen bootstrap`（业务语义上即 citizen bootstrap）
+- 若对方已登记，则直接用现有 citizen 身份接受邀请并加入房间
+- 该邀请同时适用于 human 与 agent citizen
 
 响应体：
 
@@ -351,7 +353,7 @@
 约束：
 
 - 邀请 token 一次性使用
-- 邀请 owner 当前必须是 principal-backed member
+- 邀请 owner 当前必须是 citizen-backed member
 - `presetDisplayName` 存在时优先使用
 - invite 未预设 `presetDisplayName` 时，必须由请求体提供 `displayName`
 - 接受后默认沉淀为 owner 名下私有助理资产
@@ -493,7 +495,7 @@
 
 #### `POST /api/bridges/:bridgeId/agents/attach`
 
-将已有 `AgentBinding` 归属到某个已注册 Bridge。binding 当前归属于 `principalId` 或 `privateAssistantId`，不再以 room member 作为主归属。
+将已有 `AgentBinding` 归属到某个已注册 Bridge。binding 当前归属于 `citizenId` 或 `privateAssistantId`，不再以 room member 作为主归属。
 
 请求体：
 
@@ -510,7 +512,7 @@
 ```json
 {
   "bridgeToken": "xxxx",
-  "principalId": "prn_xxx"
+  "citizenId": "prn_xxx"
 }
 ```
 
@@ -535,8 +537,8 @@
 规则：
 
 - `bridgeId` 与 `bridgeToken` 必须匹配
-- 必须提供 `backendThreadId`、`principalId`、`privateAssistantId`、`memberId` 之一
-- `memberId` 仅作为兼容输入解析，会被服务端折算为该 member 对应的 `principalId` 或 `privateAssistantId`
+- 必须提供 `backendThreadId`、`citizenId`、`privateAssistantId`、`memberId` 之一
+- `memberId` 仅作为兼容输入解析，会被服务端折算为该 member 对应的 `citizenId` 或 `privateAssistantId`
 - 同一请求里如果提供多个定位字段，它们必须解析到同一个 binding
 - 已绑定到其他 Bridge 的 binding 不可重复 attach
 - attach 采用条件更新，同一 binding 不会被两个 Bridge 同时 attach 成功
@@ -696,6 +698,8 @@ Bridge 提交失败结果。
 
 - 服务重启后，旧 `wsToken` 全部失效
 - 服务重启后，内存中的在线状态全部丢失
+- 服务重启后，已 `accepted` 但仍在运行中的 bridge task 会统一转成 `failed`
+- 对应的 `running agent_sessions` 会统一转成 `failed`
 - 服务启动时会扫描 `pending` 的审批请求
 - 扫描到的 `pending approvals` 会统一转成 `expired`
 - 对应的 `agent_sessions` 会统一转成 `rejected`

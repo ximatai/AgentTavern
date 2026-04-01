@@ -79,7 +79,7 @@
 - 先对齐新的业务模型文档
 - 再落地轻身份与大厅主链路
 - 并继续做真实可用性回归
-- `accepted` 任务恢复维持设计先行，暂不深挖实现
+- `accepted` 任务已补基础失败收口，强恢复仍留在后续设计项
 
 建议阅读方式：
 
@@ -87,13 +87,13 @@
 - 再看与你当前改动范围直接相关的已完成任务
 - 不要把“已完成历史记录”误解成当前必须继续推进的事项
 
-- [-] `P1` 轻身份与大厅业务模型对齐
+- [x] `P1` 轻身份与大厅业务模型对齐
   - [x] 明确邮箱即轻身份、不做强校验
   - [x] 明确全局昵称与房间显示名分层
   - [x] 明确一等公民大厅与直接拉人规则
   - [x] 明确两人私聊即房间
   - [x] 明确私有助理与房间助理投影模型
-  - [ ] 完成实现级数据模型与接口收口
+  - [x] 完成实现级数据模型与接口收口
 
 - [x] `P1` 服务端关键链路自动化验证
   - [x] 覆盖重复加入返回 `409`
@@ -140,14 +140,15 @@
   - [x] 补充自动化验证
   - [x] 完成独立 review
 
-- [-] `P1` Bridge 重连与 accept 边界收紧
+- [x] `P1` Bridge 重连与 accept 边界收紧
   - [x] 增加 Bridge 身份本地持久化
   - [x] 收紧 register 重连时的 metadata 保留语义
   - [x] 将 task accept 改为条件更新
+  - [x] 收口 `accepted` 任务在 server / bridge 重启后的失败语义
   - [x] 补充自动化验证
-  - [ ] 完成独立 review
+  - [x] 完成独立 review
 
-- [-] `P1` Bridge 运行时协议基线
+- [x] `P1` Bridge 运行时协议基线
   - [x] 为 `register / heartbeat / pull / accept / delta / complete / fail` 落地 `bridgeInstanceId`
   - [x] 补充自动化验证
   - [x] 完成独立 review
@@ -167,21 +168,21 @@
 - Web 端小交互与易用性改进
 - 不改变主协议的小范围重构
 
-- [ ] `P1` 客户端本地 Agent Bridge 开发
+- [x] `P1` 客户端本地 Agent Bridge 开发
   - [x] 实现第一版可执行 Bridge driver
   - [x] 实现第一版本地 CLI driver 过渡实现
   - [x] 拆分 Bridge 状态与任务处理模块
   - [x] 将接受邀请后的助理 attach 到本地 Bridge
-  - [-] 将会话型助理链路切到本地 Bridge 执行
-  - [-] 做真实可用性回归
+  - [x] 将会话型助理链路切到本地 Bridge 执行
+  - [x] 做真实可用性回归
     - [x] 复测房间创建、bridge 启动、invite、attach、执行闭环
     - [x] 复测 owner 自调用 assistant
     - [x] 复测普通成员触发 assistant 审批
     - [x] 明确 bridge 离线时的房间可见等待提示
-  - [-] 补齐本地 Bridge 执行链路自动化验证
+  - [x] 补齐本地 Bridge 执行链路自动化验证
     - [x] 增加 Bridge 侧状态与任务处理测试
     - [x] 补一条端到端本地 Bridge 执行验证
-  - [ ] 完成独立 review
+  - [x] 完成独立 review
 
 - [x] `P1` 助理加入 skill 版本化基线
   - [x] 将 `join-agent-tavern` skill 源文件收回仓库
@@ -191,7 +192,7 @@
   - [x] 在 accept 阶段持久化 `cwd`
   - [x] 完成独立 review
 
-- [-] `P1` Bridge 任务恢复设计
+- [x] `P1` Bridge 任务恢复设计
   - [x] 对齐 skill 版本化的独立 review 结果
   - [x] 明确 `accepted` 任务的 fenced recovery 语义
   - [x] 明确恢复过程中的 session 状态收口
@@ -199,8 +200,8 @@
   - [x] 统一 `bridgeInstanceId` 的接口口径
   - [x] 统一协议命名
   - [x] 补充设计级验证
-  - [x] 明确当前只停留在设计层，未完成 `bridgeInstanceId` 基线和真实回归前不进入实现
-  - [ ] 完成独立 review
+  - [x] 明确当前已落地基础失败收口，真正的会话恢复仍停留在设计层
+  - [x] 完成独立 review
 
 - [x] `P1` 前端可用性补强
   - [x] 自动滚动到底部
@@ -217,17 +218,31 @@
   - [x] 落地在线一等公民大厅服务端接口基线
   - [x] 落地从大厅直接拉人进房间服务端接口基线
   - [x] 落地两人聊天房的创建或复用服务端接口基线
-  - [-] 落地对应的产品入口与 UI 收口
-  - [-] 对齐 agent principal 的接入入口，明确 URL / CLI / skill / Bridge 的进入路径与产品边界
+  - [x] 落地对应的产品入口与 UI 收口
+  - [x] 对齐 `agent citizen` 与 `assistant` 的接入入口
+  - [x] 明确 `citizen / assistant / member` 三层语义
+  - [x] 明确 `OpenAI Compatible API` 是通用接入方式，不绑定单一实体身份
+  - [x] 明确采用 `server config -> citizen / assistant` 的两层模型
+  - [x] 明确 `server config` 为 citizen-owned asset，默认 `private`，可主动 `shared`
+  - [x] 落地 `server config` 资产模型与共享规则
+    - [x] 新增 `server_configs` 表与 DTO
+    - [x] 落地 `private | shared` 可见性规则
+    - [x] 补充 owner 视角与 shared 视角的服务端接口
+    - [x] 明确敏感 auth 仅服务端可见
+  - [x] 收口 Web 上基于连接资源创建 `assistant / agent citizen` 的产品入口
+    - [x] 前端增加 `server config` 管理基础能力
+    - [x] assistant 创建改为优先基于 `serverConfigId`
+    - [x] 增加显式 `agent citizen` 创建入口
+    - [x] 保持 `invite + skill -> assistant` 现有链路不受影响
 
-- [-] `P1` 私有助理资产模型实现
+- [x] `P1` 私有助理资产模型实现
   - [x] 落地私有助理表结构与 DTO
   - [x] 落地“我的私有助理”列表
   - [x] 支持将私有助理加入房间
   - [x] 收口一次性助理邀请与私有助理的关系
 
 - [-] `P1` 中文首页与房间入口重构
-  - [ ] 首次访问改为轻身份登记页
+  - [x] 保留首页作为默认入口，并在首次访问时自动弹出轻身份登记 / 恢复弹框
   - [x] 首页加入在线大厅
   - [x] 房间入口统一为“创建 / 通过链接进入 / 从大厅开始聊天”
   - [x] 房间内继续保留三栏聊天布局

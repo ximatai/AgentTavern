@@ -73,6 +73,16 @@ export type AgentSessionEvent =
       };
     }
   | {
+      type: "agent.stream.reasoning";
+      roomId: string;
+      timestamp: string;
+      payload: {
+        sessionId: string;
+        messageId: string;
+        delta: string;
+      };
+    }
+  | {
       type: "agent.message.committed";
       roomId: string;
       timestamp: string;
@@ -97,10 +107,10 @@ export type AgentSessionEvent =
       };
     };
 
-export type PrincipalEvent =
+export type CitizenEvent =
   | {
       type: "private_assistants.changed";
-      principalId: string;
+      citizenId: string;
       timestamp: string;
       payload: {
         reason:
@@ -113,7 +123,7 @@ export type PrincipalEvent =
     }
   | {
       type: "rooms.changed";
-      principalId: string;
+      citizenId: string;
       timestamp: string;
       payload: {
         reason: "room_joined" | "direct_room_created" | "room_disbanded";
@@ -122,10 +132,10 @@ export type PrincipalEvent =
     }
   | {
       type: "lobby.presence.changed";
-      principalId: string;
+      citizenId: string;
       timestamp: string;
       payload: {
-        changedPrincipalId: string;
+        changedCitizenId: string;
         status: "online" | "offline";
       };
     };
@@ -135,4 +145,4 @@ export type RealtimeEvent =
   | MessageEvent
   | ApprovalEvent
   | AgentSessionEvent
-  | PrincipalEvent;
+  | CitizenEvent;

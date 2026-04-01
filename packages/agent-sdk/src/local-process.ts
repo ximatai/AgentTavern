@@ -36,6 +36,9 @@ function isAgentStreamEvent(value: unknown): value is AgentStreamEvent {
   if (event.type === "delta") {
     return typeof event.text === "string";
   }
+  if (event.type === "reasoning") {
+    return typeof event.text === "string";
+  }
   if (event.type === "failed") {
     return typeof event.error === "string";
   }
@@ -44,6 +47,8 @@ function isAgentStreamEvent(value: unknown): value is AgentStreamEvent {
       event.action === undefined || isAgentMessageAction(event.action)
     ) && (
       event.finalText === undefined || typeof event.finalText === "string"
+    ) && (
+      event.reasoningText === undefined || typeof event.reasoningText === "string"
     ) && (
       event.summaryText === undefined || typeof event.summaryText === "string"
     ) && (

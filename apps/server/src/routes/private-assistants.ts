@@ -12,12 +12,20 @@ import type {
 } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
-import { agentBindings, localBridges, members, privateAssistantInvites, privateAssistants, rooms } from "../db/schema";
+import {
+  agentBindings,
+  localBridges,
+  members,
+  privateAssistantInvites,
+  privateAssistants,
+  rooms,
+  serverConfigs,
+} from "../db/schema";
 import { resolveBindingForPrivateAssistant } from "../lib/agent-binding-resolution";
 import { createId, createInviteToken } from "../lib/id";
 import { resolveMemberRuntimeStatus } from "../lib/member-runtime";
 import { toPublicMember } from "../lib/public";
-import { broadcastToPrincipal, broadcastToRoom, verifyPrincipalToken, verifyWsToken } from "../realtime";
+import { broadcastToCitizen, broadcastToRoom, verifyCitizenToken, verifyWsToken } from "../realtime";
 import {
   isSupportedAgentBackendType,
   normalizeAgentBackendConfig,
@@ -40,12 +48,12 @@ function resolveAssistantStatus(assistant: Pick<PrivateAssistant, "id" | "status
 }
 
 function broadcastPrivateAssistantChanged(
-  principalId: string,
+  citizenId: string,
   reason: "assistant_created" | "assistant_updated" | "assistant_deleted",
 ): void {
-  broadcastToPrincipal(principalId, {
+  broadcastToCitizen(citizenId, {
     type: "private_assistants.changed",
-    principalId,
+    citizenId,
     timestamp: now(),
     payload: { reason },
   });
@@ -99,6 +107,24 @@ function syncPrivateAssistantProjectionPresence(
   }
 }
 
+function resolveAssistantProjectionRuntimeStatus(member: Member): ReturnType<typeof resolveMemberRuntimeStatus> {
+  const binding = member.sourcePrivateAssistantId
+    ? resolveBindingForPrivateAssistant(member.sourcePrivateAssistantId)
+    : null;
+  const bridge = binding?.bridgeId
+    ? db.select().from(localBridges).where(eq(localBridges.id, binding.bridgeId)).get() ?? null
+    : null;
+
+  return resolveMemberRuntimeStatus(
+    {
+      type: member.type,
+      adapterType: member.adapterType,
+    },
+    binding,
+    bridge,
+  );
+}
+
 function ensurePrivateAssistantBinding(assistant: PrivateAssistant): void {
   if (!assistant.backendThreadId) {
     return;
@@ -135,7 +161,7 @@ function ensurePrivateAssistantBinding(assistant: PrivateAssistant): void {
 
   db.insert(agentBindings).values({
     id: createId("agb"),
-    principalId: null,
+    citizenId: null,
     privateAssistantId: assistant.id,
     bridgeId: null,
     backendType: assistant.backendType,
@@ -148,42 +174,42 @@ function ensurePrivateAssistantBinding(assistant: PrivateAssistant): void {
 }
 
 privateAssistantRoutes.get("/api/me/assistants", (c) => {
-  const principalId = c.req.query("principalId")?.trim() ?? "";
-  const principalToken = c.req.query("principalToken")?.trim() ?? "";
+  const citizenId = c.req.query("citizenId")?.trim() ?? "";
+  const citizenToken = c.req.query("citizenToken")?.trim() ?? "";
 
-  if (!principalId || !principalToken) {
-    return c.json({ error: "principalId and principalToken are required" }, 400);
+  if (!citizenId || !citizenToken) {
+    return c.json({ error: "citizenId and citizenToken are required" }, 400);
   }
 
-  if (!verifyPrincipalToken(principalToken, principalId)) {
-    return c.json({ error: "invalid principal token" }, 403);
+  if (!verifyCitizenToken(citizenToken, citizenId)) {
+    return c.json({ error: "invalid citizen token" }, 403);
   }
 
   const items = db
     .select()
     .from(privateAssistants)
-    .where(eq(privateAssistants.ownerPrincipalId, principalId))
+    .where(eq(privateAssistants.ownerCitizenId, citizenId))
     .all();
 
   return c.json(items.map((item) => ({ ...item, status: resolveAssistantStatus(item as PrivateAssistant) })));
 });
 
 privateAssistantRoutes.get("/api/me/assistants/invites", (c) => {
-  const principalId = c.req.query("principalId")?.trim() ?? "";
-  const principalToken = c.req.query("principalToken")?.trim() ?? "";
+  const citizenId = c.req.query("citizenId")?.trim() ?? "";
+  const citizenToken = c.req.query("citizenToken")?.trim() ?? "";
 
-  if (!principalId || !principalToken) {
-    return c.json({ error: "principalId and principalToken are required" }, 400);
+  if (!citizenId || !citizenToken) {
+    return c.json({ error: "citizenId and citizenToken are required" }, 400);
   }
 
-  if (!verifyPrincipalToken(principalToken, principalId)) {
-    return c.json({ error: "invalid principal token" }, 403);
+  if (!verifyCitizenToken(citizenToken, citizenId)) {
+    return c.json({ error: "invalid citizen token" }, 403);
   }
 
   const items = db
     .select()
     .from(privateAssistantInvites)
-    .where(eq(privateAssistantInvites.ownerPrincipalId, principalId))
+    .where(eq(privateAssistantInvites.ownerCitizenId, citizenId))
     .all();
 
   return c.json(
@@ -196,28 +222,56 @@ privateAssistantRoutes.get("/api/me/assistants/invites", (c) => {
 
 privateAssistantRoutes.post("/api/me/assistants", async (c) => {
   const body = await c.req.json().catch(() => null);
-  const principalId = typeof body?.principalId === "string" ? body.principalId.trim() : "";
-  const principalToken =
-    typeof body?.principalToken === "string" ? body.principalToken.trim() : "";
+  const citizenId = typeof body?.citizenId === "string" ? body.citizenId.trim() : "";
+  const citizenToken =
+    typeof body?.citizenToken === "string" ? body.citizenToken.trim() : "";
   const name = typeof body?.name === "string" ? body.name.trim() : "";
-  const backendType = isSupportedAgentBackendType(body?.backendType) ? body.backendType : null;
-  const {
-    backendConfig,
-    error: backendConfigError,
-  } = normalizeAgentBackendConfig(backendType, body?.backendConfig);
-  const backendThreadId = normalizeAgentBackendThreadId(backendType, "");
+  const requestedServerConfigId =
+    typeof body?.serverConfigId === "string" ? body.serverConfigId.trim() : "";
 
-  if (!principalId || !principalToken || !name || !backendType) {
-    return c.json({ error: "principalId, principalToken, name and backendType are required" }, 400);
+  if (!citizenId || !citizenToken || !name) {
+    return c.json({ error: "citizenId, citizenToken and name are required" }, 400);
   }
 
-  if (!verifyPrincipalToken(principalToken, principalId)) {
-    return c.json({ error: "invalid principal token" }, 403);
+  if (!verifyCitizenToken(citizenToken, citizenId)) {
+    return c.json({ error: "invalid citizen token" }, 403);
   }
 
   if (!isValidDisplayName(name)) {
     return c.json({ error: "name must not contain spaces or @" }, 400);
   }
+
+  let backendType = isSupportedAgentBackendType(body?.backendType) ? body.backendType : null;
+  let backendConfig: string | null = null;
+  let backendConfigError: string | null = null;
+
+  if (requestedServerConfigId) {
+    const serverConfig = db
+      .select()
+      .from(serverConfigs)
+      .where(eq(serverConfigs.id, requestedServerConfigId))
+      .get();
+
+    if (!serverConfig) {
+      return c.json({ error: "server config not found" }, 404);
+    }
+
+    if (
+      serverConfig.ownerCitizenId !== citizenId &&
+      serverConfig.visibility !== "shared"
+    ) {
+      return c.json({ error: "server config is not available to this citizen" }, 403);
+    }
+
+    backendType = serverConfig.backendType as AgentBackendType;
+    backendConfig = serverConfig.configPayload;
+  } else {
+    const normalized = normalizeAgentBackendConfig(backendType, body?.backendConfig);
+    backendConfig = normalized.backendConfig;
+    backendConfigError = normalized.error;
+  }
+
+  const backendThreadId = normalizeAgentBackendThreadId(backendType, "");
 
   if (backendType !== "openai_compatible") {
     return c.json({ error: "only openai_compatible backend supports direct web setup" }, 400);
@@ -236,14 +290,14 @@ privateAssistantRoutes.post("/api/me/assistants", async (c) => {
     .from(privateAssistants)
     .where(
       and(
-        eq(privateAssistants.ownerPrincipalId, principalId),
+        eq(privateAssistants.ownerCitizenId, citizenId),
         eq(privateAssistants.name, name),
       ),
     )
     .get();
 
   if (existingAssistant) {
-    return c.json({ error: "private assistant name already exists for this principal" }, 409);
+    return c.json({ error: "private assistant name already exists for this citizen" }, 409);
   }
 
   const existingPendingInvite = db
@@ -251,7 +305,7 @@ privateAssistantRoutes.post("/api/me/assistants", async (c) => {
     .from(privateAssistantInvites)
     .where(
       and(
-        eq(privateAssistantInvites.ownerPrincipalId, principalId),
+        eq(privateAssistantInvites.ownerCitizenId, citizenId),
         eq(privateAssistantInvites.name, name),
         eq(privateAssistantInvites.status, "pending"),
       ),
@@ -264,7 +318,7 @@ privateAssistantRoutes.post("/api/me/assistants", async (c) => {
 
   const assistant: PrivateAssistant = {
     id: createId("pa"),
-    ownerPrincipalId: principalId,
+    ownerCitizenId: citizenId,
     name,
     backendType,
     backendThreadId,
@@ -279,7 +333,7 @@ privateAssistantRoutes.post("/api/me/assistants", async (c) => {
   } catch (error) {
     if (isUniqueConstraintError(error)) {
       db.delete(privateAssistants).where(eq(privateAssistants.id, assistant.id)).run();
-      return c.json({ error: "private assistant name already exists for this principal" }, 409);
+      return c.json({ error: "private assistant name already exists for this citizen" }, 409);
     }
 
     if (error instanceof Error && error.message === "backendThreadId already bound") {
@@ -290,16 +344,16 @@ privateAssistantRoutes.post("/api/me/assistants", async (c) => {
     throw error;
   }
 
-  broadcastPrivateAssistantChanged(principalId, "assistant_created");
+  broadcastPrivateAssistantChanged(citizenId, "assistant_created");
 
   return c.json(assistant, 201);
 });
 
 privateAssistantRoutes.post("/api/me/assistants/invites", async (c) => {
   const body = await c.req.json().catch(() => null);
-  const principalId = typeof body?.principalId === "string" ? body.principalId.trim() : "";
-  const principalToken =
-    typeof body?.principalToken === "string" ? body.principalToken.trim() : "";
+  const citizenId = typeof body?.citizenId === "string" ? body.citizenId.trim() : "";
+  const citizenToken =
+    typeof body?.citizenToken === "string" ? body.citizenToken.trim() : "";
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   const backendType = isSupportedAgentBackendType(body?.backendType) ? body.backendType : null;
   const {
@@ -307,12 +361,12 @@ privateAssistantRoutes.post("/api/me/assistants/invites", async (c) => {
     error: backendConfigError,
   } = normalizeAgentBackendConfig(backendType, body?.backendConfig);
 
-  if (!principalId || !principalToken || !name || !backendType) {
-    return c.json({ error: "principalId, principalToken, name and backendType are required" }, 400);
+  if (!citizenId || !citizenToken || !name || !backendType) {
+    return c.json({ error: "citizenId, citizenToken, name and backendType are required" }, 400);
   }
 
-  if (!verifyPrincipalToken(principalToken, principalId)) {
-    return c.json({ error: "invalid principal token" }, 403);
+  if (!verifyCitizenToken(citizenToken, citizenId)) {
+    return c.json({ error: "invalid citizen token" }, 403);
   }
 
   if (!isValidDisplayName(name)) {
@@ -332,14 +386,14 @@ privateAssistantRoutes.post("/api/me/assistants/invites", async (c) => {
     .from(privateAssistants)
     .where(
       and(
-        eq(privateAssistants.ownerPrincipalId, principalId),
+        eq(privateAssistants.ownerCitizenId, citizenId),
         eq(privateAssistants.name, name),
       ),
     )
     .get();
 
   if (existingAssistant) {
-    return c.json({ error: "private assistant name already exists for this principal" }, 409);
+    return c.json({ error: "private assistant name already exists for this citizen" }, 409);
   }
 
   const existingPendingInvite = db
@@ -347,7 +401,7 @@ privateAssistantRoutes.post("/api/me/assistants/invites", async (c) => {
     .from(privateAssistantInvites)
     .where(
       and(
-        eq(privateAssistantInvites.ownerPrincipalId, principalId),
+        eq(privateAssistantInvites.ownerCitizenId, citizenId),
         eq(privateAssistantInvites.name, name),
         eq(privateAssistantInvites.status, "pending"),
       ),
@@ -367,7 +421,7 @@ privateAssistantRoutes.post("/api/me/assistants/invites", async (c) => {
 
   const invite: PrivateAssistantInvite = {
     id: createId("pai"),
-    ownerPrincipalId: principalId,
+    ownerCitizenId: citizenId,
     name,
     backendType: backendType as AgentBackendType,
     backendConfig,
@@ -392,9 +446,9 @@ privateAssistantRoutes.post("/api/me/assistants/invites", async (c) => {
     throw error;
   }
 
-  broadcastToPrincipal(principalId, {
+  broadcastToCitizen(citizenId, {
     type: "private_assistants.changed",
-    principalId,
+    citizenId,
     timestamp: now(),
     payload: { reason: "invite_created" },
   });
@@ -463,19 +517,19 @@ privateAssistantRoutes.post("/api/private-assistant-invites/:inviteToken/accept"
     .from(privateAssistants)
     .where(
       and(
-        eq(privateAssistants.ownerPrincipalId, invite.ownerPrincipalId),
+        eq(privateAssistants.ownerCitizenId, invite.ownerCitizenId),
         eq(privateAssistants.name, invite.name),
       ),
     )
     .get();
 
   if (existingAssistant) {
-    return c.json({ error: "private assistant name already exists for this principal" }, 409);
+    return c.json({ error: "private assistant name already exists for this citizen" }, 409);
   }
 
   const assistant: PrivateAssistant = {
     id: createId("pa"),
-    ownerPrincipalId: invite.ownerPrincipalId,
+    ownerCitizenId: invite.ownerCitizenId,
     name: invite.name,
     backendType: invite.backendType,
     backendThreadId,
@@ -488,7 +542,7 @@ privateAssistantRoutes.post("/api/private-assistant-invites/:inviteToken/accept"
     db.insert(privateAssistants).values(assistant).run();
   } catch (error) {
     if (isUniqueConstraintError(error)) {
-      return c.json({ error: "private assistant name already exists for this principal" }, 409);
+      return c.json({ error: "private assistant name already exists for this citizen" }, 409);
     }
 
     throw error;
@@ -515,9 +569,9 @@ privateAssistantRoutes.post("/api/private-assistant-invites/:inviteToken/accept"
     .where(eq(privateAssistantInvites.id, invite.id))
     .run();
 
-  broadcastToPrincipal(invite.ownerPrincipalId, {
+  broadcastToCitizen(invite.ownerCitizenId, {
     type: "private_assistants.changed",
-    principalId: invite.ownerPrincipalId,
+    citizenId: invite.ownerCitizenId,
     timestamp: now(),
     payload: { reason: "invite_accepted" },
   });
@@ -527,15 +581,15 @@ privateAssistantRoutes.post("/api/private-assistant-invites/:inviteToken/accept"
 
 privateAssistantRoutes.delete("/api/me/assistants/invites/:inviteId", (c) => {
   const inviteId = c.req.param("inviteId");
-  const principalId = c.req.query("principalId")?.trim() ?? "";
-  const principalToken = c.req.query("principalToken")?.trim() ?? "";
+  const citizenId = c.req.query("citizenId")?.trim() ?? "";
+  const citizenToken = c.req.query("citizenToken")?.trim() ?? "";
 
-  if (!principalId || !principalToken) {
-    return c.json({ error: "principalId and principalToken are required" }, 400);
+  if (!citizenId || !citizenToken) {
+    return c.json({ error: "citizenId and citizenToken are required" }, 400);
   }
 
-  if (!verifyPrincipalToken(principalToken, principalId)) {
-    return c.json({ error: "invalid principal token" }, 403);
+  if (!verifyCitizenToken(citizenToken, citizenId)) {
+    return c.json({ error: "invalid citizen token" }, 403);
   }
 
   const invite = db
@@ -548,15 +602,15 @@ privateAssistantRoutes.delete("/api/me/assistants/invites/:inviteId", (c) => {
     return c.json({ error: "private assistant invite not found" }, 404);
   }
 
-  if (invite.ownerPrincipalId !== principalId) {
-    return c.json({ error: "private assistant invite does not belong to actor principal" }, 403);
+  if (invite.ownerCitizenId !== citizenId) {
+    return c.json({ error: "private assistant invite does not belong to actor citizen" }, 403);
   }
 
   db.delete(privateAssistantInvites).where(eq(privateAssistantInvites.id, inviteId)).run();
 
-  broadcastToPrincipal(principalId, {
+  broadcastToCitizen(citizenId, {
     type: "private_assistants.changed",
-    principalId,
+    citizenId,
     timestamp: now(),
     payload: { reason: "invite_created" },
   });
@@ -567,16 +621,16 @@ privateAssistantRoutes.delete("/api/me/assistants/invites/:inviteId", (c) => {
 privateAssistantRoutes.post("/api/me/assistants/:assistantId/pause", async (c) => {
   const assistantId = c.req.param("assistantId");
   const body = await c.req.json().catch(() => null);
-  const principalId = typeof body?.principalId === "string" ? body.principalId.trim() : "";
-  const principalToken =
-    typeof body?.principalToken === "string" ? body.principalToken.trim() : "";
+  const citizenId = typeof body?.citizenId === "string" ? body.citizenId.trim() : "";
+  const citizenToken =
+    typeof body?.citizenToken === "string" ? body.citizenToken.trim() : "";
 
-  if (!principalId || !principalToken) {
-    return c.json({ error: "principalId and principalToken are required" }, 400);
+  if (!citizenId || !citizenToken) {
+    return c.json({ error: "citizenId and citizenToken are required" }, 400);
   }
 
-  if (!verifyPrincipalToken(principalToken, principalId)) {
-    return c.json({ error: "invalid principal token" }, 403);
+  if (!verifyCitizenToken(citizenToken, citizenId)) {
+    return c.json({ error: "invalid citizen token" }, 403);
   }
 
   const assistant = db
@@ -589,14 +643,14 @@ privateAssistantRoutes.post("/api/me/assistants/:assistantId/pause", async (c) =
     return c.json({ error: "private assistant not found" }, 404);
   }
 
-  if (assistant.ownerPrincipalId !== principalId) {
-    return c.json({ error: "private assistant does not belong to actor principal" }, 403);
+  if (assistant.ownerCitizenId !== citizenId) {
+    return c.json({ error: "private assistant does not belong to actor citizen" }, 403);
   }
 
   if (assistant.status !== "paused") {
     db.update(privateAssistants).set({ status: "paused" }).where(eq(privateAssistants.id, assistantId)).run();
     syncPrivateAssistantProjectionPresence(assistantId, "offline", "paused");
-    broadcastPrivateAssistantChanged(principalId, "assistant_updated");
+    broadcastPrivateAssistantChanged(citizenId, "assistant_updated");
   }
 
   return c.json({ ...assistant, status: "paused" satisfies PrivateAssistantStatus });
@@ -605,16 +659,16 @@ privateAssistantRoutes.post("/api/me/assistants/:assistantId/pause", async (c) =
 privateAssistantRoutes.post("/api/me/assistants/:assistantId/resume", async (c) => {
   const assistantId = c.req.param("assistantId");
   const body = await c.req.json().catch(() => null);
-  const principalId = typeof body?.principalId === "string" ? body.principalId.trim() : "";
-  const principalToken =
-    typeof body?.principalToken === "string" ? body.principalToken.trim() : "";
+  const citizenId = typeof body?.citizenId === "string" ? body.citizenId.trim() : "";
+  const citizenToken =
+    typeof body?.citizenToken === "string" ? body.citizenToken.trim() : "";
 
-  if (!principalId || !principalToken) {
-    return c.json({ error: "principalId and principalToken are required" }, 400);
+  if (!citizenId || !citizenToken) {
+    return c.json({ error: "citizenId and citizenToken are required" }, 400);
   }
 
-  if (!verifyPrincipalToken(principalToken, principalId)) {
-    return c.json({ error: "invalid principal token" }, 403);
+  if (!verifyCitizenToken(citizenToken, citizenId)) {
+    return c.json({ error: "invalid citizen token" }, 403);
   }
 
   const assistant = db
@@ -627,8 +681,8 @@ privateAssistantRoutes.post("/api/me/assistants/:assistantId/resume", async (c) 
     return c.json({ error: "private assistant not found" }, 404);
   }
 
-  if (assistant.ownerPrincipalId !== principalId) {
-    return c.json({ error: "private assistant does not belong to actor principal" }, 403);
+  if (assistant.ownerCitizenId !== citizenId) {
+    return c.json({ error: "private assistant does not belong to actor citizen" }, 403);
   }
 
   const resumedStatus = resolveAssistantStatus({ ...assistant, status: "pending_bridge" });
@@ -638,22 +692,22 @@ privateAssistantRoutes.post("/api/me/assistants/:assistantId/resume", async (c) 
     .where(eq(privateAssistants.id, assistantId))
     .run();
   syncPrivateAssistantProjectionPresence(assistantId, "online", resumedStatus);
-  broadcastPrivateAssistantChanged(principalId, "assistant_updated");
+  broadcastPrivateAssistantChanged(citizenId, "assistant_updated");
 
   return c.json({ ...assistant, status: resumedStatus });
 });
 
 privateAssistantRoutes.delete("/api/me/assistants/:assistantId", (c) => {
   const assistantId = c.req.param("assistantId");
-  const principalId = c.req.query("principalId")?.trim() ?? "";
-  const principalToken = c.req.query("principalToken")?.trim() ?? "";
+  const citizenId = c.req.query("citizenId")?.trim() ?? "";
+  const citizenToken = c.req.query("citizenToken")?.trim() ?? "";
 
-  if (!principalId || !principalToken) {
-    return c.json({ error: "principalId and principalToken are required" }, 400);
+  if (!citizenId || !citizenToken) {
+    return c.json({ error: "citizenId and citizenToken are required" }, 400);
   }
 
-  if (!verifyPrincipalToken(principalToken, principalId)) {
-    return c.json({ error: "invalid principal token" }, 403);
+  if (!verifyCitizenToken(citizenToken, citizenId)) {
+    return c.json({ error: "invalid citizen token" }, 403);
   }
 
   const assistant = db
@@ -666,8 +720,8 @@ privateAssistantRoutes.delete("/api/me/assistants/:assistantId", (c) => {
     return c.json({ error: "private assistant not found" }, 404);
   }
 
-  if (assistant.ownerPrincipalId !== principalId) {
-    return c.json({ error: "private assistant does not belong to actor principal" }, 403);
+  if (assistant.ownerCitizenId !== citizenId) {
+    return c.json({ error: "private assistant does not belong to actor citizen" }, 403);
   }
 
   const projections = db
@@ -696,7 +750,7 @@ privateAssistantRoutes.delete("/api/me/assistants/:assistantId", (c) => {
     .set({ status: "revoked", acceptedPrivateAssistantId: null })
     .where(
       and(
-        eq(privateAssistantInvites.ownerPrincipalId, principalId),
+        eq(privateAssistantInvites.ownerCitizenId, citizenId),
         eq(privateAssistantInvites.acceptedPrivateAssistantId, assistantId),
       ),
     )
@@ -705,7 +759,7 @@ privateAssistantRoutes.delete("/api/me/assistants/:assistantId", (c) => {
   db.delete(agentBindings).where(eq(agentBindings.privateAssistantId, assistant.id)).run();
   db.delete(privateAssistants).where(eq(privateAssistants.id, assistantId)).run();
 
-  broadcastPrivateAssistantChanged(principalId, "assistant_deleted");
+  broadcastPrivateAssistantChanged(citizenId, "assistant_deleted");
 
   return c.json({ ok: true });
 });
@@ -747,8 +801,8 @@ privateAssistantRoutes.post("/api/rooms/:roomId/assistants/adopt", async (c) => 
     return c.json({ error: "invalid wsToken for actor" }, 403);
   }
 
-  if (!actor.principalId) {
-    return c.json({ error: "only principal-backed members can adopt private assistants" }, 400);
+  if (!actor.citizenId) {
+    return c.json({ error: "only citizen-backed members can adopt private assistants" }, 400);
   }
 
   const assistant = db
@@ -761,8 +815,8 @@ privateAssistantRoutes.post("/api/rooms/:roomId/assistants/adopt", async (c) => 
     return c.json({ error: "private assistant not found" }, 404);
   }
 
-  if (assistant.ownerPrincipalId !== actor.principalId) {
-    return c.json({ error: "private assistant does not belong to actor principal" }, 403);
+  if (assistant.ownerCitizenId !== actor.citizenId) {
+    return c.json({ error: "private assistant does not belong to actor citizen" }, 403);
   }
 
   if (assistant.status === "paused") {
@@ -806,12 +860,12 @@ privateAssistantRoutes.post("/api/rooms/:roomId/assistants/adopt", async (c) => 
       type: "member.joined",
       roomId,
       timestamp: now(),
-      payload: { member: toPublicMember(reusedMember, "pending_bridge") },
+      payload: { member: toPublicMember(reusedMember, resolveAssistantProjectionRuntimeStatus(reusedMember)) },
     };
 
     broadcastToRoom(roomId, event);
 
-    return c.json(toPublicMember(reusedMember, "pending_bridge"), 201);
+    return c.json(toPublicMember(reusedMember, resolveAssistantProjectionRuntimeStatus(reusedMember)), 201);
   }
 
   const dormantProjection = db
@@ -849,12 +903,12 @@ privateAssistantRoutes.post("/api/rooms/:roomId/assistants/adopt", async (c) => 
       type: "member.joined",
       roomId,
       timestamp: now(),
-      payload: { member: toPublicMember(reusedMember, "pending_bridge") },
+      payload: { member: toPublicMember(reusedMember, resolveAssistantProjectionRuntimeStatus(reusedMember)) },
     };
 
     broadcastToRoom(roomId, event);
 
-    return c.json(toPublicMember(reusedMember, "pending_bridge"), 201);
+    return c.json(toPublicMember(reusedMember, resolveAssistantProjectionRuntimeStatus(reusedMember)), 201);
   }
 
   const displayNameConflict = db
@@ -870,7 +924,7 @@ privateAssistantRoutes.post("/api/rooms/:roomId/assistants/adopt", async (c) => 
   const member: Member = {
     id: createId("mem"),
     roomId,
-    principalId: null,
+    citizenId: null,
     type: "agent",
     roleKind: "assistant",
     displayName: assistant.name,
@@ -888,12 +942,12 @@ privateAssistantRoutes.post("/api/rooms/:roomId/assistants/adopt", async (c) => 
     type: "member.joined",
     roomId,
     timestamp: now(),
-    payload: { member: toPublicMember(member, "pending_bridge") },
+    payload: { member: toPublicMember(member, resolveAssistantProjectionRuntimeStatus(member)) },
   };
 
   broadcastToRoom(roomId, event);
 
-  return c.json(toPublicMember(member, "pending_bridge"), 201);
+  return c.json(toPublicMember(member, resolveAssistantProjectionRuntimeStatus(member)), 201);
 });
 
 privateAssistantRoutes.post("/api/rooms/:roomId/assistants/:assistantMemberId/offline", async (c) => {

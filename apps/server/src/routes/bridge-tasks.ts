@@ -8,6 +8,7 @@ import { db } from "../db/client";
 import { agentBindings, agentSessions, bridgeTasks, localBridges, members, rooms } from "../db/schema";
 import {
   completeSessionAction,
+  createReasoningDeltaEvent,
   createStreamDeltaEvent,
   failSession,
   markSessionRunning,
@@ -20,7 +21,7 @@ import {
   createDraftAttachmentFromBuffer,
   resolveDraftAttachments,
 } from "../lib/message-attachments";
-import { normalizeRoomSummaryOutput } from "../lib/room-summary";
+import { normalizeRoomSummaryOutput, resolveVisibleReplyForSummaryOnly } from "../lib/room-summary";
 import { broadcastToRoom } from "../realtime";
 
 const bridgeTaskRoutes = new Hono();
@@ -41,7 +42,7 @@ function bridgeTaskError(code: string, error: string) {
 function resolveBindingForAgentMember(agentMemberId: string) {
   const agentMember = db
     .select({
-      principalId: members.principalId,
+      citizenId: members.citizenId,
       sourcePrivateAssistantId: members.sourcePrivateAssistantId,
     })
     .from(members)
@@ -60,11 +61,11 @@ function resolveBindingForAgentMember(agentMemberId: string) {
       .get();
   }
 
-  if (agentMember.principalId) {
+  if (agentMember.citizenId) {
     return db
       .select()
       .from(agentBindings)
-      .where(eq(agentBindings.principalId, agentMember.principalId))
+      .where(eq(agentBindings.citizenId, agentMember.citizenId))
       .get();
   }
 
@@ -379,6 +380,7 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/delta", async (c) =>
   const bridgeInstanceId =
     typeof body?.bridgeInstanceId === "string" ? body.bridgeInstanceId.trim() : "";
   const delta = typeof body?.delta === "string" ? body.delta : "";
+  const kind = body?.kind === "reasoning" ? "reasoning" : "content";
 
   if (!bridgeToken || !bridgeInstanceId || !delta) {
     return c.json({ error: "bridgeToken, bridgeInstanceId, and delta are required" }, 400);
@@ -409,7 +411,9 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/delta", async (c) =>
 
   broadcastToRoom(
     task.roomId,
-    createStreamDeltaEvent(task.roomId, task.sessionId, task.outputMessageId, delta),
+    kind === "reasoning"
+      ? createReasoningDeltaEvent(task.roomId, task.sessionId, task.outputMessageId, delta)
+      : createStreamDeltaEvent(task.roomId, task.sessionId, task.outputMessageId, delta),
   );
 
   return c.json({ ok: true });
@@ -486,15 +490,19 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
   }
 
   const allowSilentCompletion = allowsSilentCompletion(toAgentSession(session));
-  const parsedSummary =
-    room.secretaryMemberId === session.agentMemberId &&
-      room.secretaryMode === "coordinate_and_summarize"
-      ? normalizeRoomSummaryOutput({
-          visibleContent: action.content ?? "",
-          summaryText: action.summaryText ?? null,
-        })
-      : { visibleContent: action.content ?? "", summaryText: null };
-  const visibleFinalText = parsedSummary.visibleContent.trim();
+  const parsedSummary = normalizeRoomSummaryOutput({
+    visibleContent: action.content ?? "",
+    summaryText:
+      room.secretaryMemberId === session.agentMemberId &&
+        room.secretaryMode === "coordinate_and_summarize"
+        ? action.summaryText ?? null
+        : null,
+  });
+  const visibleFinalText = resolveVisibleReplyForSummaryOnly({
+    visibleContent: parsedSummary.visibleContent,
+    summaryText: parsedSummary.summaryText,
+    allowSilentCompletion,
+  });
 
   if (!visibleFinalText && attachmentIds.length === 0 && !allowSilentCompletion) {
     return c.json(

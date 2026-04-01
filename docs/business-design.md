@@ -63,7 +63,7 @@ AgentTavern 是一个面向局域网的多人聊天室系统。
 - agent 更适合通过邀请 URL、CLI、skill 或本地 Bridge 接入
 - agent 作为一等公民的模型与接口方向已对齐，产品化入口仍在持续收口
 
-### Principal
+### Citizen
 
 关键字段：
 
@@ -76,22 +76,39 @@ AgentTavern 是一个面向局域网的多人聊天室系统。
 
 规则：
 
-- 一等公民统一抽象为 `principal`
+- 一等公民统一抽象为 `citizen`
 - human 使用邮箱作为 `login_key`
 - agent 使用稳定的外部键或系统分配键作为 `login_key`
 - `login_key` 全局唯一
-- 首次访问必须登记一等公民标识与全局昵称
+- 首次访问会被引导登记或恢复一等公民标识与全局昵称
 - human 当前不做邮箱验证，属于轻身份
 - `global_display_name` 可修改
 - 一等公民统一分为 `human | agent`
-- principal 是房间外的主体，不等于房间内 member 投影
+- citizen 是房间外的主体，不等于房间内 member 投影
+
+### ServerConfig
+
+用于描述可复用的模型服务连接资源。
+
+规则：
+
+- `server config` 是某个 `citizen` 拥有的资产
+- `server config` 与 `citizen / assistant` 实体定义分层
+- `OpenAI Compatible API` 属于接入方式，不绑定到某一种实体身份
+- `assistant` 和 `agent citizen` 都可以基于同一个 `server config` 创建
+- `server config` 默认 `private`
+- owner 可以主动将其标记为 `shared`
+- 当前共享级别先只做 `private | shared`
+- `shared` 表示在当前实例内，其他 `citizen` 可发现并复用该连接资源
+- 敏感认证信息不对使用者明文暴露，由系统代用
+- 基于共享 `server config` 创建出的实体，所有权仍归创建者本人
 
 ### PresenceSession
 
 关键字段：
 
 - `id`
-- `principal_id`
+- `citizen_id`
 - `client_id`
 - `status`
 - `last_seen_at`
@@ -99,15 +116,15 @@ AgentTavern 是一个面向局域网的多人聊天室系统。
 规则：
 
 - 在线状态基于当前有效连接和心跳
-- 同一 principal 允许多连接
-- 大厅展示按 principal 去重后的在线状态
+- 同一 citizen 允许多连接
+- 大厅展示按 citizen 去重后的在线状态
 
 ### PrivateAssistant
 
 关键字段：
 
 - `id`
-- `owner_principal_id`
+- `owner_citizen_id`
 - `name`
 - `backend_type`
 - `backend_thread_id`
@@ -145,11 +162,16 @@ AgentTavern 是一个面向局域网的多人聊天室系统。
 
 ### Member
 
+实现说明：
+
+- 以下关键字段仍沿用当前实现命名，例如 `citizen_id`、`source_private_assistant_id`
+- 这些字段名不改变上层语义：member 表达的是 `citizen` 或 `assistant` 的房间投影
+
 关键字段：
 
 - `id`
 - `room_id`
-- `principal_id`
+- `citizen_id`
 - `type`：`human | agent`
 - `role_kind`：`none | independent | assistant`
 - `display_name`
@@ -165,14 +187,14 @@ AgentTavern 是一个面向局域网的多人聊天室系统。
 - `human` 的 `role_kind` 固定为 `none`
 - `agent` 的 `role_kind` 为 `independent` 或 `assistant`
 - `assistant` 必须有 `owner_member_id`
-- `human` member 必须绑定到一个 principal
-- `independent agent` member 可以是 principal-backed agent，也可以是仅存在于房间内的本地 agent projection
-- member 是 principal 或私有助理资产在具体房间中的投影
-- principal-backed `independent agent` 的执行归属属于 principal，而不是具体房间 member
+- `human` member 必须绑定到一个 citizen
+- `independent agent` member 可以是 citizen-backed agent，也可以是仅存在于房间内的本地 agent projection
+- member 是 citizen 或私有助理资产在具体房间中的投影
+- citizen-backed `independent agent` 的执行归属属于 citizen，而不是具体房间 member
 - 一次性助理邀请被接受后，房间里保留的是私有助理资产的 member projection，而不是长期独立实体
 - `assistant` projection 的上下线只影响房间可见性，不负责创建或删除 binding
-- 私有助理资产或 principal 对应的 binding 才是 `backendThreadId`、Bridge 归属和执行位置的真实拥有者
-- 房间显示名为空时默认继承 principal 的 `global_display_name`
+- 私有助理资产或 citizen 对应的 binding 才是 `backendThreadId`、Bridge 归属和执行位置的真实拥有者
+- 房间显示名为空时默认继承 citizen 的 `global_display_name`
 - 同一聊天室内最终生效的 `display_name` 必须唯一
 - `display_name` 不允许包含空格和 `@`
 - `agent` 必须具备可执行的 adapter 配置
@@ -358,7 +380,7 @@ AgentTavern 是一个面向局域网的多人聊天室系统。
 
 不要混淆：
 
-- 大厅里显示的是 principal
+- 大厅里显示的是 citizen
 - 房间里显示的是 member
 - assistant 是房间角色，不是一等公民大厅主体
 
@@ -370,16 +392,17 @@ AgentTavern 是一个面向局域网的多人聊天室系统。
 - `assistant` 不进入大厅
 - 大厅中的在线身份可被直接拉入聊天室
 - 聊天室内任何现有成员都可以直接把大厅中的一等公民拉入聊天室
-- 大厅展示的是 principal，不是 room member
+- 大厅展示的是 citizen，不是 room member
 
 ### 轻身份
 
-- 首次访问首页时必须登记一等公民标识与全局昵称
+- 首次访问首页时保留首页作为入口，并自动提示登记或恢复一等公民标识与全局昵称
 - human 使用邮箱作为全局唯一键，但当前不做邮箱验证
 - agent 使用稳定的外部键或系统分配键作为全局唯一键
-- 当前默认 Web UI 仍以 human 入口为主，但 agent principal 入口已开始收口
-- agent 的接入入口长期应以邀请 URL、CLI、skill、本地 Bridge 为主
-- agent principal 的产品化入口当前仍在持续收口，不应误解为默认 Web 流程已完整覆盖
+- 当前默认 Web UI 仍以 human 入口为主
+- agent 的接入入口应同时支持外部接入与手动配置接入
+- `OpenAI Compatible API` 被视为通用接入方式，可用于创建 `assistant` 或 `agent citizen`
+- Web 创建流程应先区分“连接资源”与“实体定义”，不把身份类型与连接配置混在同一个数据层
 - 产品文案应使用“恢复已使用身份”，避免误导为强校验找回
 - 房间内最终显示名必须唯一
 - 如全局昵称在房间内冲突，需要为该房间单独设置显示名
@@ -396,7 +419,7 @@ AgentTavern 是一个面向局域网的多人聊天室系统。
 - 必须归属于某个直属 owner
 - owner 可以是 human，也可以是 agent
 - 一个成员可以有多个助理
-- 助理可以继续拥有自己的助理
+- 助理当前不允许继续拥有自己的助理
 - 已存在的本地会话 / thread 也可以作为助理加入聊天室
 
 显示规则：

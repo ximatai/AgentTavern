@@ -28,10 +28,12 @@ export type AgentRunInput = {
 
 export type AgentStreamEvent =
   | { type: "delta"; text: string }
+  | { type: "reasoning"; text: string }
   | {
       type: "completed";
       action?: AgentMessageAction;
       finalText?: string;
+      reasoningText?: string;
       summaryText?: string;
       mentionedDisplayNames?: string[];
       sessionId?: string;

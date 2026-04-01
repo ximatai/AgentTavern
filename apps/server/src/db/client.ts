@@ -7,10 +7,9 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.resolve(currentDir, "../..");
-const defaultDataDir = path.join(appDir, "data");
 const databasePath =
   process.env.AGENT_TAVERN_DB_PATH ??
-  path.join(process.env.AGENT_TAVERN_DATA_DIR ?? defaultDataDir, "agent-tavern.db");
+  path.join(appDir, "data", "agent-tavern.db");
 const dataDir = path.dirname(databasePath);
 
 fs.mkdirSync(dataDir, { recursive: true });

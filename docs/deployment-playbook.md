@@ -49,7 +49,7 @@ ssh <ssh-host> '
   pnpm install --frozen-lockfile
   pnpm build
   PORT=<server-port> \
-  AGENT_TAVERN_DATA_DIR=<deploy-root>/runtime/data \
+  AGENT_TAVERN_DB_PATH=<deploy-root>/runtime/data/agent-tavern.db \
   AGENT_TAVERN_ATTACHMENTS_DIR=<deploy-root>/runtime/attachments \
   pnpm --filter @agent-tavern/server db:migrate
 '
@@ -112,7 +112,7 @@ ssh <ssh-host> '
   pnpm install --frozen-lockfile
   pnpm build
   PORT=<server-port> \
-  AGENT_TAVERN_DATA_DIR=<deploy-root>/runtime/data \
+  AGENT_TAVERN_DB_PATH=<deploy-root>/runtime/data/agent-tavern.db \
   AGENT_TAVERN_ATTACHMENTS_DIR=<deploy-root>/runtime/attachments \
   pnpm --filter @agent-tavern/server db:migrate
   systemctl restart agenttavern-server

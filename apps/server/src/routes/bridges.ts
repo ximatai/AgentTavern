@@ -5,6 +5,7 @@ import type { Member } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
 import { agentBindings, localBridges, members } from "../db/schema";
+import { failAcceptedBridgeTasksForBridgeReconnect } from "../lib/bridge-task-maintenance";
 import { createId, createInviteToken } from "../lib/id";
 import { isBridgeFresh, resolveMemberRuntimeStatus } from "../lib/member-runtime";
 import { toPublicMember } from "../lib/public";
@@ -94,7 +95,7 @@ function autoAttachPendingBindingsToSoleOnlineBridge(bridge: StoredBridge): void
     }
 
     broadcastBindingMemberUpdates({
-      principalId: binding.principalId,
+      citizenId: binding.citizenId,
       privateAssistantId: binding.privateAssistantId,
       bridge,
     });
@@ -102,12 +103,12 @@ function autoAttachPendingBindingsToSoleOnlineBridge(bridge: StoredBridge): void
 }
 
 function broadcastBindingMemberUpdates(params: {
-  principalId: string | null;
+  citizenId: string | null;
   privateAssistantId: string | null;
   bridge: StoredBridge;
   bindingStatus?: string;
 }): void {
-  if (!params.principalId && !params.privateAssistantId) {
+  if (!params.citizenId && !params.privateAssistantId) {
     return;
   }
 
@@ -116,7 +117,7 @@ function broadcastBindingMemberUpdates(params: {
     .from(members)
     .all()
     .filter((member) => {
-      if (params.principalId && member.principalId === params.principalId) {
+      if (params.citizenId && member.citizenId === params.citizenId) {
         return true;
       }
       if (
@@ -156,7 +157,7 @@ function broadcastBridgeMemberUpdates(bridge: StoredBridge): void {
 
   for (const binding of bindings) {
     broadcastBindingMemberUpdates({
-      principalId: binding.principalId,
+      citizenId: binding.citizenId,
       privateAssistantId: binding.privateAssistantId,
       bridge,
       bindingStatus: binding.status,
@@ -212,6 +213,13 @@ bridgeRoutes.post("/api/bridges/register", async (c) => {
         ),
         403,
       );
+    }
+
+    if (bridge.currentInstanceId && bridge.currentInstanceId !== bridgeInstanceId) {
+      failAcceptedBridgeTasksForBridgeReconnect({
+        bridgeId: bridge.id,
+        previousInstanceId: bridge.currentInstanceId,
+      });
     }
 
     db
@@ -369,7 +377,7 @@ bridgeRoutes.post("/api/bridges/:bridgeId/agents/attach", async (c) => {
   const backendThreadId =
     typeof body?.backendThreadId === "string" ? body.backendThreadId.trim() : "";
   const memberId = typeof body?.memberId === "string" ? body.memberId.trim() : "";
-  const principalId = typeof body?.principalId === "string" ? body.principalId.trim() : "";
+  const citizenId = typeof body?.citizenId === "string" ? body.citizenId.trim() : "";
   const privateAssistantId =
     typeof body?.privateAssistantId === "string" ? body.privateAssistantId.trim() : "";
   const cwd = normalizeOptionalString(body?.cwd);
@@ -381,11 +389,11 @@ bridgeRoutes.post("/api/bridges/:bridgeId/agents/attach", async (c) => {
     );
   }
 
-  if (!backendThreadId && !memberId && !principalId && !privateAssistantId) {
+  if (!backendThreadId && !memberId && !citizenId && !privateAssistantId) {
     return c.json(
       bridgeError(
         BRIDGE_ERROR_CODE.BRIDGE_TARGET_REQUIRED,
-        "backendThreadId, memberId, principalId or privateAssistantId is required",
+        "backendThreadId, memberId, citizenId or privateAssistantId is required",
       ),
       400,
     );
@@ -417,7 +425,7 @@ bridgeRoutes.post("/api/bridges/:bridgeId/agents/attach", async (c) => {
   const resolvedMember = memberId
     ? db.select().from(members).where(eq(members.id, memberId)).get() ?? null
     : null;
-  const resolvedPrincipalId = principalId || resolvedMember?.principalId || "";
+  const resolvedPrincipalId = citizenId || resolvedMember?.citizenId || "";
   const resolvedPrivateAssistantId =
     privateAssistantId || resolvedMember?.sourcePrivateAssistantId || "";
 
@@ -432,7 +440,7 @@ bridgeRoutes.post("/api/bridges/:bridgeId/agents/attach", async (c) => {
     ? db
         .select()
         .from(agentBindings)
-        .where(eq(agentBindings.principalId, resolvedPrincipalId))
+        .where(eq(agentBindings.citizenId, resolvedPrincipalId))
         .get()
     : null;
   const bindingByPrivateAssistant = resolvedPrivateAssistantId
@@ -524,14 +532,14 @@ bridgeRoutes.post("/api/bridges/:bridgeId/agents/attach", async (c) => {
   }
 
   broadcastBindingMemberUpdates({
-    principalId: binding.principalId,
+    citizenId: binding.citizenId,
     privateAssistantId: binding.privateAssistantId,
     bridge: bridge as StoredBridge,
   });
 
   return c.json({
     bindingId: binding.id,
-    principalId: binding.principalId,
+    citizenId: binding.citizenId,
     privateAssistantId: binding.privateAssistantId,
     bridgeId,
     backendThreadId: binding.backendThreadId,

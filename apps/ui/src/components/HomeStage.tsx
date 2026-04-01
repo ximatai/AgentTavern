@@ -12,7 +12,7 @@ import { useTranslation } from "react-i18next";
 
 import { toast } from "../lib/feedback";
 import { useRoomStore } from "../stores/room";
-import { usePrincipalStore } from "../stores/principal";
+import { useCitizenStore } from "../stores/citizen";
 import { getPrivateAssistants } from "../api/assistants";
 import { LoginModal } from "./LoginModal";
 import { RoomModal } from "./RoomModal";
@@ -27,10 +27,10 @@ interface HomeStageProps {
 
 export function HomeStage({ inviteToken = null }: HomeStageProps) {
   const { t } = useTranslation();
-  const lobbyPrincipals = useRoomStore((s) => s.lobbyPrincipals);
+  const lobbyCitizens = useRoomStore((s) => s.lobbyCitizens);
   const recentRooms = useRoomStore((s) => s.recentRooms);
-  const principal = usePrincipalStore((s) => s.principal);
-  const restoreReady = usePrincipalStore((s) => s.restoreReady);
+  const principal = useCitizenStore((s) => s.principal);
+  const restoreReady = useCitizenStore((s) => s.restoreReady);
   const joinRoom = useRoomStore((s) => s.joinRoom);
   const [assistantCount, setAssistantCount] = useState(0);
   const [loginOpen, setLoginOpen] = useState(false);
@@ -48,7 +48,7 @@ export function HomeStage({ inviteToken = null }: HomeStageProps) {
       setAssistantCount(0);
       return;
     }
-    getPrivateAssistants(principal.principalId, principal.principalToken)
+    getPrivateAssistants(principal.citizenId, principal.citizenToken)
       .then((list) => setAssistantCount(list.length))
       .catch(() => setAssistantCount(0));
   }, [principal]);
@@ -65,20 +65,20 @@ export function HomeStage({ inviteToken = null }: HomeStageProps) {
     setLoginPromptShown(true);
   }, [inviteToken, principal, loginPromptShown, restoreReady]);
 
-  const visibleLobbyPrincipals = useMemo(
-    () => lobbyPrincipals.filter((item) => (item.principalId ?? item.id) !== principal?.principalId),
-    [lobbyPrincipals, principal?.principalId],
+  const visibleLobbyCitizens = useMemo(
+    () => lobbyCitizens.filter((item) => (item.citizenId ?? item.id) !== principal?.citizenId),
+    [lobbyCitizens, principal?.citizenId],
   );
 
-  async function handleStartDirectRoom(targetPrincipalId: string) {
+  async function handleStartDirectRoom(targetCitizenId: string) {
     if (!principal) {
       setLoginOpen(true);
       return;
     }
 
-    setActioningPrincipalId(targetPrincipalId);
+    setActioningPrincipalId(targetCitizenId);
     try {
-      await useRoomStore.getState().startDirectRoom(targetPrincipalId);
+      await useRoomStore.getState().startDirectRoom(targetCitizenId);
     } catch (error) {
       toast().error(
         error instanceof Error ? error.message : t("onlineMembers.startChatFailed"),
@@ -153,7 +153,7 @@ export function HomeStage({ inviteToken = null }: HomeStageProps) {
       <div className="home-stats-row">
         <Card className="home-stat-card" variant="borderless">
           <UserOutlined className="home-stat-icon" />
-          <div className="home-stat-value">{lobbyPrincipals.length}</div>
+          <div className="home-stat-value">{lobbyCitizens.length}</div>
           <Text type="secondary">{t("home.statsOnline")}</Text>
         </Card>
         <Card className="home-stat-card" variant="borderless">
@@ -177,18 +177,18 @@ export function HomeStage({ inviteToken = null }: HomeStageProps) {
                 {principal ? t("home.lobbyHintRegistered") : t("home.lobbyHintAnonymous")}
               </Text>
             </div>
-            <Tag color="cyan">{t("home.sidebarSnapshotOnline", { count: lobbyPrincipals.length })}</Tag>
+            <Tag color="cyan">{t("home.sidebarSnapshotOnline", { count: lobbyCitizens.length })}</Tag>
           </div>
 
           <div className="home-lobby-list">
-            {visibleLobbyPrincipals.length === 0 ? (
+            {visibleLobbyCitizens.length === 0 ? (
               <div className="home-lobby-empty">
                 <Text type="secondary">{t("home.lobbyEmpty")}</Text>
               </div>
             ) : (
-              visibleLobbyPrincipals.map((item) => {
-                const principalId = item.principalId ?? item.id;
-                const actioning = actioningPrincipalId === principalId;
+              visibleLobbyCitizens.map((item) => {
+                const citizenId = item.citizenId ?? item.id;
+                const actioning = actioningPrincipalId === citizenId;
                 return (
                   <div key={item.id} className="home-lobby-item">
                     <div className="home-lobby-meta">
@@ -209,7 +209,7 @@ export function HomeStage({ inviteToken = null }: HomeStageProps) {
                       type="primary"
                       icon={<MessageOutlined />}
                       loading={actioning}
-                      onClick={() => void handleStartDirectRoom(principalId)}
+                      onClick={() => void handleStartDirectRoom(citizenId)}
                     >
                       {principal ? t("onlineMembers.startChat") : t("home.primaryActionRegister")}
                     </Button>

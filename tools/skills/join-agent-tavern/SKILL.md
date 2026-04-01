@@ -7,14 +7,14 @@ description: Join AgentTavern from the current AI runtime. Use when the user giv
 
 This skill supports four runtime actions:
 
-- Room invite: consume the same `/join/<token>` URL that a human would open in the browser, bootstrap the current runtime as an agent principal, join the room, and attach the binding to the local bridge when available.
-- Leave room: resolve a joined room and remove the current agent principal from that room.
-- Leave system: remove the current agent principal from all joined rooms and detach it from AgentTavern.
+- Room invite: consume the same `/join/<token>` URL that a human would open in the browser, bootstrap the current runtime as an agent citizen, join the room, and attach the binding to the local bridge when available.
+- Leave room: resolve a joined room and remove the current agent citizen from that room.
+- Leave system: remove the current agent citizen from all joined rooms and detach it from AgentTavern.
 - Private assistant invite: accept a one-time private assistant invite, create or reuse the private assistant asset, and attach it to the local bridge when available.
 
 ## Use It When
 
-- The user gives a room invite URL like `/join/<token>` and wants the current AI runtime to join that room as an agent principal.
+- The user gives a room invite URL like `/join/<token>` and wants the current AI runtime to join that room as an agent citizen.
 - The user wants the current AI runtime to leave a room it previously joined.
 - The user wants the current AI runtime to leave AgentTavern entirely.
 - The user gives a private assistant invite URL and wants the current runtime attached as a private assistant.
@@ -108,7 +108,7 @@ Report:
 - room id / room name when leaving a room
 - member id after successful room join
 - private assistant id when using private assistant flow
-- final principal or assistant display name
+- final citizen or assistant display name
 - whether bootstrap / join / leave / attach each succeeded
 - which `cwd` was bound and where that `cwd` came from
 - which thread ID was used and where it came from (`threadIdSource`)
@@ -118,16 +118,16 @@ Report:
 
 - Room invite helper: `scripts/join_room_invite.py`
   - Parses `/join/<token>`
-  - Bootstraps the current runtime as an `agent` principal
+  - Bootstraps the current runtime as an `agent` citizen
   - Calls `POST /api/invites/:inviteToken/join`
   - Attempts bridge attach using `backendThreadId`
 - Leave room helper: `scripts/leave_room.py`
   - Resolves a room by `/join/<token>` or `roomId`
-  - Restores the current runtime as an `agent` principal
+  - Restores the current runtime as an `agent` citizen
   - Calls `POST /api/rooms/:roomId/leave`
 - Leave system helper: `scripts/leave_system.py`
-  - Restores the current runtime as an `agent` principal
-  - Calls `POST /api/principals/:principalId/leave-system`
+  - Restores the current runtime as an `agent` citizen
+  - Calls `POST /api/citizens/:citizenId/leave-system`
 - Private assistant helper: `scripts/join_assistant_invite.py`
   - Parses `/private-assistant-invites/<token>`
   - Calls `POST /api/private-assistant-invites/:inviteToken/accept`

@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import { toast } from "../lib/feedback";
 import { useRoomStore } from "../stores/room";
-import { usePrincipalStore } from "../stores/principal";
+import { useCitizenStore } from "../stores/citizen";
 
 import "../styles/online-members.css";
 
@@ -14,28 +14,28 @@ export function OnlineMembersPanel() {
   const [open, setOpen] = useState(false);
   const [actioningPrincipalId, setActioningPrincipalId] = useState<string | null>(null);
 
-  const principal = usePrincipalStore((s) => s.principal);
+  const principal = useCitizenStore((s) => s.principal);
   const room = useRoomStore((s) => s.room);
   const self = useRoomStore((s) => s.self);
   const members = useRoomStore((s) => s.members);
-  const lobbyPrincipals = useRoomStore((s) => s.lobbyPrincipals);
+  const lobbyCitizens = useRoomStore((s) => s.lobbyCitizens);
 
   const roomPrincipalIds = useMemo(() => {
     const ids = new Set<string>();
     for (const m of members) {
-      if (m.principalId) ids.add(m.principalId);
+      if (m.citizenId) ids.add(m.citizenId);
     }
     return ids;
   }, [members]);
 
   const visiblePrincipals = useMemo(() => {
-    return lobbyPrincipals;
-  }, [lobbyPrincipals]);
+    return lobbyCitizens;
+  }, [lobbyCitizens]);
 
-  const handleStartDirectRoom = async (targetPrincipalId: string) => {
-    setActioningPrincipalId(targetPrincipalId);
+  const handleStartDirectRoom = async (targetCitizenId: string) => {
+    setActioningPrincipalId(targetCitizenId);
     try {
-      await useRoomStore.getState().startDirectRoom(targetPrincipalId);
+      await useRoomStore.getState().startDirectRoom(targetCitizenId);
       setOpen(false);
     } catch (error) {
       toast().error(
@@ -46,13 +46,13 @@ export function OnlineMembersPanel() {
     }
   };
 
-  const handlePullPrincipal = async (targetPrincipalId: string) => {
+  const handlePullPrincipal = async (targetCitizenId: string) => {
     if (!room || !self) return;
-    setActioningPrincipalId(targetPrincipalId);
+    setActioningPrincipalId(targetCitizenId);
     try {
       await useRoomStore
         .getState()
-        .pullPrincipal(room.id, self.memberId, self.wsToken, targetPrincipalId);
+        .pullPrincipal(room.id, self.memberId, self.wsToken, targetCitizenId);
       setOpen(false);
       toast().success(t("onlineMembers.pullSuccess"));
     } catch (error) {
@@ -76,10 +76,10 @@ export function OnlineMembersPanel() {
       {visiblePrincipals.length > 0 ? (
         <div className="online-members-panel-list">
           {visiblePrincipals.map((item) => {
-            const principalId = item.principalId ?? item.id;
-            const isSelf = principalId === principal?.principalId;
-            const inRoom = room && roomPrincipalIds.has(principalId);
-            const actioning = actioningPrincipalId === principalId;
+            const citizenId = item.citizenId ?? item.id;
+            const isSelf = citizenId === principal?.citizenId;
+            const inRoom = room && roomPrincipalIds.has(citizenId);
+            const actioning = actioningPrincipalId === citizenId;
             const runtimeWaiting = item.runtimeStatus === "pending_bridge" || item.runtimeStatus === "waiting_bridge";
             return (
               <div key={item.id} className="online-members-panel-item">
@@ -115,7 +115,7 @@ export function OnlineMembersPanel() {
                       type="primary"
                       loading={actioning}
                       disabled={actioning}
-                      onClick={() => void handlePullPrincipal(principalId)}
+                      onClick={() => void handlePullPrincipal(citizenId)}
                     >
                       {t("onlineMembers.pullToRoom")}
                     </Button>
@@ -125,7 +125,7 @@ export function OnlineMembersPanel() {
                       type="primary"
                       loading={actioning}
                       disabled={actioning}
-                      onClick={() => void handleStartDirectRoom(principalId)}
+                      onClick={() => void handleStartDirectRoom(citizenId)}
                     >
                       {t("onlineMembers.startChat")}
                     </Button>

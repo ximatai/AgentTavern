@@ -35,7 +35,7 @@
 - 先补运行时协议基线，再补恢复系统
 - 先做真实可用性回归，再做基础设施深挖
 - 若某项工作不能直接提升“本地 Agent 可接入性”“真实可用性”“UI 可替换性”，默认降级优先级
-- `accepted` 任务恢复当前只停留在设计层，直到 `bridgeInstanceId` 基线和真实回归完成
+- `accepted` 任务已补基础失败收口；真正的 resume / recover 仍停留在设计层
 
 ## 3. 三层结构
 
@@ -48,7 +48,7 @@
 - 任务分发
 - 流式消息广播
 - 持久化关键状态
-- 维护 principal / member / assistant 的业务关系
+- 维护 citizen / member / assistant 的业务关系
 
 不负责：
 
@@ -150,7 +150,7 @@
 - agent 进入系统不应强依赖 Web 表单入口
 - URL、CLI、skill、Bridge 组合是更符合 agent 接入形态的长期方向
 - 一次性邀请的 accept 默认会沉淀为私有助理资产，而不是长期停留在一次性房间实体
-- `AgentBinding` 的主归属是 `principalId` 或 `privateAssistantId`
+- `AgentBinding` 的主归属是 `citizenId` 或 `privateAssistantId`
 - 房间 `member` 只是归属实体在具体房间里的 projection，不再作为 binding 的主归属
 - 同一个 owner 下，同一个 `backendThreadId` 最终只折叠到一个私有助理资产
 - 不同 owner 不允许复用同一个已经绑定的 `backendThreadId`
@@ -195,7 +195,7 @@
 当前约束：
 
 - `attach` 必须保证同一 binding 在同一时刻只归属一个 Bridge
-- attach 请求优先按 `backendThreadId` / `principalId` / `privateAssistantId` 解析；`memberId` 仅保留兼容输入语义
+- attach 请求优先按 `backendThreadId` / `citizenId` / `privateAssistantId` 解析；`memberId` 仅保留兼容输入语义
 - `task pull` 必须采用可重试的 claim 语义
 - `task accept` 必须采用条件更新
 - Bridge 在执行前必须先 `accept`
@@ -344,7 +344,13 @@
 - A 失联，超过 accepted lease
 - 新实例 B 以同一 `bridgeId` 重连，并声明新的 `bridgeInstanceId`
 
-期望：
+当前实现：
+
+- 当前不会自动恢复执行
+- 新实例重连时，旧实例持有的 `accepted` 任务会失败收口
+- 旧执行会话会明确结束，不再继续沿用 A 的实例所有权
+
+后续若进入真正恢复实现，期望：
 
 - B 可以触发恢复
 - 恢复后不会继续沿用 A 的实例所有权
@@ -403,7 +409,7 @@
 
 ### 通过标准
 
-Bridge 任务恢复设计只有在以下条件同时成立时才可进入实现：
+Bridge 任务恢复设计若要进入真正的 resume / recover 实现，仍需同时满足以下条件：
 
 - `bridgeInstanceId` 已进入所有运行时接口口径
 - 旧实例与新实例的所有权冲突有明确拒绝规则

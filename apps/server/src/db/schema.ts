@@ -7,7 +7,7 @@ import {
 } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
-export const principals = sqliteTable("principals", {
+export const citizens = sqliteTable("citizens", {
   id: text("id").primaryKey(),
   kind: text("kind").notNull(),
   loginKey: text("login_key").notNull(),
@@ -15,14 +15,15 @@ export const principals = sqliteTable("principals", {
   backendType: text("backend_type"),
   backendThreadId: text("backend_thread_id"),
   backendConfig: text("backend_config"),
+  sourceServerConfigId: text("source_server_config_id"),
   status: text("status").notNull(),
   createdAt: text("created_at").notNull(),
 }, (table) => ({
-  kindLoginKeyUniqueIdx: uniqueIndex("principals_kind_login_key_unique_idx").on(
+  kindLoginKeyUniqueIdx: uniqueIndex("citizens_kind_login_key_unique_idx").on(
     table.kind,
     table.loginKey,
   ),
-  statusIdx: index("principals_status_idx").on(table.status),
+  statusIdx: index("citizens_status_idx").on(table.status),
 }));
 
 export const rooms = sqliteTable("rooms", {
@@ -46,7 +47,7 @@ export const members = sqliteTable("members", {
   roomId: text("room_id")
     .notNull()
     .references(() => rooms.id),
-  principalId: text("principal_id").references(() => principals.id),
+  citizenId: text("citizen_id").references(() => citizens.id),
   type: text("type").notNull(),
   roleKind: text("role_kind").notNull(),
   displayName: text("display_name").notNull(),
@@ -60,7 +61,7 @@ export const members = sqliteTable("members", {
   createdAt: text("created_at").notNull(),
 }, (table) => ({
   roomIdIdx: index("members_room_id_idx").on(table.roomId),
-  principalIdIdx: index("members_principal_id_idx").on(table.principalId),
+  citizenIdIdx: index("members_citizen_id_idx").on(table.citizenId),
   ownerMemberIdIdx: index("members_owner_member_id_idx").on(table.ownerMemberId),
   membershipStatusIdx: index("members_membership_status_idx").on(table.membershipStatus),
   roomActiveDisplayNameUniqueIdx: uniqueIndex("members_room_active_display_name_unique_idx").on(
@@ -71,9 +72,9 @@ export const members = sqliteTable("members", {
 
 export const privateAssistants = sqliteTable("private_assistants", {
   id: text("id").primaryKey(),
-  ownerPrincipalId: text("owner_principal_id")
+  ownerCitizenId: text("owner_citizen_id")
     .notNull()
-    .references(() => principals.id),
+    .references(() => citizens.id),
   name: text("name").notNull(),
   backendType: text("backend_type").notNull(),
   backendThreadId: text("backend_thread_id"),
@@ -81,20 +82,20 @@ export const privateAssistants = sqliteTable("private_assistants", {
   status: text("status").notNull(),
   createdAt: text("created_at").notNull(),
 }, (table) => ({
-  ownerPrincipalIdIdx: index("private_assistants_owner_principal_id_idx").on(
-    table.ownerPrincipalId,
+  ownerCitizenIdIdx: index("private_assistants_owner_citizen_id_idx").on(
+    table.ownerCitizenId,
   ),
   ownerNameUniqueIdx: uniqueIndex("private_assistants_owner_name_unique_idx").on(
-    table.ownerPrincipalId,
+    table.ownerCitizenId,
     table.name,
   ),
 }));
 
 export const privateAssistantInvites = sqliteTable("private_assistant_invites", {
   id: text("id").primaryKey(),
-  ownerPrincipalId: text("owner_principal_id")
+  ownerCitizenId: text("owner_citizen_id")
     .notNull()
-    .references(() => principals.id),
+    .references(() => citizens.id),
   name: text("name").notNull(),
   backendType: text("backend_type").notNull(),
   inviteToken: text("invite_token").notNull(),
@@ -107,12 +108,32 @@ export const privateAssistantInvites = sqliteTable("private_assistant_invites", 
   expiresAt: text("expires_at"),
   acceptedAt: text("accepted_at"),
 }, (table) => ({
-  ownerPrincipalIdIdx: index("private_assistant_invites_owner_principal_id_idx").on(
-    table.ownerPrincipalId,
+  ownerCitizenIdIdx: index("private_assistant_invites_owner_citizen_id_idx").on(
+    table.ownerCitizenId,
   ),
   statusIdx: index("private_assistant_invites_status_idx").on(table.status),
   inviteTokenUniqueIdx: uniqueIndex("private_assistant_invites_invite_token_unique_idx").on(
     table.inviteToken,
+  ),
+}));
+
+export const serverConfigs = sqliteTable("server_configs", {
+  id: text("id").primaryKey(),
+  ownerCitizenId: text("owner_citizen_id")
+    .notNull()
+    .references(() => citizens.id),
+  name: text("name").notNull(),
+  backendType: text("backend_type").notNull(),
+  configPayload: text("config_payload").notNull(),
+  visibility: text("visibility").notNull().default("private"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => ({
+  ownerCitizenIdIdx: index("server_configs_owner_citizen_id_idx").on(table.ownerCitizenId),
+  visibilityIdx: index("server_configs_visibility_idx").on(table.visibility),
+  ownerNameUniqueIdx: uniqueIndex("server_configs_owner_name_unique_idx").on(
+    table.ownerCitizenId,
+    table.name,
   ),
 }));
 
@@ -298,7 +319,7 @@ export const localBridges = sqliteTable("local_bridges", {
 
 export const agentBindings = sqliteTable("agent_bindings", {
   id: text("id").primaryKey(),
-  principalId: text("principal_id").references(() => principals.id),
+  citizenId: text("citizen_id").references(() => citizens.id),
   privateAssistantId: text("private_assistant_id").references(() => privateAssistants.id),
   bridgeId: text("bridge_id").references(() => localBridges.id),
   backendType: text("backend_type").notNull(),
@@ -308,7 +329,7 @@ export const agentBindings = sqliteTable("agent_bindings", {
   attachedAt: text("attached_at").notNull(),
   detachedAt: text("detached_at"),
 }, (table) => ({
-  principalIdUniqueIdx: uniqueIndex("agent_bindings_principal_id_unique_idx").on(table.principalId),
+  citizenIdUniqueIdx: uniqueIndex("agent_bindings_citizen_id_unique_idx").on(table.citizenId),
   privateAssistantIdUniqueIdx: uniqueIndex(
     "agent_bindings_private_assistant_id_unique_idx",
   ).on(table.privateAssistantId),

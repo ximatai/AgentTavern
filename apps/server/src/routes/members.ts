@@ -177,7 +177,7 @@ memberRoutes.post("/api/rooms/:roomId/members/agents", async (c) => {
   const member: Member = {
     id: createId("mem"),
     roomId,
-    principalId: null,
+    citizenId: null,
     type: "agent",
     roleKind,
     displayName,

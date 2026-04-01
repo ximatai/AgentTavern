@@ -149,6 +149,47 @@
   color: var(--font-primary, #FFFFFF);
 }
 
+.reasoning-block {
+  margin-bottom: 10px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.46);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  overflow: hidden;
+}
+
+.reasoning-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--font-secondary, #94A3B8);
+}
+
+.reasoning-summary::-webkit-details-marker {
+  display: none;
+}
+
+.reasoning-status {
+  font-size: 10px;
+  color: var(--accent, #22D3EE);
+}
+
+.reasoning-content {
+  padding: 0 12px 10px;
+}
+
+.reasoning-content p {
+  color: var(--font-secondary, #AAB7C7);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
 /* Human bubble */
 .chat-bubble-human {
   background: var(--bg-surface, #1E293B);

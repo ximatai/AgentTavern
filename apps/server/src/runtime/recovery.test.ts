@@ -380,6 +380,140 @@ test("recoverRuntimeState fails stale pending bridge tasks and their sessions", 
   assert.match(allMessages.at(-1)?.content ?? "", /did not accept the task in time/i);
 });
 
+test("recoverRuntimeState fails accepted bridge tasks that cannot survive a restart", async () => {
+  const databasePath = uniqueTempDbPath();
+  process.env.AGENT_TAVERN_DB_PATH = databasePath;
+
+  const [{ runMigrations }, dbClient, schema, recovery] = await Promise.all([
+    import("../db/migrate.js"),
+    import("../db/client.js"),
+    import("../db/schema.js"),
+    import("./recovery.js"),
+  ]);
+
+  runMigrations();
+
+  const { db } = dbClient;
+  const { rooms, members, messages, agentSessions, localBridges, bridgeTasks } = schema;
+
+  const createdAt = new Date("2026-03-25T12:30:00.000Z").toISOString();
+
+  db.insert(rooms).values({
+    id: "room_bridge_running_recovery",
+    name: "Bridge Running Recovery Room",
+    inviteToken: "inv_bridge_running_recovery",
+    status: "active",
+    createdAt,
+  }).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_bridge_running_owner",
+      roomId: "room_bridge_running_recovery",
+      type: "human",
+      roleKind: "none",
+      displayName: "Owner",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_bridge_running_agent",
+      roomId: "room_bridge_running_recovery",
+      type: "agent",
+      roleKind: "assistant",
+      displayName: "BridgeRunner",
+      ownerMemberId: "mem_bridge_running_owner",
+      sourcePrivateAssistantId: "pa_bridge_running_recovery",
+      adapterType: "codex_cli",
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(messages).values({
+    id: "msg_bridge_running_trigger",
+    roomId: "room_bridge_running_recovery",
+    senderMemberId: "mem_bridge_running_owner",
+    messageType: "user_text",
+    content: "@BridgeRunner still running?",
+    replyToMessageId: null,
+    createdAt,
+  }).run();
+
+  db.insert(agentSessions).values({
+    id: "as_bridge_running",
+    roomId: "room_bridge_running_recovery",
+    agentMemberId: "mem_bridge_running_agent",
+    triggerMessageId: "msg_bridge_running_trigger",
+    requesterMemberId: "mem_bridge_running_owner",
+    approvalId: null,
+    approvalRequired: false,
+    status: "running",
+    startedAt: createdAt,
+    endedAt: null,
+  }).run();
+
+  db.insert(localBridges).values({
+    id: "brg_bridge_running_recovery",
+    bridgeName: "Running Recovery Bridge",
+    bridgeToken: "token_bridge_running_recovery",
+    currentInstanceId: "binst_bridge_running_recovery",
+    status: "online",
+    platform: "macOS",
+    version: "0.1.0",
+    metadata: null,
+    lastSeenAt: createdAt,
+    createdAt,
+    updatedAt: createdAt,
+  }).run();
+
+  db.insert(bridgeTasks).values({
+    id: "btsk_bridge_running",
+    bridgeId: "brg_bridge_running_recovery",
+    sessionId: "as_bridge_running",
+    roomId: "room_bridge_running_recovery",
+    agentMemberId: "mem_bridge_running_agent",
+    requesterMemberId: "mem_bridge_running_owner",
+    backendType: "codex_cli",
+    backendThreadId: "thread_bridge_running_recovery",
+    cwd: null,
+    outputMessageId: "msg_bridge_running_output",
+    prompt: "continue",
+    contextPayload: "[]",
+    status: "accepted",
+    createdAt,
+    assignedAt: createdAt,
+    assignedInstanceId: "binst_bridge_running_recovery",
+    acceptedAt: createdAt,
+    acceptedInstanceId: "binst_bridge_running_recovery",
+    completedAt: null,
+    failedAt: null,
+  }).run();
+
+  const result = recovery.recoverRuntimeState();
+
+  assert.equal(result.expiredApprovals, 0);
+  assert.equal(result.expiredBridgeTasks, 1);
+  assert.equal(result.rejectedSessions, 1);
+  assert.equal(result.systemMessages, 1);
+
+  const session = db.select().from(agentSessions).where(eq(agentSessions.id, "as_bridge_running")).get();
+  const task = db.select().from(bridgeTasks).where(eq(bridgeTasks.id, "btsk_bridge_running")).get();
+  const allMessages = db
+    .select()
+    .from(messages)
+    .where(eq(messages.roomId, "room_bridge_running_recovery"))
+    .all();
+
+  assert.equal(session?.status, "failed");
+  assert.equal(task?.status, "failed");
+  assert.match(allMessages.at(-1)?.content ?? "", /server restarted/i);
+});
+
 test("recoverRuntimeState folds stale online presence back to offline", async () => {
   const databasePath = uniqueTempDbPath();
   process.env.AGENT_TAVERN_DB_PATH = databasePath;
@@ -394,10 +528,10 @@ test("recoverRuntimeState folds stale online presence back to offline", async ()
   runMigrations();
 
   const { db } = dbClient;
-  const { principals, rooms, members, localBridges } = schema;
+  const { citizens, rooms, members, localBridges } = schema;
   const createdAt = new Date("2026-03-25T16:00:00.000Z").toISOString();
 
-  db.insert(principals).values([
+  db.insert(citizens).values([
     {
       id: "prn_human_online",
       kind: "human",
@@ -432,7 +566,7 @@ test("recoverRuntimeState folds stale online presence back to offline", async ()
     {
       id: "mem_human_online",
       roomId: "room_presence_recovery",
-      principalId: "prn_human_online",
+      citizenId: "prn_human_online",
       type: "human",
       roleKind: "none",
       displayName: "Alice",
@@ -446,7 +580,7 @@ test("recoverRuntimeState folds stale online presence back to offline", async ()
     {
       id: "mem_agent_online",
       roomId: "room_presence_recovery",
-      principalId: "prn_agent_online",
+      citizenId: "prn_agent_online",
       type: "agent",
       roleKind: "independent",
       displayName: "Helper",
@@ -460,7 +594,7 @@ test("recoverRuntimeState folds stale online presence back to offline", async ()
     {
       id: "mem_projection_online",
       roomId: "room_presence_recovery",
-      principalId: null,
+      citizenId: null,
       type: "agent",
       roleKind: "assistant",
       displayName: "Projection",
@@ -495,7 +629,7 @@ test("recoverRuntimeState folds stale online presence back to offline", async ()
   assert.equal(result.expiredDraftAttachments, 0);
   assert.equal(result.expiredBridgeTasks, 0);
 
-  const refreshedPrincipals = db.select().from(principals).all();
+  const refreshedPrincipals = db.select().from(citizens).all();
   const refreshedMembers = db.select().from(members).all();
   const refreshedBridge = db.select().from(localBridges).where(eq(localBridges.id, "brg_presence_online")).get();
 

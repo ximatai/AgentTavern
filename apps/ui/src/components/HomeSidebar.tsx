@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import { toast } from "../lib/feedback";
 import { useRoomStore } from "../stores/room";
-import { usePrincipalStore } from "../stores/principal";
+import { useCitizenStore } from "../stores/citizen";
 import { LoginModal } from "./LoginModal";
 
 import "../styles/home.css";
@@ -14,24 +14,24 @@ const { Title, Paragraph, Text } = Typography;
 
 export function HomeSidebar() {
   const { t } = useTranslation();
-  const lobbyPrincipals = useRoomStore((s) => s.lobbyPrincipals);
-  const principal = usePrincipalStore((s) => s.principal);
+  const lobbyCitizens = useRoomStore((s) => s.lobbyCitizens);
+  const principal = useCitizenStore((s) => s.principal);
   const [loginOpen, setLoginOpen] = useState(false);
   const [actioningPrincipalId, setActioningPrincipalId] = useState<string | null>(null);
 
-  const visiblePrincipals = lobbyPrincipals
-    .filter((item) => (item.principalId ?? item.id) !== principal?.principalId)
+  const visiblePrincipals = lobbyCitizens
+    .filter((item) => (item.citizenId ?? item.id) !== principal?.citizenId)
     .slice(0, 6);
 
-  async function handleStartDirectRoom(targetPrincipalId: string) {
+  async function handleStartDirectRoom(targetCitizenId: string) {
     if (!principal) {
       setLoginOpen(true);
       return;
     }
 
-    setActioningPrincipalId(targetPrincipalId);
+    setActioningPrincipalId(targetCitizenId);
     try {
-      await useRoomStore.getState().startDirectRoom(targetPrincipalId);
+      await useRoomStore.getState().startDirectRoom(targetCitizenId);
     } catch (error) {
       toast().error(
         error instanceof Error ? error.message : t("onlineMembers.startChatFailed"),
@@ -71,7 +71,7 @@ export function HomeSidebar() {
           <div className="home-side-header">
             <Title level={5}>{t("home.lobbyTitle")}</Title>
             <Text type="secondary">
-              {t("home.sidebarSnapshotOnline", { count: lobbyPrincipals.length })}
+              {t("home.sidebarSnapshotOnline", { count: lobbyCitizens.length })}
             </Text>
           </div>
           <div className="home-side-cards">
@@ -90,8 +90,8 @@ export function HomeSidebar() {
                   block
                   size="small"
                   icon={<MessageOutlined />}
-                  loading={actioningPrincipalId === (item.principalId ?? item.id)}
-                  onClick={() => void handleStartDirectRoom(item.principalId ?? item.id)}
+                  loading={actioningPrincipalId === (item.citizenId ?? item.id)}
+                  onClick={() => void handleStartDirectRoom(item.citizenId ?? item.id)}
                 >
                   {t("onlineMembers.startChat")}
                 </Button>

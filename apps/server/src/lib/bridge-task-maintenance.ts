@@ -26,6 +26,75 @@ function toAgentSession(row: {
   return row as AgentSession;
 }
 
+function failAcceptedBridgeTasks(params: {
+  bridgeId?: string;
+  acceptedInstanceId?: string | null;
+  failureMessage: (agentDisplayName: string) => string;
+}): {
+  failedTasks: number;
+  failedSessions: number;
+} {
+  const staleTasks = db
+    .select()
+    .from(bridgeTasks)
+    .where(
+      and(
+        eq(bridgeTasks.status, "accepted"),
+        ...(params.bridgeId ? [eq(bridgeTasks.bridgeId, params.bridgeId)] : []),
+        ...(params.acceptedInstanceId
+          ? [eq(bridgeTasks.acceptedInstanceId, params.acceptedInstanceId)]
+          : []),
+      ),
+    )
+    .all();
+
+  let failedTasks = 0;
+  let failedSessions = 0;
+
+  for (const task of staleTasks) {
+    const failedAt = now();
+    const taskResult = db
+      .update(bridgeTasks)
+      .set({
+        status: "failed",
+        failedAt,
+      })
+      .where(and(eq(bridgeTasks.id, task.id), eq(bridgeTasks.status, "accepted")))
+      .run();
+
+    if (taskResult.changes === 0) {
+      continue;
+    }
+
+    failedTasks += 1;
+
+    const session = db
+      .select()
+      .from(agentSessions)
+      .where(and(eq(agentSessions.id, task.sessionId), eq(agentSessions.status, "running")))
+      .get();
+
+    if (!session) {
+      continue;
+    }
+
+    const agent = db
+      .select()
+      .from(members)
+      .where(eq(members.id, session.agentMemberId))
+      .get();
+    const agentDisplayName = agent?.displayName ?? session.agentMemberId;
+
+    failSession(
+      toAgentSession(session),
+      params.failureMessage(agentDisplayName),
+    );
+    failedSessions += 1;
+  }
+
+  return { failedTasks, failedSessions };
+}
+
 export function expireStalePendingBridgeTasks(referenceTime = Date.now()): {
   expiredTasks: number;
   failedSessions: number;
@@ -82,4 +151,29 @@ export function expireStalePendingBridgeTasks(referenceTime = Date.now()): {
   }
 
   return { expiredTasks, failedSessions };
+}
+
+export function failAcceptedBridgeTasksAfterRuntimeReset(): {
+  failedTasks: number;
+  failedSessions: number;
+} {
+  return failAcceptedBridgeTasks({
+    failureMessage: (agentDisplayName) =>
+      `${agentDisplayName} stopped because the server restarted while its local bridge task was running.`,
+  });
+}
+
+export function failAcceptedBridgeTasksForBridgeReconnect(params: {
+  bridgeId: string;
+  previousInstanceId: string;
+}): {
+  failedTasks: number;
+  failedSessions: number;
+} {
+  return failAcceptedBridgeTasks({
+    bridgeId: params.bridgeId,
+    acceptedInstanceId: params.previousInstanceId,
+    failureMessage: (agentDisplayName) =>
+      `${agentDisplayName} stopped because its local bridge reconnected and the running task could not be resumed automatically.`,
+  });
 }

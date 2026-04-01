@@ -7,7 +7,7 @@ export function toPublicMember(
   return {
     id: member.id,
     roomId: member.roomId,
-    principalId: member.principalId,
+    citizenId: member.citizenId,
     type: member.type,
     roleKind: member.roleKind,
     displayName: member.displayName,

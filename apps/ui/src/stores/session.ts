@@ -17,6 +17,11 @@ interface SessionActions {
     messageId: string;
     delta: string;
   }) => void;
+  updateReasoning: (payload: {
+    sessionId: string;
+    messageId: string;
+    delta: string;
+  }) => void;
   removeStream: (messageId: string) => void;
   commitMessage: (sessionId: string, message: PublicMessage) => void;
   reset: () => void;
@@ -37,6 +42,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             kindIsProvisional: false,
             lastError: null,
             outputMessageId: state.sessionSnapshots[session.id]?.outputMessageId ?? null,
+            reasoningText: state.sessionSnapshots[session.id]?.reasoningText ?? "",
           },
       },
       sessionActors: {
@@ -57,6 +63,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             kindIsProvisional: false,
             lastError: lastError ?? null,
             outputMessageId: state.sessionSnapshots[session.id]?.outputMessageId ?? null,
+            reasoningText: state.sessionSnapshots[session.id]?.reasoningText ?? "",
           },
       },
     }));
@@ -110,6 +117,68 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       createdAt: existingStream?.createdAt ?? new Date().toISOString(),
       sessionId,
       agentMemberId: existingStream?.agentMemberId ?? actor?.agentMemberId ?? "",
+      reasoningContent: existingStream?.reasoningContent ?? "",
+    });
+  },
+
+  updateReasoning: (payload: { sessionId: string; messageId: string; delta: string }) => {
+    const { sessionId, messageId, delta } = payload;
+    const actor = get().sessionActors[sessionId];
+    const existing = get().sessionSnapshots[sessionId];
+    const existingStream = useMessageStore.getState().streams[messageId];
+
+    if (!existing) {
+      set((state) => ({
+        sessionSnapshots: {
+          ...state.sessionSnapshots,
+          [sessionId]: {
+            id: sessionId,
+            roomId: "",
+            agentMemberId: actor?.agentMemberId ?? "",
+            kind: "unknown",
+            kindIsProvisional: true,
+            triggerMessageId: "",
+            requesterMemberId: "",
+            approvalId: null,
+            approvalRequired: false,
+            status: "running",
+            startedAt: new Date().toISOString(),
+            endedAt: null,
+            lastError: null,
+            outputMessageId: null,
+            reasoningText: delta,
+          } satisfies SessionSnapshot,
+        },
+      }));
+    } else {
+      set((state) => ({
+        sessionSnapshots: {
+          ...state.sessionSnapshots,
+          [sessionId]: {
+            ...state.sessionSnapshots[sessionId],
+            reasoningText: `${state.sessionSnapshots[sessionId]?.reasoningText ?? ""}${delta}`,
+          },
+        },
+      }));
+    }
+
+    useMessageStore.getState().upsertStream({
+      id: messageId,
+      roomId: existing?.roomId ?? existingStream?.roomId ?? "",
+      senderMemberId: existingStream?.senderMemberId ?? actor?.agentMemberId ?? "",
+      senderDisplayName: existingStream?.senderDisplayName ?? "",
+      senderType: existingStream?.senderType ?? "agent",
+      senderRoleKind: existingStream?.senderRoleKind ?? "independent",
+      senderPresenceStatus: existingStream?.senderPresenceStatus ?? "online",
+      messageType: "agent_text" as MessageType,
+      content: existingStream?.content ?? "",
+      attachments: existingStream?.attachments ?? [],
+      systemData: null,
+      replyToMessageId: null,
+      createdAt: existingStream?.createdAt ?? new Date().toISOString(),
+      sessionId,
+      agentMemberId: existingStream?.agentMemberId ?? actor?.agentMemberId ?? "",
+      reasoningContent: `${existingStream?.reasoningContent ?? ""}${delta}`,
     });
   },
 

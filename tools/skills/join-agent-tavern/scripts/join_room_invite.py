@@ -320,7 +320,7 @@ def main() -> int:
     display_name, display_name_source = resolve_display_name(args.display_name, cwd, login_key, backend_type)
 
     bootstrap_status, bootstrap_data = post_json(
-        f"{base_url}/api/principals/bootstrap",
+        f"{base_url}/api/citizens/bootstrap",
         {
             "kind": "agent",
             "loginKey": login_key,
@@ -352,8 +352,8 @@ def main() -> int:
     join_status, join_data = post_json(
         f"{base_url}/api/invites/{invite_token}/join",
         {
-            "principalId": bootstrap_data.get("principalId", ""),
-            "principalToken": bootstrap_data.get("principalToken", ""),
+            "citizenId": bootstrap_data.get("citizenId", ""),
+            "citizenToken": bootstrap_data.get("citizenToken", ""),
         },
     )
     joined = 200 <= join_status < 300
