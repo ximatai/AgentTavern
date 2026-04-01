@@ -699,6 +699,8 @@ Bridge 提交失败结果。
 
 - 服务重启后，旧 `wsToken` 全部失效
 - 服务重启后，内存中的在线状态全部丢失
+- 服务重启后，已 `accepted` 但仍在运行中的 bridge task 会统一转成 `failed`
+- 对应的 `running agent_sessions` 会统一转成 `failed`
 - 服务启动时会扫描 `pending` 的审批请求
 - 扫描到的 `pending approvals` 会统一转成 `expired`
 - 对应的 `agent_sessions` 会统一转成 `rejected`

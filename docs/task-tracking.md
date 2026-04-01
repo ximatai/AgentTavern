@@ -168,7 +168,7 @@
 - Web 端小交互与易用性改进
 - 不改变主协议的小范围重构
 
-- [-] `P1` 客户端本地 Agent Bridge 开发
+- [x] `P1` 客户端本地 Agent Bridge 开发
   - [x] 实现第一版可执行 Bridge driver
   - [x] 实现第一版本地 CLI driver 过渡实现
   - [x] 拆分 Bridge 状态与任务处理模块
@@ -182,7 +182,7 @@
   - [x] 补齐本地 Bridge 执行链路自动化验证
     - [x] 增加 Bridge 侧状态与任务处理测试
     - [x] 补一条端到端本地 Bridge 执行验证
-  - [ ] 完成独立 review
+  - [x] 完成独立 review
 
 - [x] `P1` 助理加入 skill 版本化基线
   - [x] 将 `join-agent-tavern` skill 源文件收回仓库
@@ -192,7 +192,7 @@
   - [x] 在 accept 阶段持久化 `cwd`
   - [x] 完成独立 review
 
-- [-] `P1` Bridge 任务恢复设计
+- [x] `P1` Bridge 任务恢复设计
   - [x] 对齐 skill 版本化的独立 review 结果
   - [x] 明确 `accepted` 任务的 fenced recovery 语义
   - [x] 明确恢复过程中的 session 状态收口
@@ -201,7 +201,7 @@
   - [x] 统一协议命名
   - [x] 补充设计级验证
   - [x] 明确当前已落地基础失败收口，真正的会话恢复仍停留在设计层
-  - [ ] 完成独立 review
+  - [x] 完成独立 review
 
 - [x] `P1` 前端可用性补强
   - [x] 自动滚动到底部
