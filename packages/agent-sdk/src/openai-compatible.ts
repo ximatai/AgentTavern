@@ -178,10 +178,11 @@ export function createOpenAICompatibleAdapter(
             return;
           }
 
+          const reasoningText = extractNonStreamingReasoningText(parsed);
           yield {
             type: "completed",
             finalText: extractNonStreamingText(parsed),
-            reasoningText: extractNonStreamingReasoningText(parsed) || undefined,
+            ...(reasoningText ? { reasoningText } : {}),
           };
           return;
         }
