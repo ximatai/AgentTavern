@@ -8,6 +8,7 @@ import {
   type PostJson,
   pollAndProcessTask,
 } from "./task-processor";
+import { buildBridgeMetadata } from "./metadata";
 import { persistBridgeIdentity, readStoredBridgeIdentity } from "./state";
 
 const serverBaseUrl = process.env.AGENT_TAVERN_SERVER_URL ?? "http://127.0.0.1:8787";
@@ -30,6 +31,11 @@ let bridgeId = persistedIdentity?.bridgeId ?? "";
 let bridgeToken = persistedIdentity?.bridgeToken ?? "";
 const bridgeInstanceId = `binst_${randomUUID()}`;
 let taskLoopInFlight = false;
+const bridgeMetadata = buildBridgeMetadata({
+  providers: [],
+  hostname: process.env.HOSTNAME ?? null,
+  taskLoopEnabled: enableTaskLoop,
+});
 
 const postJson: PostJson = async <T>(
   path: string,
@@ -58,11 +64,7 @@ async function registerBridge(): Promise<void> {
     bridgeName,
     platform: process.platform,
     version: "0.1.0",
-    metadata: {
-      providers: [],
-      hostname: process.env.HOSTNAME ?? null,
-      taskLoopEnabled: enableTaskLoop,
-    },
+    metadata: bridgeMetadata,
   });
 
   bridgeId = result.bridgeId;
@@ -83,9 +85,7 @@ async function sendHeartbeat(): Promise<void> {
   await postJson(`/api/bridges/${bridgeId}/heartbeat`, {
     bridgeToken,
     bridgeInstanceId,
-    metadata: {
-      taskLoopEnabled: enableTaskLoop,
-    },
+    metadata: bridgeMetadata,
   });
 }
 

@@ -79,7 +79,7 @@
 - 先对齐新的业务模型文档
 - 再落地轻身份与大厅主链路
 - 并继续做真实可用性回归
-- `accepted` 任务恢复维持设计先行，暂不深挖实现
+- `accepted` 任务已补基础失败收口，强恢复仍留在后续设计项
 
 建议阅读方式：
 
@@ -140,12 +140,13 @@
   - [x] 补充自动化验证
   - [x] 完成独立 review
 
-- [-] `P1` Bridge 重连与 accept 边界收紧
+- [x] `P1` Bridge 重连与 accept 边界收紧
   - [x] 增加 Bridge 身份本地持久化
   - [x] 收紧 register 重连时的 metadata 保留语义
   - [x] 将 task accept 改为条件更新
+  - [x] 收口 `accepted` 任务在 server / bridge 重启后的失败语义
   - [x] 补充自动化验证
-  - [ ] 完成独立 review
+  - [x] 完成独立 review
 
 - [x] `P1` Bridge 运行时协议基线
   - [x] 为 `register / heartbeat / pull / accept / delta / complete / fail` 落地 `bridgeInstanceId`
@@ -199,7 +200,7 @@
   - [x] 统一 `bridgeInstanceId` 的接口口径
   - [x] 统一协议命名
   - [x] 补充设计级验证
-  - [x] 明确当前只停留在设计层，未完成 `bridgeInstanceId` 基线和真实回归前不进入实现
+  - [x] 明确当前已落地基础失败收口，真正的会话恢复仍停留在设计层
   - [ ] 完成独立 review
 
 - [x] `P1` 前端可用性补强

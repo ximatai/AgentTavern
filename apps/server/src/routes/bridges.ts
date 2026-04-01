@@ -5,6 +5,7 @@ import type { Member } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
 import { agentBindings, localBridges, members } from "../db/schema";
+import { failAcceptedBridgeTasksForBridgeReconnect } from "../lib/bridge-task-maintenance";
 import { createId, createInviteToken } from "../lib/id";
 import { isBridgeFresh, resolveMemberRuntimeStatus } from "../lib/member-runtime";
 import { toPublicMember } from "../lib/public";
@@ -212,6 +213,13 @@ bridgeRoutes.post("/api/bridges/register", async (c) => {
         ),
         403,
       );
+    }
+
+    if (bridge.currentInstanceId && bridge.currentInstanceId !== bridgeInstanceId) {
+      failAcceptedBridgeTasksForBridgeReconnect({
+        bridgeId: bridge.id,
+        previousInstanceId: bridge.currentInstanceId,
+      });
     }
 
     db

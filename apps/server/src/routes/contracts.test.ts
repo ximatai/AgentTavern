@@ -5187,6 +5187,145 @@ test("bridge register creates a reusable bridge identity and heartbeat refreshes
   });
 });
 
+test("bridge reconnect with a new instance fails accepted tasks from the old instance", async () => {
+  const createdAt = new Date("2026-03-25T04:40:00.000Z").toISOString();
+
+  db.insert(rooms).values({
+    id: "room_bridge_reconnect_running",
+    name: "Bridge Reconnect Running",
+    inviteToken: createInviteToken(),
+    status: "active",
+    createdAt,
+  }).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_bridge_reconnect_owner",
+      roomId: "room_bridge_reconnect_running",
+      type: "human",
+      roleKind: "none",
+      displayName: "Owner",
+      ownerMemberId: null,
+      sourcePrivateAssistantId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "offline",
+      createdAt,
+    },
+    {
+      id: "mem_bridge_reconnect_agent",
+      roomId: "room_bridge_reconnect_running",
+      type: "agent",
+      roleKind: "assistant",
+      displayName: "ReconnectAgent",
+      ownerMemberId: "mem_bridge_reconnect_owner",
+      sourcePrivateAssistantId: "pa_bridge_reconnect_running",
+      adapterType: "codex_cli",
+      adapterConfig: null,
+      presenceStatus: "offline",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(messages).values({
+    id: "msg_bridge_reconnect_trigger",
+    roomId: "room_bridge_reconnect_running",
+    senderMemberId: "mem_bridge_reconnect_owner",
+    messageType: "user_text",
+    content: "@ReconnectAgent continue",
+    replyToMessageId: null,
+    createdAt,
+  }).run();
+
+  db.insert(localBridges).values({
+    id: "brg_bridge_reconnect_running",
+    bridgeName: "Reconnect Bridge",
+    bridgeToken: "bridge_reconnect_running_token",
+    currentInstanceId: "binst_bridge_reconnect_old",
+    status: "online",
+    platform: "macOS",
+    version: "0.1.0",
+    metadata: null,
+    lastSeenAt: createdAt,
+    createdAt,
+    updatedAt: createdAt,
+  }).run();
+
+  db.insert(agentSessions).values({
+    id: "ags_bridge_reconnect_running",
+    roomId: "room_bridge_reconnect_running",
+    agentMemberId: "mem_bridge_reconnect_agent",
+    triggerMessageId: "msg_bridge_reconnect_trigger",
+    requesterMemberId: "mem_bridge_reconnect_owner",
+    approvalId: null,
+    approvalRequired: false,
+    status: "running",
+    startedAt: createdAt,
+    endedAt: null,
+  }).run();
+
+  db.insert(bridgeTasks).values({
+    id: "btsk_bridge_reconnect_running",
+    bridgeId: "brg_bridge_reconnect_running",
+    sessionId: "ags_bridge_reconnect_running",
+    roomId: "room_bridge_reconnect_running",
+    agentMemberId: "mem_bridge_reconnect_agent",
+    requesterMemberId: "mem_bridge_reconnect_owner",
+    backendType: "codex_cli",
+    backendThreadId: "thread_bridge_reconnect_running",
+    cwd: null,
+    outputMessageId: "msg_bridge_reconnect_output",
+    prompt: "continue",
+    contextPayload: "[]",
+    status: "accepted",
+    createdAt,
+    assignedAt: createdAt,
+    assignedInstanceId: "binst_bridge_reconnect_old",
+    acceptedAt: createdAt,
+    acceptedInstanceId: "binst_bridge_reconnect_old",
+    completedAt: null,
+    failedAt: null,
+  }).run();
+
+  const reconnectResponse = await app.request("http://localhost/api/bridges/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      bridgeId: "brg_bridge_reconnect_running",
+      bridgeToken: "bridge_reconnect_running_token",
+      bridgeInstanceId: "binst_bridge_reconnect_new",
+      bridgeName: "Reconnect Bridge",
+      platform: "macOS",
+      version: "0.1.1",
+    }),
+  });
+
+  assert.equal(reconnectResponse.status, 200);
+
+  const task = db
+    .select()
+    .from(bridgeTasks)
+    .where(eq(bridgeTasks.id, "btsk_bridge_reconnect_running"))
+    .get();
+  const session = db
+    .select()
+    .from(agentSessions)
+    .where(eq(agentSessions.id, "ags_bridge_reconnect_running"))
+    .get();
+  const allMessages = db
+    .select()
+    .from(messages)
+    .where(eq(messages.roomId, "room_bridge_reconnect_running"))
+    .all();
+
+  assert.equal(task?.status, "failed");
+  assert.equal(session?.status, "failed");
+  assert.match(
+    allMessages.at(-1)?.content ?? "",
+    /could not be resumed automatically/i,
+  );
+});
+
 test("bridge heartbeat auto-attaches pending bindings when it is the sole online bridge", async () => {
   const createdAt = new Date("2026-03-25T04:30:00.000Z").toISOString();
 
