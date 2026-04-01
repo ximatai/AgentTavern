@@ -41,7 +41,7 @@ function bridgeTaskError(code: string, error: string) {
 function resolveBindingForAgentMember(agentMemberId: string) {
   const agentMember = db
     .select({
-      principalId: members.principalId,
+      citizenId: members.citizenId,
       sourcePrivateAssistantId: members.sourcePrivateAssistantId,
     })
     .from(members)
@@ -60,11 +60,11 @@ function resolveBindingForAgentMember(agentMemberId: string) {
       .get();
   }
 
-  if (agentMember.principalId) {
+  if (agentMember.citizenId) {
     return db
       .select()
       .from(agentBindings)
-      .where(eq(agentBindings.principalId, agentMember.principalId))
+      .where(eq(agentBindings.citizenId, agentMember.citizenId))
       .get();
   }
 

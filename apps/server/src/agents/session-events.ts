@@ -167,7 +167,7 @@ export function commitSessionMessage(params: {
     sender: {
       id: params.session.agentMemberId,
       roomId: params.session.roomId,
-      principalId: null,
+      citizenId: null,
       type: "agent",
       roleKind: "independent",
       displayName: "",

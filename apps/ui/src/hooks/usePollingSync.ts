@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-import { usePrincipalStore } from "../stores/principal";
+import { useCitizenStore } from "../stores/citizen";
 import { useRoomStore } from "../stores/room";
 
 /**
@@ -13,7 +13,7 @@ import { useRoomStore } from "../stores/room";
  */
 export function usePollingSync() {
   const room = useRoomStore((s) => s.room);
-  const principal = usePrincipalStore((s) => s.principal);
+  const principal = useCitizenStore((s) => s.principal);
 
   useEffect(() => {
     if (!principal) return;

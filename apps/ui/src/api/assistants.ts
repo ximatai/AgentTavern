@@ -8,7 +8,7 @@ import { request } from "./client";
 
 export type PrivateAssistantRecord = {
   id: string;
-  ownerPrincipalId: string;
+  ownerCitizenId: string;
   name: string;
   backendType: AgentBackendType;
   backendThreadId: string | null;
@@ -18,7 +18,7 @@ export type PrivateAssistantRecord = {
 
 export type PrivateAssistantInviteRecord = {
   id: string;
-  ownerPrincipalId: string;
+  ownerCitizenId: string;
   name: string;
   backendType: AgentBackendType;
   inviteToken: string;
@@ -31,46 +31,46 @@ export type PrivateAssistantInviteRecord = {
   reused?: boolean;
 };
 
-async function getPrivateAssistants(principalId: string, principalToken: string): Promise<PrivateAssistantRecord[]> {
+async function getPrivateAssistants(citizenId: string, citizenToken: string): Promise<PrivateAssistantRecord[]> {
   return request<PrivateAssistantRecord[]>(
-    `/api/me/assistants?principalId=${principalId}&principalToken=${principalToken}`,
+    `/api/me/assistants?citizenId=${citizenId}&citizenToken=${citizenToken}`,
   );
 }
 
-async function getAssistantInvites(principalId: string, principalToken: string): Promise<PrivateAssistantInviteRecord[]> {
+async function getAssistantInvites(citizenId: string, citizenToken: string): Promise<PrivateAssistantInviteRecord[]> {
   return request<PrivateAssistantInviteRecord[]>(
-    `/api/me/assistants/invites?principalId=${principalId}&principalToken=${principalToken}`,
+    `/api/me/assistants/invites?citizenId=${citizenId}&citizenToken=${citizenToken}`,
   );
 }
 
 async function createAssistantInvite(
-  principalId: string,
-  principalToken: string,
+  citizenId: string,
+  citizenToken: string,
   name: string,
   backendType: AgentBackendType,
 ): Promise<PrivateAssistantInviteRecord> {
   return request<PrivateAssistantInviteRecord>("/api/me/assistants/invites", {
     method: "POST",
-    body: JSON.stringify({ principalId, principalToken, name, backendType }),
+    body: JSON.stringify({ citizenId, citizenToken, name, backendType }),
   });
 }
 
 async function createManagedAssistant(
-  principalId: string,
-  principalToken: string,
+  citizenId: string,
+  citizenToken: string,
   name: string,
   backendConfigOrParams: OpenAICompatibleBackendConfig | { serverConfigId: string },
 ): Promise<PrivateAssistantRecord> {
   const body = "serverConfigId" in backendConfigOrParams
     ? {
-        principalId,
-        principalToken,
+        citizenId,
+        citizenToken,
         name,
         serverConfigId: backendConfigOrParams.serverConfigId,
       }
     : {
-        principalId,
-        principalToken,
+        citizenId,
+        citizenToken,
         name,
         backendType: "openai_compatible",
         backendConfig: backendConfigOrParams,
@@ -84,45 +84,45 @@ async function createManagedAssistant(
 
 async function removeAssistantInvite(
   inviteId: string,
-  principalId: string,
-  principalToken: string,
+  citizenId: string,
+  citizenToken: string,
 ): Promise<{ ok: true }> {
   return request<{ ok: true }>(
-    `/api/me/assistants/invites/${inviteId}?principalId=${principalId}&principalToken=${principalToken}`,
+    `/api/me/assistants/invites/${inviteId}?citizenId=${citizenId}&citizenToken=${citizenToken}`,
     { method: "DELETE" },
   );
 }
 
 async function removePrivateAssistant(
   privateAssistantId: string,
-  principalId: string,
-  principalToken: string,
+  citizenId: string,
+  citizenToken: string,
 ): Promise<{ ok: true }> {
   return request<{ ok: true }>(
-    `/api/me/assistants/${privateAssistantId}?principalId=${principalId}&principalToken=${principalToken}`,
+    `/api/me/assistants/${privateAssistantId}?citizenId=${citizenId}&citizenToken=${citizenToken}`,
     { method: "DELETE" },
   );
 }
 
 async function pausePrivateAssistant(
   privateAssistantId: string,
-  principalId: string,
-  principalToken: string,
+  citizenId: string,
+  citizenToken: string,
 ): Promise<PrivateAssistantRecord> {
   return request<PrivateAssistantRecord>(`/api/me/assistants/${privateAssistantId}/pause`, {
     method: "POST",
-    body: JSON.stringify({ principalId, principalToken }),
+    body: JSON.stringify({ citizenId, citizenToken }),
   });
 }
 
 async function resumePrivateAssistant(
   privateAssistantId: string,
-  principalId: string,
-  principalToken: string,
+  citizenId: string,
+  citizenToken: string,
 ): Promise<PrivateAssistantRecord> {
   return request<PrivateAssistantRecord>(`/api/me/assistants/${privateAssistantId}/resume`, {
     method: "POST",
-    body: JSON.stringify({ principalId, principalToken }),
+    body: JSON.stringify({ citizenId, citizenToken }),
   });
 }
 

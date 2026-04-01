@@ -78,7 +78,7 @@ def main() -> int:
     display_name, display_name_source = resolve_display_name(args.display_name, cwd, login_key, backend_type)
 
     bootstrap_status, bootstrap_data = post_json(
-        f"{base_url}/api/principals/bootstrap",
+        f"{base_url}/api/citizens/bootstrap",
         {
             "kind": "agent",
             "loginKey": login_key,
@@ -112,8 +112,8 @@ def main() -> int:
     leave_status, leave_data = post_json(
         f"{base_url}/api/rooms/{urllib.parse.quote(resolved_room_id, safe='')}/leave",
         {
-            "principalId": bootstrap_data.get("principalId", ""),
-            "principalToken": bootstrap_data.get("principalToken", ""),
+            "citizenId": bootstrap_data.get("citizenId", ""),
+            "citizenToken": bootstrap_data.get("citizenToken", ""),
         },
     )
     ok = 200 <= leave_status < 300
@@ -126,7 +126,7 @@ def main() -> int:
         "roomName": room_name,
         "inviteToken": invite_token,
         "baseUrl": base_url,
-        "principalId": bootstrap_data.get("principalId", ""),
+        "citizenId": bootstrap_data.get("citizenId", ""),
         "backendType": backend_type,
         "backendThreadId": thread_id,
         "threadIdSource": thread_id_source,

@@ -54,7 +54,7 @@ function buildMessageMemberSnapshot(
   return {
     id: memberId,
     roomId: message.roomId,
-    principalId: null,
+    citizenId: null,
     type: message.senderType ?? "human",
     roleKind: message.senderRoleKind ?? "none",
     displayName: message.senderDisplayName,

@@ -11,7 +11,7 @@ import { useTranslation } from "react-i18next";
 
 import { toast } from "../lib/feedback";
 import { copyText } from "../lib/clipboard";
-import { usePrincipalStore } from "../stores/principal";
+import { useCitizenStore } from "../stores/citizen";
 import {
   getPrivateAssistants,
   getAssistantInvites,
@@ -35,7 +35,7 @@ import {
 } from "../api/server-configs";
 import type { ServerConfigRecord, SharedServerConfigRecord } from "../api/server-configs";
 import type { AgentBackendType } from "@agent-tavern/shared";
-import { createAgentCitizen } from "../api/principals";
+import { createAgentCitizen } from "../api/citizens";
 import { useRoomStore } from "../stores/room";
 
 import "../styles/assistant-management.css";
@@ -83,7 +83,7 @@ interface AssistantManagementModalProps {
 
 export function AssistantManagementModal({ open, onClose }: AssistantManagementModalProps) {
   const { t } = useTranslation();
-  const principal = usePrincipalStore((s) => s.principal);
+  const principal = useCitizenStore((s) => s.principal);
   const refreshLobbyPresence = useRoomStore((s) => s.refreshLobbyPresence);
 
   const [assistants, setAssistants] = useState<PrivateAssistantRecord[]>([]);
@@ -123,10 +123,10 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
     }
     try {
       const [items, inviteItems, ownServerConfigs, sharedConfigs] = await Promise.all([
-        getPrivateAssistants(principal.principalId, principal.principalToken),
-        getAssistantInvites(principal.principalId, principal.principalToken),
-        getMyServerConfigs(principal.principalId, principal.principalToken),
-        getSharedServerConfigs(principal.principalId, principal.principalToken),
+        getPrivateAssistants(principal.citizenId, principal.citizenToken),
+        getAssistantInvites(principal.citizenId, principal.citizenToken),
+        getMyServerConfigs(principal.citizenId, principal.citizenToken),
+        getSharedServerConfigs(principal.citizenId, principal.citizenToken),
       ]);
       setAssistants(sortByCreatedAt(items));
       setInvites(sortByCreatedAt(inviteItems));
@@ -140,7 +140,7 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
     }
   }, [principal]);
 
-  const privateAssetsVersion = usePrincipalStore((s) => s.privateAssetsVersion);
+  const privateAssetsVersion = useCitizenStore((s) => s.privateAssetsVersion);
 
   useEffect(() => {
     if (open) {
@@ -182,8 +182,8 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
     setCreating(true);
     try {
       const created = await createAssistantInvite(
-        principal.principalId,
-        principal.principalToken,
+        principal.citizenId,
+        principal.citizenToken,
         name,
         inviteBackendType,
       );
@@ -208,8 +208,8 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
     setCreatingManaged(true);
     try {
       const created = await createManagedAssistant(
-        principal.principalId,
-        principal.principalToken,
+        principal.citizenId,
+        principal.citizenToken,
         name,
         { serverConfigId: managedServerConfigId },
       );
@@ -246,7 +246,7 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
       onOk: async () => {
         setRemovingId(assistant.id);
         try {
-          await removePrivateAssistant(assistant.id, principal.principalId, principal.principalToken);
+          await removePrivateAssistant(assistant.id, principal.citizenId, principal.citizenToken);
           setAssistants((prev) => prev.filter((a) => a.id !== assistant.id));
           toast().success(t("assistantPanel.removeSuccess"));
         } catch (err) {
@@ -264,8 +264,8 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
     setTogglingAssistantId(assistant.id);
     try {
       const updated = assistant.status === "paused"
-        ? await resumePrivateAssistant(assistant.id, principal.principalId, principal.principalToken)
-        : await pausePrivateAssistant(assistant.id, principal.principalId, principal.principalToken);
+        ? await resumePrivateAssistant(assistant.id, principal.citizenId, principal.citizenToken)
+        : await pausePrivateAssistant(assistant.id, principal.citizenId, principal.citizenToken);
       setAssistants((prev) =>
         sortByCreatedAt(prev.map((item) => (item.id === assistant.id ? updated : item))),
       );
@@ -292,7 +292,7 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
 
     setRemovingInviteId(inviteId);
     try {
-      await removeAssistantInvite(inviteId, principal.principalId, principal.principalToken);
+      await removeAssistantInvite(inviteId, principal.citizenId, principal.citizenToken);
       setInvites((prev) => prev.filter((invite) => invite.id !== inviteId));
       toast().success(t("assistantPanel.removeInviteSuccess"));
     } catch (err) {
@@ -311,8 +311,8 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
     setCreatingServerConfig(true);
     try {
       const created = await createServerConfig({
-        principalId: principal.principalId,
-        principalToken: principal.principalToken,
+        citizenId: principal.citizenId,
+        citizenToken: principal.citizenToken,
         name,
         backendType: "openai_compatible",
         visibility: serverConfigVisibility,
@@ -345,8 +345,8 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
     setCreatingAgentCitizen(true);
     try {
       await createAgentCitizen({
-        actorPrincipalId: principal.principalId,
-        actorPrincipalToken: principal.principalToken,
+        actorCitizenId: principal.citizenId,
+        actorCitizenToken: principal.citizenToken,
         loginKey,
         globalDisplayName,
         serverConfigId: agentCitizenServerConfigId,
@@ -371,8 +371,8 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
     try {
       const updated = await updateServerConfig({
         configId: config.id,
-        principalId: principal.principalId,
-        principalToken: principal.principalToken,
+        citizenId: principal.citizenId,
+        citizenToken: principal.citizenToken,
         visibility: config.visibility === "shared" ? "private" : "shared",
       });
       setServerConfigs((prev) =>
@@ -403,7 +403,7 @@ export function AssistantManagementModal({ open, onClose }: AssistantManagementM
       onOk: async () => {
         setRemovingServerConfigId(config.id);
         try {
-          await removeServerConfig(config.id, principal.principalId, principal.principalToken);
+          await removeServerConfig(config.id, principal.citizenId, principal.citizenToken);
           setServerConfigs((prev) => prev.filter((item) => item.id !== config.id));
           toast().success(t("assistantPanel.removeConfigSuccess"));
         } catch (err) {

@@ -27,8 +27,8 @@ function createRoomSocket(roomId: string, memberId: string, wsToken: string): We
   return new WebSocket(buildWsUrl(`roomId=${roomId}&memberId=${memberId}&wsToken=${wsToken}`));
 }
 
-function createPrincipalSocket(principalId: string, principalToken: string): WebSocket {
-  return new WebSocket(buildWsUrl(`principalId=${principalId}&principalToken=${principalToken}`));
+function createCitizenSocket(citizenId: string, citizenToken: string): WebSocket {
+  return new WebSocket(buildWsUrl(`citizenId=${citizenId}&citizenToken=${citizenToken}`));
 }
 
 function isRealtimeEvent(payload: unknown): payload is RealtimeEvent {
@@ -38,4 +38,4 @@ function isRealtimeEvent(payload: unknown): payload is RealtimeEvent {
   return "type" in payload && typeof payload.type === "string" && "payload" in payload;
 }
 
-export { createRoomSocket, createPrincipalSocket, isRealtimeEvent };
+export { createRoomSocket, createCitizenSocket, isRealtimeEvent };

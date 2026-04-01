@@ -104,7 +104,7 @@ def main() -> int:
     results = []
     for item in targets:
         bootstrap_status, bootstrap_data = request_json(
-            f"{base_url}/api/principals/bootstrap",
+            f"{base_url}/api/citizens/bootstrap",
             method="POST",
             payload={
                 "kind": "agent",
@@ -118,7 +118,7 @@ def main() -> int:
         if not (200 <= bootstrap_status < 300):
             results.append({
                 "loginKey": item["loginKey"],
-                "principalId": item.get("principalId", ""),
+                "citizenId": item.get("citizenId", ""),
                 "removed": False,
                 "bootstrapStatus": bootstrap_status,
                 "bootstrapResponse": bootstrap_data,
@@ -126,13 +126,13 @@ def main() -> int:
             continue
 
         leave_status, leave_data = request_json(
-            f"{base_url}/api/principals/{bootstrap_data['principalId']}/leave-system",
+            f"{base_url}/api/citizens/{bootstrap_data['citizenId']}/leave-system",
             method="POST",
-            payload={"principalToken": bootstrap_data["principalToken"]},
+            payload={"citizenToken": bootstrap_data["citizenToken"]},
         )
         results.append({
             "loginKey": item["loginKey"],
-            "principalId": bootstrap_data["principalId"],
+            "citizenId": bootstrap_data["citizenId"],
             "removed": 200 <= leave_status < 300 and bool(leave_data.get("leftSystem")),
             "leaveStatus": leave_status,
             "leaveResponse": leave_data,

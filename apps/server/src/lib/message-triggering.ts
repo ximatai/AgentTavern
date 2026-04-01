@@ -21,7 +21,7 @@ import {
 import {
   broadcastToRoom,
   isMemberOnline,
-  isPrincipalOnline,
+  isCitizenOnline,
 } from "../realtime";
 import {
   consumeAuthorization,
@@ -227,7 +227,7 @@ function handleAssistantMention(params: {
   const ownerOnline = Boolean(
     ownerMember &&
       (isMemberOnline(ownerMemberId, params.roomId) ||
-        (ownerMember.principalId ? isPrincipalOnline(ownerMember.principalId) : false)),
+        (ownerMember.citizenId ? isCitizenOnline(ownerMember.citizenId) : false)),
   );
 
   if (!ownerOnline) {

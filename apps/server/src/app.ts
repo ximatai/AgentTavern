@@ -7,7 +7,7 @@ import { bridgeTaskRoutes } from "./routes/bridge-tasks";
 import { memberRoutes } from "./routes/members";
 import { messageRoutes } from "./routes/messages";
 import { privateAssistantRoutes } from "./routes/private-assistants";
-import { principalRoutes } from "./routes/principals";
+import { citizenRoutes } from "./routes/citizens";
 import { roomRoutes } from "./routes/rooms";
 import { serverConfigRoutes } from "./routes/server-configs";
 
@@ -28,7 +28,7 @@ app.get("/", (c) => {
 });
 
 app.route("/", roomRoutes);
-app.route("/", principalRoutes);
+app.route("/", citizenRoutes);
 app.route("/", serverConfigRoutes);
 app.route("/", privateAssistantRoutes);
 app.route("/", attachmentRoutes);

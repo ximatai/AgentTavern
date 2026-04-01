@@ -2,9 +2,9 @@ import type { AgentBackendType, OpenAICompatibleBackendConfig } from "@agent-tav
 
 import { request } from "./client";
 
-export type PrincipalSession = {
-  principalId: string;
-  principalToken: string;
+export type CitizenSession = {
+  citizenId: string;
+  citizenToken: string;
   kind: "human" | "agent";
   loginKey: string;
   globalDisplayName: string;
@@ -14,41 +14,41 @@ export type PrincipalSession = {
   status: "online" | "offline";
 };
 
-export type LobbyPrincipal = PrincipalSession & {
+export type LobbyCitizen = CitizenSession & {
   id: string;
   createdAt: string;
   runtimeStatus: "ready" | "pending_bridge" | "waiting_bridge" | null;
 };
 
-async function bootstrapPrincipal(params: {
+async function bootstrapCitizen(params: {
   kind: "human" | "agent";
   loginKey: string;
   globalDisplayName: string;
   backendType: AgentBackendType | null;
   backendThreadId: string | null;
   backendConfig?: OpenAICompatibleBackendConfig | null;
-}): Promise<PrincipalSession> {
-  return request<PrincipalSession>("/api/principals/bootstrap", {
+}): Promise<CitizenSession> {
+  return request<CitizenSession>("/api/citizens/bootstrap", {
     method: "POST",
     body: JSON.stringify(params),
   });
 }
 
 async function createAgentCitizen(params: {
-  actorPrincipalId: string;
-  actorPrincipalToken: string;
+  actorCitizenId: string;
+  actorCitizenToken: string;
   loginKey: string;
   globalDisplayName: string;
   serverConfigId: string;
-}): Promise<PrincipalSession> {
-  return request<PrincipalSession>("/api/me/agent-citizens", {
+}): Promise<CitizenSession> {
+  return request<CitizenSession>("/api/me/agent-citizens", {
     method: "POST",
     body: JSON.stringify(params),
   });
 }
 
-async function getLobbyPresence(): Promise<{ principals: LobbyPrincipal[] }> {
-  return request<{ principals: LobbyPrincipal[] }>("/api/presence/lobby");
+async function getLobbyPresence(): Promise<{ citizens: LobbyCitizen[] }> {
+  return request<{ citizens: LobbyCitizen[] }>("/api/presence/lobby");
 }
 
-export { bootstrapPrincipal, createAgentCitizen, getLobbyPresence };
+export { bootstrapCitizen, createAgentCitizen, getLobbyPresence };

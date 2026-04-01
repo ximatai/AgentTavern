@@ -1,20 +1,20 @@
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 
-import type { OpenAICompatibleBackendConfig, Principal, PrincipalKind } from "@agent-tavern/shared";
+import type { OpenAICompatibleBackendConfig, Citizen, CitizenKind } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
-import { agentBindings, localBridges, members, principals, serverConfigs } from "../db/schema";
-import { resolveBindingForPrincipal } from "../lib/agent-binding-resolution";
+import { agentBindings, localBridges, members, citizens, serverConfigs } from "../db/schema";
+import { resolveBindingForCitizen } from "../lib/agent-binding-resolution";
 import { createId } from "../lib/id";
 import { resolveMemberRuntimeStatus } from "../lib/member-runtime";
 import { toPublicMember } from "../lib/public";
 import {
   broadcastToRoom,
-  issuePrincipalToken,
-  revokePrincipalTokensForPrincipal,
+  issueCitizenToken,
+  revokeCitizenTokensForCitizen,
   revokeWsTokensForMember,
-  verifyPrincipalToken,
+  verifyCitizenToken,
 } from "../realtime";
 import {
   isSupportedAgentBackendType,
@@ -23,10 +23,10 @@ import {
   now,
 } from "./support";
 
-const principalRoutes = new Hono();
+const citizenRoutes = new Hono();
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update" | "delete">;
 
-function isPrincipalKind(value: unknown): value is PrincipalKind {
+function isCitizenKind(value: unknown): value is CitizenKind {
   return value === "human" || value === "agent";
 }
 
@@ -60,42 +60,42 @@ function toPublicReusableBackendConfig(raw: string | null): Record<string, unkno
   };
 }
 
-function toPrincipalSessionPayload(principal: Principal) {
-  const backendConfig = principal.sourceServerConfigId
-    ? toPublicReusableBackendConfig(principal.backendConfig ?? null)
-    : toPublicBackendConfig(principal.backendConfig ?? null);
+function toCitizenSessionPayload(citizen: Citizen) {
+  const backendConfig = citizen.sourceServerConfigId
+    ? toPublicReusableBackendConfig(citizen.backendConfig ?? null)
+    : toPublicBackendConfig(citizen.backendConfig ?? null);
 
   return {
-    principalId: principal.id,
-    principalToken: issuePrincipalToken(principal.id),
-    kind: principal.kind,
-    loginKey: principal.loginKey,
-    globalDisplayName: principal.globalDisplayName,
-    backendType: principal.backendType ?? null,
-    backendThreadId: principal.backendThreadId ?? null,
+    citizenId: citizen.id,
+    citizenToken: issueCitizenToken(citizen.id),
+    kind: citizen.kind,
+    loginKey: citizen.loginKey,
+    globalDisplayName: citizen.globalDisplayName,
+    backendType: citizen.backendType ?? null,
+    backendThreadId: citizen.backendThreadId ?? null,
     backendConfig,
-    status: principal.status,
+    status: citizen.status,
   };
 }
 
-function ensureAgentPrincipalBinding(principal: Principal, database: DbExecutor = db): void {
-  if (principal.kind !== "agent" || !principal.backendThreadId) {
+function ensureAgentCitizenBinding(citizen: Citizen, database: DbExecutor = db): void {
+  if (citizen.kind !== "agent" || !citizen.backendThreadId) {
     return;
   }
 
   const existingByOwner = database
     .select()
     .from(agentBindings)
-    .where(eq(agentBindings.principalId, principal.id))
+    .where(eq(agentBindings.citizenId, citizen.id))
     .get();
 
   const existingByThread = database
     .select()
     .from(agentBindings)
-    .where(eq(agentBindings.backendThreadId, principal.backendThreadId))
+    .where(eq(agentBindings.backendThreadId, citizen.backendThreadId))
     .get();
 
-  if (existingByThread && existingByThread.principalId !== principal.id) {
+  if (existingByThread && existingByThread.citizenId !== citizen.id) {
     throw new Error("backendThreadId already bound");
   }
 
@@ -103,10 +103,10 @@ function ensureAgentPrincipalBinding(principal: Principal, database: DbExecutor 
 
   if (existingByOwner) {
     database
-      .update(agentBindings)
-      .set({
-        backendType: principal.backendType!,
-        backendThreadId: principal.backendThreadId,
+        .update(agentBindings)
+        .set({
+        backendType: citizen.backendType!,
+        backendThreadId: citizen.backendThreadId,
         status: existingByOwner.bridgeId ? existingByOwner.status : "pending_bridge",
         detachedAt: existingByOwner.detachedAt,
       })
@@ -117,11 +117,11 @@ function ensureAgentPrincipalBinding(principal: Principal, database: DbExecutor 
 
   database.insert(agentBindings).values({
     id: createId("agb"),
-    principalId: principal.id,
+    citizenId: citizen.id,
     privateAssistantId: null,
     bridgeId: null,
-    backendType: principal.backendType!,
-    backendThreadId: principal.backendThreadId,
+    backendType: citizen.backendType!,
+    backendThreadId: citizen.backendThreadId,
     cwd: null,
     status: "pending_bridge",
     attachedAt: timestamp,
@@ -129,9 +129,9 @@ function ensureAgentPrincipalBinding(principal: Principal, database: DbExecutor 
   }).run();
 }
 
-principalRoutes.post("/api/principals/bootstrap", async (c) => {
+citizenRoutes.post("/api/citizens/bootstrap", async (c) => {
   const body = await c.req.json().catch(() => null);
-  const kind = isPrincipalKind(body?.kind) ? body.kind : "human";
+  const kind = isCitizenKind(body?.kind) ? body.kind : "human";
   const loginKey = typeof body?.loginKey === "string" ? body.loginKey.trim() : "";
   const globalDisplayName =
     typeof body?.globalDisplayName === "string" ? body.globalDisplayName.trim() : "";
@@ -152,11 +152,11 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
   }
 
   if (kind === "agent" && !resolvedBackendType) {
-    return c.json({ error: "agent principal requires a supported backendType" }, 400);
+    return c.json({ error: "agent citizen requires a supported backendType" }, 400);
   }
 
   if (kind === "agent" && !backendThreadId) {
-    return c.json({ error: "agent principal requires backendThreadId" }, 400);
+    return c.json({ error: "agent citizen requires backendThreadId" }, 400);
   }
 
   if (kind === "agent" && backendConfigError) {
@@ -165,9 +165,9 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
 
   const existing = db
     .select()
-    .from(principals)
-    .where(and(eq(principals.kind, kind), eq(principals.loginKey, loginKey)))
-    .get() as Principal | undefined;
+    .from(citizens)
+    .where(and(eq(citizens.kind, kind), eq(citizens.loginKey, loginKey)))
+    .get() as Citizen | undefined;
 
   if (existing) {
     try {
@@ -184,7 +184,7 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
             .where(eq(agentBindings.backendThreadId, backendThreadId))
             .get();
 
-          if (conflictingBinding && conflictingBinding.principalId !== existing.id) {
+          if (conflictingBinding && conflictingBinding.citizenId !== existing.id) {
             throw new Error("backendThreadId already bound");
           }
         }
@@ -196,7 +196,7 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
           (existing.backendConfig ?? null) !== (kind === "agent" ? backendConfig : null)
         ) {
           tx
-            .update(principals)
+            .update(citizens)
             .set({
               globalDisplayName,
               backendType: kind === "agent" ? resolvedBackendType : null,
@@ -204,7 +204,7 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
               backendConfig: kind === "agent" ? backendConfig : null,
               sourceServerConfigId: null,
             })
-            .where(eq(principals.id, existing.id))
+            .where(eq(citizens.id, existing.id))
             .run();
         }
 
@@ -212,14 +212,14 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
           const syncedMembers = tx
             .select()
             .from(members)
-            .where(and(eq(members.principalId, existing.id), eq(members.displayName, oldGlobalDisplayName)))
+            .where(and(eq(members.citizenId, existing.id), eq(members.displayName, oldGlobalDisplayName)))
             .all();
 
           if (syncedMembers.length > 0) {
             tx
               .update(members)
               .set({ displayName: globalDisplayName })
-              .where(and(eq(members.principalId, existing.id), eq(members.displayName, oldGlobalDisplayName)))
+              .where(and(eq(members.citizenId, existing.id), eq(members.displayName, oldGlobalDisplayName)))
               .run();
 
             syncedMembers.forEach((member) => updatedMemberIds.add(member.id));
@@ -228,11 +228,11 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
 
         const refreshed = tx
           .select()
-          .from(principals)
-          .where(eq(principals.id, existing.id))
-          .get() as Principal;
+          .from(citizens)
+          .where(eq(citizens.id, existing.id))
+          .get() as Citizen;
 
-        ensureAgentPrincipalBinding(refreshed, tx);
+        ensureAgentCitizenBinding(refreshed, tx);
         return refreshed;
       });
 
@@ -240,10 +240,10 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
         const refreshedMembers = db
           .select()
           .from(members)
-          .where(eq(members.principalId, existing.id))
+          .where(eq(members.citizenId, existing.id))
           .all()
           .filter((member) => updatedMemberIds.has(member.id));
-        const binding = updated.kind === "agent" ? resolveBindingForPrincipal(updated.id) : null;
+        const binding = updated.kind === "agent" ? resolveBindingForCitizen(updated.id) : null;
         const bridge = binding?.bridgeId
           ? db.select().from(localBridges).where(eq(localBridges.id, binding.bridgeId)).get() ?? null
           : null;
@@ -263,7 +263,7 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
         }
       }
 
-      return c.json(toPrincipalSessionPayload(updated));
+      return c.json(toCitizenSessionPayload(updated));
     } catch (error) {
       if (error instanceof Error && error.message === "backendThreadId already bound") {
         return c.json({ error: "backendThreadId already bound" }, 409);
@@ -273,7 +273,7 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
     }
   }
 
-  const principal: Principal = {
+  const principal: Citizen = {
     id: createId("prn"),
     kind,
     loginKey,
@@ -303,8 +303,8 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
         }
       }
 
-      tx.insert(principals).values(principal).run();
-      ensureAgentPrincipalBinding(principal, tx);
+      tx.insert(citizens).values(principal).run();
+      ensureAgentCitizenBinding(principal, tx);
     });
   } catch (error) {
     if (error instanceof Error && error.message === "backendThreadId already bound") {
@@ -314,40 +314,40 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
     throw error;
   }
 
-  return c.json(toPrincipalSessionPayload(principal));
+  return c.json(toCitizenSessionPayload(principal));
 });
 
-principalRoutes.post("/api/me/agent-citizens", async (c) => {
+citizenRoutes.post("/api/me/agent-citizens", async (c) => {
   const body = await c.req.json().catch(() => null);
-  const actorPrincipalId =
-    typeof body?.actorPrincipalId === "string" ? body.actorPrincipalId.trim() : "";
-  const actorPrincipalToken =
-    typeof body?.actorPrincipalToken === "string" ? body.actorPrincipalToken.trim() : "";
+  const actorCitizenId =
+    typeof body?.actorCitizenId === "string" ? body.actorCitizenId.trim() : "";
+  const actorCitizenToken =
+    typeof body?.actorCitizenToken === "string" ? body.actorCitizenToken.trim() : "";
   const loginKey = typeof body?.loginKey === "string" ? body.loginKey.trim() : "";
   const globalDisplayName =
     typeof body?.globalDisplayName === "string" ? body.globalDisplayName.trim() : "";
   const requestedServerConfigId =
     typeof body?.serverConfigId === "string" ? body.serverConfigId.trim() : "";
 
-  if (!actorPrincipalId || !actorPrincipalToken || !loginKey || !globalDisplayName || !requestedServerConfigId) {
+  if (!actorCitizenId || !actorCitizenToken || !loginKey || !globalDisplayName || !requestedServerConfigId) {
     return c.json(
-      { error: "actorPrincipalId, actorPrincipalToken, loginKey, globalDisplayName and serverConfigId are required" },
+      { error: "actorCitizenId, actorCitizenToken, loginKey, globalDisplayName and serverConfigId are required" },
       400,
     );
   }
 
-  if (!verifyPrincipalToken(actorPrincipalToken, actorPrincipalId)) {
-    return c.json({ error: "invalid principal token" }, 403);
+  if (!verifyCitizenToken(actorCitizenToken, actorCitizenId)) {
+    return c.json({ error: "invalid citizen token" }, 403);
   }
 
   const actor = db
     .select()
-    .from(principals)
-    .where(eq(principals.id, actorPrincipalId))
-    .get() as Principal | undefined;
+    .from(citizens)
+    .where(eq(citizens.id, actorCitizenId))
+    .get() as Citizen | undefined;
 
   if (!actor) {
-    return c.json({ error: "actor principal not found" }, 404);
+    return c.json({ error: "actor citizen not found" }, 404);
   }
 
   const serverConfig = db
@@ -360,8 +360,8 @@ principalRoutes.post("/api/me/agent-citizens", async (c) => {
     return c.json({ error: "server config not found" }, 404);
   }
 
-  if (serverConfig.ownerPrincipalId !== actorPrincipalId && serverConfig.visibility !== "shared") {
-    return c.json({ error: "server config is not available to this principal" }, 403);
+  if (serverConfig.ownerCitizenId !== actorCitizenId && serverConfig.visibility !== "shared") {
+    return c.json({ error: "server config is not available to this citizen" }, 403);
   }
 
   const backendType = isSupportedAgentBackendType(serverConfig.backendType)
@@ -379,15 +379,15 @@ principalRoutes.post("/api/me/agent-citizens", async (c) => {
 
   const existing = db
     .select()
-    .from(principals)
-    .where(and(eq(principals.kind, "agent"), eq(principals.loginKey, loginKey)))
+    .from(citizens)
+    .where(and(eq(citizens.kind, "agent"), eq(citizens.loginKey, loginKey)))
     .get();
 
   if (existing) {
-    return c.json({ error: "agent principal loginKey already exists" }, 409);
+    return c.json({ error: "agent citizen loginKey already exists" }, 409);
   }
 
-  const principal: Principal = {
+  const principal: Citizen = {
     id: createId("prn"),
     kind: "agent",
     loginKey,
@@ -412,8 +412,8 @@ principalRoutes.post("/api/me/agent-citizens", async (c) => {
         throw new Error("backendThreadId already bound");
       }
 
-      tx.insert(principals).values(principal).run();
-      ensureAgentPrincipalBinding(principal, tx);
+      tx.insert(citizens).values(principal).run();
+      ensureAgentCitizenBinding(principal, tx);
     });
   } catch (error) {
     if (error instanceof Error && error.message === "backendThreadId already bound") {
@@ -423,52 +423,52 @@ principalRoutes.post("/api/me/agent-citizens", async (c) => {
     throw error;
   }
 
-  return c.json(toPrincipalSessionPayload(principal), 201);
+  return c.json(toCitizenSessionPayload(principal), 201);
 });
 
-principalRoutes.post("/api/principals/:principalId/leave-system", async (c) => {
-  const principalId = c.req.param("principalId");
+citizenRoutes.post("/api/citizens/:citizenId/leave-system", async (c) => {
+  const citizenId = c.req.param("citizenId");
   const principal = db
     .select()
-    .from(principals)
-    .where(eq(principals.id, principalId))
-    .get() as Principal | undefined;
+    .from(citizens)
+    .where(eq(citizens.id, citizenId))
+    .get() as Citizen | undefined;
 
   if (!principal) {
-    return c.json({ error: "principal not found" }, 404);
+    return c.json({ error: "citizen not found" }, 404);
   }
 
   const body = await c.req.json().catch(() => null);
-  const principalToken =
-    typeof body?.principalToken === "string" ? body.principalToken.trim() : "";
+  const citizenToken =
+    typeof body?.citizenToken === "string" ? body.citizenToken.trim() : "";
 
-  if (!principalToken) {
-    return c.json({ error: "principalToken is required" }, 400);
+  if (!citizenToken) {
+    return c.json({ error: "citizenToken is required" }, 400);
   }
 
-  if (!verifyPrincipalToken(principalToken, principalId)) {
-    return c.json({ error: "invalid principal token" }, 403);
+  if (!verifyCitizenToken(citizenToken, citizenId)) {
+    return c.json({ error: "invalid citizen token" }, 403);
   }
 
   const timestamp = now();
   const roomMemberships = db
     .select()
     .from(members)
-    .where(eq(members.principalId, principalId))
+    .where(eq(members.citizenId, citizenId))
     .all();
 
   db.transaction((tx) => {
     tx
       .update(members)
       .set({
-        principalId: null,
+        citizenId: null,
         presenceStatus: "offline",
         membershipStatus: "left",
         leftAt: timestamp,
       })
-      .where(eq(members.principalId, principalId))
+      .where(eq(members.citizenId, citizenId))
       .run();
-    tx.update(principals).set({ status: "offline" }).where(eq(principals.id, principalId)).run();
+    tx.update(citizens).set({ status: "offline" }).where(eq(citizens.id, citizenId)).run();
     tx
       .update(agentBindings)
       .set({
@@ -476,7 +476,7 @@ principalRoutes.post("/api/principals/:principalId/leave-system", async (c) => {
         status: "detached",
         detachedAt: timestamp,
       })
-      .where(eq(agentBindings.principalId, principalId))
+      .where(eq(agentBindings.citizenId, citizenId))
       .run();
   });
 
@@ -490,27 +490,27 @@ principalRoutes.post("/api/principals/:principalId/leave-system", async (c) => {
     });
   }
 
-  revokePrincipalTokensForPrincipal(principalId);
+  revokeCitizenTokensForCitizen(citizenId);
 
   return c.json({
-    principalId,
+    citizenId,
     leftSystem: true,
     removedRoomCount: roomMemberships.length,
     removedMemberIds: roomMemberships.map((membership) => membership.id),
   });
 });
 
-principalRoutes.get("/api/presence/lobby", (c) => {
-  const allPrincipals = db
+citizenRoutes.get("/api/presence/lobby", (c) => {
+  const allCitizens = db
     .select()
-    .from(principals)
+    .from(citizens)
     .all();
 
   return c.json({
-    principals: allPrincipals
+    citizens: allCitizens
       .map((principal) => {
         const binding = principal.kind === "agent"
-          ? resolveBindingForPrincipal(principal.id)
+          ? resolveBindingForCitizen(principal.id)
           : null;
         const bridge = binding?.bridgeId
           ? db.select().from(localBridges).where(eq(localBridges.id, binding.bridgeId)).get() ?? null
@@ -535,7 +535,7 @@ principalRoutes.get("/api/presence/lobby", (c) => {
         return {
           visibleInLobby,
           principal: {
-            principalId: principal.id,
+            citizenId: principal.id,
             id: principal.id,
             kind: principal.kind,
             loginKey: principal.loginKey,
@@ -556,4 +556,4 @@ principalRoutes.get("/api/presence/lobby", (c) => {
   });
 });
 
-export { principalRoutes };
+export { citizenRoutes };

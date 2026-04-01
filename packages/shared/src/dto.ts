@@ -15,7 +15,7 @@ export type PublicMemberRuntimeStatus = "ready" | "pending_bridge" | "waiting_br
 export type PublicMember = {
   id: string;
   roomId: string;
-  principalId: string | null;
+  citizenId: string | null;
   type: MemberType;
   roleKind: AgentRoleKind;
   displayName: string;

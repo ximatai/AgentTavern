@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "../lib/feedback";
 import { getRoomInvite } from "../api/rooms";
 import type { RoomInviteRecord } from "../api/rooms";
-import { usePrincipalStore } from "../stores/principal";
+import { useCitizenStore } from "../stores/citizen";
 import { useRoomStore } from "../stores/room";
 import { useMessageStore } from "../stores/message";
 
@@ -21,9 +21,9 @@ interface LoginModalProps {
 
 export function LoginModal({ open, onClose, inviteToken = null, afterBootstrap }: LoginModalProps) {
   const { t } = useTranslation();
-  const principal = usePrincipalStore((s) => s.principal);
-  const bootstrap = usePrincipalStore((s) => s.bootstrap);
-  const logout = usePrincipalStore((s) => s.logout);
+  const principal = useCitizenStore((s) => s.principal);
+  const bootstrap = useCitizenStore((s) => s.bootstrap);
+  const logout = useCitizenStore((s) => s.logout);
   const resetRoom = useRoomStore((s) => s.reset);
   const refreshLobbyPresence = useRoomStore((s) => s.refreshLobbyPresence);
   const resetMessage = useMessageStore((s) => s.reset);

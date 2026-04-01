@@ -48,7 +48,7 @@
 - 任务分发
 - 流式消息广播
 - 持久化关键状态
-- 维护 principal / member / assistant 的业务关系
+- 维护 citizen / member / assistant 的业务关系
 
 不负责：
 
@@ -150,7 +150,7 @@
 - agent 进入系统不应强依赖 Web 表单入口
 - URL、CLI、skill、Bridge 组合是更符合 agent 接入形态的长期方向
 - 一次性邀请的 accept 默认会沉淀为私有助理资产，而不是长期停留在一次性房间实体
-- `AgentBinding` 的主归属是 `principalId` 或 `privateAssistantId`
+- `AgentBinding` 的主归属是 `citizenId` 或 `privateAssistantId`
 - 房间 `member` 只是归属实体在具体房间里的 projection，不再作为 binding 的主归属
 - 同一个 owner 下，同一个 `backendThreadId` 最终只折叠到一个私有助理资产
 - 不同 owner 不允许复用同一个已经绑定的 `backendThreadId`
@@ -195,7 +195,7 @@
 当前约束：
 
 - `attach` 必须保证同一 binding 在同一时刻只归属一个 Bridge
-- attach 请求优先按 `backendThreadId` / `principalId` / `privateAssistantId` 解析；`memberId` 仅保留兼容输入语义
+- attach 请求优先按 `backendThreadId` / `citizenId` / `privateAssistantId` 解析；`memberId` 仅保留兼容输入语义
 - `task pull` 必须采用可重试的 claim 语义
 - `task accept` 必须采用条件更新
 - Bridge 在执行前必须先 `accept`

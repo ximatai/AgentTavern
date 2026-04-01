@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "../lib/feedback";
 import { getRoomInvite } from "../api/rooms";
 import type { RoomInviteRecord } from "../api/rooms";
-import { usePrincipalStore } from "../stores/principal";
+import { useCitizenStore } from "../stores/citizen";
 import { useRoomStore } from "../stores/room";
 
 const { Title, Paragraph, Text } = Typography;
@@ -17,7 +17,7 @@ interface JoinInviteCardProps {
 
 export function JoinInviteCard({ inviteToken }: JoinInviteCardProps) {
   const { t } = useTranslation();
-  const principal = usePrincipalStore((s) => s.principal);
+  const principal = useCitizenStore((s) => s.principal);
   const joinRoom = useRoomStore((s) => s.joinRoom);
 
   const [invite, setInvite] = useState<RoomInviteRecord | null>(null);

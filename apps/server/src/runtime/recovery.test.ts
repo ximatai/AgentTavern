@@ -528,10 +528,10 @@ test("recoverRuntimeState folds stale online presence back to offline", async ()
   runMigrations();
 
   const { db } = dbClient;
-  const { principals, rooms, members, localBridges } = schema;
+  const { citizens, rooms, members, localBridges } = schema;
   const createdAt = new Date("2026-03-25T16:00:00.000Z").toISOString();
 
-  db.insert(principals).values([
+  db.insert(citizens).values([
     {
       id: "prn_human_online",
       kind: "human",
@@ -566,7 +566,7 @@ test("recoverRuntimeState folds stale online presence back to offline", async ()
     {
       id: "mem_human_online",
       roomId: "room_presence_recovery",
-      principalId: "prn_human_online",
+      citizenId: "prn_human_online",
       type: "human",
       roleKind: "none",
       displayName: "Alice",
@@ -580,7 +580,7 @@ test("recoverRuntimeState folds stale online presence back to offline", async ()
     {
       id: "mem_agent_online",
       roomId: "room_presence_recovery",
-      principalId: "prn_agent_online",
+      citizenId: "prn_agent_online",
       type: "agent",
       roleKind: "independent",
       displayName: "Helper",
@@ -594,7 +594,7 @@ test("recoverRuntimeState folds stale online presence back to offline", async ()
     {
       id: "mem_projection_online",
       roomId: "room_presence_recovery",
-      principalId: null,
+      citizenId: null,
       type: "agent",
       roleKind: "assistant",
       displayName: "Projection",
@@ -629,7 +629,7 @@ test("recoverRuntimeState folds stale online presence back to offline", async ()
   assert.equal(result.expiredDraftAttachments, 0);
   assert.equal(result.expiredBridgeTasks, 0);
 
-  const refreshedPrincipals = db.select().from(principals).all();
+  const refreshedPrincipals = db.select().from(citizens).all();
   const refreshedMembers = db.select().from(members).all();
   const refreshedBridge = db.select().from(localBridges).where(eq(localBridges.id, "brg_presence_online")).get();
 

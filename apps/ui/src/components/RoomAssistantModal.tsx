@@ -4,7 +4,7 @@ import { ApiOutlined, RobotOutlined, TeamOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 
 import { toast } from "../lib/feedback";
-import { usePrincipalStore } from "../stores/principal";
+import { useCitizenStore } from "../stores/citizen";
 import { useRoomStore } from "../stores/room";
 import {
   adoptAssistant,
@@ -36,7 +36,7 @@ interface RoomAssistantModalProps {
 
 export function RoomAssistantModal({ open, onClose }: RoomAssistantModalProps) {
   const { t } = useTranslation();
-  const principal = usePrincipalStore((s) => s.principal);
+  const principal = useCitizenStore((s) => s.principal);
   const room = useRoomStore((s) => s.room);
   const self = useRoomStore((s) => s.self);
   const members = useRoomStore((s) => s.members);
@@ -52,7 +52,7 @@ export function RoomAssistantModal({ open, onClose }: RoomAssistantModalProps) {
       return;
     }
     try {
-      const items = await getPrivateAssistants(principal.principalId, principal.principalToken);
+      const items = await getPrivateAssistants(principal.citizenId, principal.citizenToken);
       setAssistants([...items].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
     } catch {
       setAssistants([]);

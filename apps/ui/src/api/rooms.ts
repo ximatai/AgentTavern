@@ -79,12 +79,12 @@ async function getRoomSummary(roomId: string): Promise<RoomSummaryResponse> {
 
 async function createRoom(
   name: string,
-  principalId: string,
-  principalToken: string,
+  citizenId: string,
+  citizenToken: string,
 ): Promise<CreateRoomResult> {
   return request("/api/rooms", {
     method: "POST",
-    body: JSON.stringify({ name, principalId, principalToken }),
+    body: JSON.stringify({ name, citizenId, citizenToken }),
   });
 }
 
@@ -94,30 +94,30 @@ async function getRoomInvite(inviteToken: string): Promise<RoomInviteRecord> {
 
 async function joinRoom(
   inviteToken: string,
-  principalId: string,
-  principalToken: string,
+  citizenId: string,
+  citizenToken: string,
 ): Promise<JoinResult> {
   return request<JoinResult>(`/api/invites/${inviteToken}/join`, {
     method: "POST",
-    body: JSON.stringify({ principalId, principalToken }),
+    body: JSON.stringify({ citizenId, citizenToken }),
   });
 }
 
 async function joinExistingRoom(
   roomId: string,
-  principalId: string,
-  principalToken: string,
+  citizenId: string,
+  citizenToken: string,
 ): Promise<JoinResult> {
   return request<JoinResult>(`/api/rooms/${roomId}/join`, {
     method: "POST",
-    body: JSON.stringify({ principalId, principalToken }),
+    body: JSON.stringify({ citizenId, citizenToken }),
   });
 }
 
 async function createDirectRoom(params: {
-  actorPrincipalId: string;
-  actorPrincipalToken: string;
-  peerPrincipalId: string;
+  actorCitizenId: string;
+  actorCitizenToken: string;
+  peerCitizenId: string;
 }): Promise<DirectRoomResult> {
   return request<DirectRoomResult>("/api/direct-rooms", {
     method: "POST",
@@ -129,11 +129,11 @@ async function pullPrincipal(
   roomId: string,
   actorMemberId: string,
   wsToken: string,
-  targetPrincipalId: string,
+  targetCitizenId: string,
 ): Promise<JoinResult> {
   return request<JoinResult>(`/api/rooms/${roomId}/pull`, {
     method: "POST",
-    body: JSON.stringify({ actorMemberId, wsToken, targetPrincipalId }),
+    body: JSON.stringify({ actorMemberId, wsToken, targetCitizenId }),
   });
 }
 
@@ -146,11 +146,11 @@ async function getRoomMessages(roomId: string): Promise<PublicMessage[]> {
 }
 
 async function getJoinedRooms(
-  principalId: string,
-  principalToken: string,
+  citizenId: string,
+  citizenToken: string,
 ): Promise<{ rooms: JoinedRoomRecord[] }> {
   return request<{ rooms: JoinedRoomRecord[] }>(
-    `/api/me/rooms?principalId=${principalId}&principalToken=${principalToken}`,
+    `/api/me/rooms?citizenId=${citizenId}&citizenToken=${citizenToken}`,
   );
 }
 
@@ -186,12 +186,12 @@ async function transferRoomOwnership(
 
 async function leaveRoom(
   roomId: string,
-  principalId: string,
-  principalToken: string,
-): Promise<{ left: boolean; roomId: string; principalId: string; memberId: string | null }> {
+  citizenId: string,
+  citizenToken: string,
+): Promise<{ left: boolean; roomId: string; citizenId: string; memberId: string | null }> {
   return request(`/api/rooms/${roomId}/leave`, {
     method: "POST",
-    body: JSON.stringify({ principalId, principalToken }),
+    body: JSON.stringify({ citizenId, citizenToken }),
   });
 }
 

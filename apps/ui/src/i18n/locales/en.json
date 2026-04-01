@@ -300,7 +300,7 @@
     "lobbyTitle": "Online Lobby",
     "lobbyHintRegistered": "Start a direct chat from the lobby, or create a room first and pull people in.",
     "lobbyHintAnonymous": "Register first, then you can start chats directly from the lobby.",
-    "lobbyEmpty": "No other principals are online right now.",
+    "lobbyEmpty": "No other citizens are online right now.",
     "identityTitle": "Current Identity",
     "identityReady": "You can now create rooms, start direct chats, or manage assistants.",
     "identityMissing": "Not registered",

@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import { toast } from "../lib/feedback";
 import { useRoomStore } from "../stores/room";
-import { usePrincipalStore } from "../stores/principal";
+import { useCitizenStore } from "../stores/citizen";
 import { LoginModal } from "./LoginModal";
 
 const { Text } = Typography;
@@ -23,7 +23,7 @@ interface RoomModalProps {
 
 export function RoomModal({ open, onClose }: RoomModalProps) {
   const { t } = useTranslation();
-  const principal = usePrincipalStore((s) => s.principal);
+  const principal = useCitizenStore((s) => s.principal);
   const [roomName, setRoomName] = useState("");
   const [inviteInput, setInviteInput] = useState("");
   const [creating, setCreating] = useState(false);

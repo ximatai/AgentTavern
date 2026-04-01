@@ -27,7 +27,7 @@ import {
   localBridges,
   members,
   messages,
-  principals,
+  citizens,
   privateAssistants,
   rooms,
 } from "../db/schema";
@@ -122,7 +122,7 @@ function parseLocalProcessConfig(raw: string | null): LocalProcessAdapterConfig 
 
 function toAgentBinding(row: {
   id: string;
-  principalId: string | null;
+  citizenId: string | null;
   privateAssistantId: string | null;
   bridgeId: string | null;
   backendType: string;
@@ -150,7 +150,7 @@ function toRoom(row: {
 function toMember(row: {
   id: string;
   roomId: string;
-  principalId: string | null;
+  citizenId: string | null;
   type: string;
   roleKind: string;
   displayName: string;
@@ -208,11 +208,11 @@ function resolveBridgeBackendConfig(agent: Member, binding: AgentBinding): strin
     return assistant?.backendConfig ?? null;
   }
 
-  if (agent.principalId) {
+  if (agent.citizenId) {
     const principal = db
-      .select({ backendConfig: principals.backendConfig })
-      .from(principals)
-      .where(eq(principals.id, agent.principalId))
+      .select({ backendConfig: citizens.backendConfig })
+      .from(citizens)
+      .where(eq(citizens.id, agent.citizenId))
       .get();
     return principal?.backendConfig ?? null;
   }

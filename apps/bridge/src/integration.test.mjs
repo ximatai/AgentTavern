@@ -31,7 +31,7 @@ test("pollAndProcessTask completes a server-created bridge task through the real
 
   const { app } = appModule;
   const { db } = dbClient;
-  const { principals, rooms, members, agentBindings, localBridges, agentSessions, messages } = schema;
+  const { citizens, rooms, members, agentBindings, localBridges, agentSessions, messages } = schema;
   const { createInviteToken } = ids;
   const { issueWsToken } = realtime;
 
@@ -60,7 +60,7 @@ test("pollAndProcessTask completes a server-created bridge task through the real
     updatedAt: createdAt,
   }).run();
 
-  db.insert(principals).values({
+  db.insert(citizens).values({
     id: "prn_agent_bridge_e2e",
     kind: "agent",
     loginKey: "agent:bridge-e2e",
@@ -87,7 +87,7 @@ test("pollAndProcessTask completes a server-created bridge task through the real
     {
       id: "mem_agent_bridge_e2e",
       roomId,
-      principalId: "prn_agent_bridge_e2e",
+      citizenId: "prn_agent_bridge_e2e",
       type: "agent",
       roleKind: "independent",
       displayName: "BridgeCodexE2E",
@@ -101,7 +101,7 @@ test("pollAndProcessTask completes a server-created bridge task through the real
 
   db.insert(agentBindings).values({
     id: "agb_bridge_e2e",
-    principalId: "prn_agent_bridge_e2e",
+    citizenId: "prn_agent_bridge_e2e",
     privateAssistantId: null,
     bridgeId: "brg_bridge_e2e",
     backendType: "codex_cli",

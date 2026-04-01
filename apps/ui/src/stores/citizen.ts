@@ -2,20 +2,20 @@ import type { AgentBackendType, OpenAICompatibleBackendConfig } from "@agent-tav
 
 import { create } from "zustand";
 
-import { bootstrapPrincipal as bootstrapAPI } from "../api/principals";
-import type { PrincipalSession } from "../api/principals";
+import { bootstrapCitizen as bootstrapAPI } from "../api/citizens";
+import type { CitizenSession } from "../api/citizens";
 
-const STORAGE_KEY = "agent-tavern-principal";
+const STORAGE_KEY = "agent-tavern-citizen";
 
-interface PrincipalState {
-  principal: PrincipalSession | null;
+interface CitizenState {
+  principal: CitizenSession | null;
   loginKey: string;
   globalDisplayName: string;
   privateAssetsVersion: number;
   restoreReady: boolean;
 }
 
-interface PrincipalActions {
+interface CitizenActions {
   bootstrap: (params: {
     kind: "human" | "agent";
     loginKey: string;
@@ -23,16 +23,16 @@ interface PrincipalActions {
     backendType: AgentBackendType | null;
     backendThreadId: string | null;
     backendConfig?: OpenAICompatibleBackendConfig | null;
-  }) => Promise<PrincipalSession>;
+  }) => Promise<CitizenSession>;
   logout: () => void;
   restoreFromStorage: () => Promise<void>;
   persistToStorage: () => void;
   markPrivateAssetsChanged: () => void;
 }
 
-export type PrincipalStore = PrincipalState & PrincipalActions;
+export type CitizenStore = CitizenState & CitizenActions;
 
-export const usePrincipalStore = create<PrincipalStore>()((set, get) => ({
+export const useCitizenStore = create<CitizenStore>()((set, get) => ({
   principal: null,
   loginKey: "",
   globalDisplayName: "",
@@ -70,7 +70,7 @@ export const usePrincipalStore = create<PrincipalStore>()((set, get) => ({
     }
 
     try {
-      const parsed = JSON.parse(cached) as PrincipalSession;
+      const parsed = JSON.parse(cached) as CitizenSession;
       if (parsed.kind !== "human" && parsed.kind !== "agent") {
         localStorage.removeItem(STORAGE_KEY);
         set({ restoreReady: true });

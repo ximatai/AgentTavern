@@ -10,7 +10,7 @@ import { ThemeSwitcher } from "./ThemeSwitcher";
 import { LoginModal } from "./LoginModal";
 import { AssistantManagementModal } from "./AssistantManagementModal";
 import { RoomSecretaryModal } from "./RoomSecretaryModal";
-import { usePrincipalStore } from "../stores/principal";
+import { useCitizenStore } from "../stores/citizen";
 import { useConnectionStore } from "../stores/connection";
 import { useRoomStore } from "../stores/room";
 
@@ -38,7 +38,7 @@ function ConnectionNotifications() {
 
 function IdentitySection() {
   const { t } = useTranslation();
-  const principal = usePrincipalStore((s) => s.principal);
+  const principal = useCitizenStore((s) => s.principal);
   const [loginOpen, setLoginOpen] = useState(false);
 
   if (!principal) {
@@ -86,7 +86,7 @@ function IdentitySection() {
 
 export function Header() {
   const { t } = useTranslation();
-  const principal = usePrincipalStore((s) => s.principal);
+  const principal = useCitizenStore((s) => s.principal);
   const room = useRoomStore((s) => s.room);
   const self = useRoomStore((s) => s.self);
   const members = useRoomStore((s) => s.members);

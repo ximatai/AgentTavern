@@ -19,7 +19,7 @@ import {
   localBridges,
   members,
   mentions,
-  principals,
+  citizens,
 } from "../db/schema";
 
 function now(): string {
@@ -35,9 +35,9 @@ export function recoverRuntimeState(): {
 } {
   // On server restart, all in-memory sockets are gone. Persisted "online" state
   // must be folded back before runtime recovery continues.
-  db.update(principals)
+  db.update(citizens)
     .set({ status: "offline" })
-    .where(eq(principals.status, "online"))
+    .where(eq(citizens.status, "online"))
     .run();
 
   db.update(members)

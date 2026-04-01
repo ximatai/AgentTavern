@@ -4,16 +4,16 @@ import { Hono } from "hono";
 import type { AgentBackendType, OpenAICompatibleBackendConfig, ServerConfigVisibility } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
-import { principals, serverConfigs } from "../db/schema";
+import { citizens, serverConfigs } from "../db/schema";
 import { createId } from "../lib/id";
-import { verifyPrincipalToken } from "../realtime";
+import { verifyCitizenToken } from "../realtime";
 import { isSupportedAgentBackendType, normalizeAgentBackendConfig, now } from "./support";
 
 const serverConfigRoutes = new Hono();
 
 type StoredServerConfig = {
   id: string;
-  ownerPrincipalId: string;
+  ownerCitizenId: string;
   name: string;
   backendType: AgentBackendType;
   configPayload: string;
@@ -49,7 +49,7 @@ function toSharedPayload(item: StoredServerConfig) {
 
   return {
     id: item.id,
-    ownerPrincipalId: item.ownerPrincipalId,
+    ownerCitizenId: item.ownerCitizenId,
     name: item.name,
     backendType: item.backendType,
     visibility: item.visibility,
@@ -65,32 +65,32 @@ function toSharedPayload(item: StoredServerConfig) {
   };
 }
 
-function requirePrincipalAuth(params: { principalId: string; principalToken: string }) {
-  if (!params.principalId || !params.principalToken) {
-    return { error: { error: "principalId and principalToken are required" }, status: 400 as const };
+function requireCitizenAuth(params: { citizenId: string; citizenToken: string }) {
+  if (!params.citizenId || !params.citizenToken) {
+    return { error: { error: "citizenId and citizenToken are required" }, status: 400 as const };
   }
 
-  if (!verifyPrincipalToken(params.principalToken, params.principalId)) {
-    return { error: { error: "invalid principal token" }, status: 403 as const };
+  if (!verifyCitizenToken(params.citizenToken, params.citizenId)) {
+    return { error: { error: "invalid citizen token" }, status: 403 as const };
   }
 
-  const principal = db
+  const citizen = db
     .select()
-    .from(principals)
-    .where(eq(principals.id, params.principalId))
+    .from(citizens)
+    .where(eq(citizens.id, params.citizenId))
     .get();
 
-  if (!principal) {
-    return { error: { error: "principal not found" }, status: 404 as const };
+  if (!citizen) {
+    return { error: { error: "citizen not found" }, status: 404 as const };
   }
 
-  return { principal };
+  return { citizen };
 }
 
 serverConfigRoutes.get("/api/me/server-configs", (c) => {
-  const principalId = c.req.query("principalId")?.trim() ?? "";
-  const principalToken = c.req.query("principalToken")?.trim() ?? "";
-  const auth = requirePrincipalAuth({ principalId, principalToken });
+  const citizenId = c.req.query("citizenId")?.trim() ?? "";
+  const citizenToken = c.req.query("citizenToken")?.trim() ?? "";
+  const auth = requireCitizenAuth({ citizenId, citizenToken });
 
   if ("error" in auth) {
     return c.json(auth.error, auth.status);
@@ -99,16 +99,16 @@ serverConfigRoutes.get("/api/me/server-configs", (c) => {
   const items = db
     .select()
     .from(serverConfigs)
-    .where(eq(serverConfigs.ownerPrincipalId, principalId))
+    .where(eq(serverConfigs.ownerCitizenId, citizenId))
     .all() as StoredServerConfig[];
 
   return c.json(items.map(toOwnerPayload));
 });
 
 serverConfigRoutes.get("/api/server-configs/shared", (c) => {
-  const principalId = c.req.query("principalId")?.trim() ?? "";
-  const principalToken = c.req.query("principalToken")?.trim() ?? "";
-  const auth = requirePrincipalAuth({ principalId, principalToken });
+  const citizenId = c.req.query("citizenId")?.trim() ?? "";
+  const citizenToken = c.req.query("citizenToken")?.trim() ?? "";
+  const auth = requireCitizenAuth({ citizenId, citizenToken });
 
   if ("error" in auth) {
     return c.json(auth.error, auth.status);
@@ -117,7 +117,7 @@ serverConfigRoutes.get("/api/server-configs/shared", (c) => {
   const items = db
     .select()
     .from(serverConfigs)
-    .where(and(eq(serverConfigs.visibility, "shared"), ne(serverConfigs.ownerPrincipalId, principalId)))
+    .where(and(eq(serverConfigs.visibility, "shared"), ne(serverConfigs.ownerCitizenId, citizenId)))
     .all() as StoredServerConfig[];
 
   return c.json(items.map(toSharedPayload));
@@ -125,12 +125,12 @@ serverConfigRoutes.get("/api/server-configs/shared", (c) => {
 
 serverConfigRoutes.post("/api/me/server-configs", async (c) => {
   const body = await c.req.json().catch(() => null);
-  const principalId = typeof body?.principalId === "string" ? body.principalId.trim() : "";
-  const principalToken = typeof body?.principalToken === "string" ? body.principalToken.trim() : "";
+  const citizenId = typeof body?.citizenId === "string" ? body.citizenId.trim() : "";
+  const citizenToken = typeof body?.citizenToken === "string" ? body.citizenToken.trim() : "";
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   const visibility = isServerConfigVisibility(body?.visibility) ? body.visibility : "private";
   const backendType = isSupportedAgentBackendType(body?.backendType) ? body.backendType : null;
-  const auth = requirePrincipalAuth({ principalId, principalToken });
+  const auth = requireCitizenAuth({ citizenId, citizenToken });
 
   if ("error" in auth) {
     return c.json(auth.error, auth.status);
@@ -153,17 +153,17 @@ serverConfigRoutes.post("/api/me/server-configs", async (c) => {
   const existing = db
     .select()
     .from(serverConfigs)
-    .where(and(eq(serverConfigs.ownerPrincipalId, principalId), eq(serverConfigs.name, name)))
+    .where(and(eq(serverConfigs.ownerCitizenId, citizenId), eq(serverConfigs.name, name)))
     .get();
 
   if (existing) {
-    return c.json({ error: "server config name already exists for this principal" }, 409);
+    return c.json({ error: "server config name already exists for this citizen" }, 409);
   }
 
   const timestamp = now();
   const record = {
     id: createId("scf"),
-    ownerPrincipalId: principalId,
+    ownerCitizenId: citizenId,
     name,
     backendType,
     configPayload: backendConfig,
@@ -180,9 +180,9 @@ serverConfigRoutes.post("/api/me/server-configs", async (c) => {
 serverConfigRoutes.patch("/api/me/server-configs/:configId", async (c) => {
   const configId = c.req.param("configId");
   const body = await c.req.json().catch(() => null);
-  const principalId = typeof body?.principalId === "string" ? body.principalId.trim() : "";
-  const principalToken = typeof body?.principalToken === "string" ? body.principalToken.trim() : "";
-  const auth = requirePrincipalAuth({ principalId, principalToken });
+  const citizenId = typeof body?.citizenId === "string" ? body.citizenId.trim() : "";
+  const citizenToken = typeof body?.citizenToken === "string" ? body.citizenToken.trim() : "";
+  const auth = requireCitizenAuth({ citizenId, citizenToken });
 
   if ("error" in auth) {
     return c.json(auth.error, auth.status);
@@ -198,8 +198,8 @@ serverConfigRoutes.patch("/api/me/server-configs/:configId", async (c) => {
     return c.json({ error: "server config not found" }, 404);
   }
 
-  if (current.ownerPrincipalId !== principalId) {
-    return c.json({ error: "server config does not belong to actor principal" }, 403);
+  if (current.ownerCitizenId !== citizenId) {
+    return c.json({ error: "server config does not belong to actor citizen" }, 403);
   }
 
   const nextName = typeof body?.name === "string" ? body.name.trim() : current.name;
@@ -219,7 +219,7 @@ serverConfigRoutes.patch("/api/me/server-configs/:configId", async (c) => {
     .from(serverConfigs)
     .where(
       and(
-        eq(serverConfigs.ownerPrincipalId, principalId),
+        eq(serverConfigs.ownerCitizenId, citizenId),
         eq(serverConfigs.name, nextName),
         ne(serverConfigs.id, configId),
       ),
@@ -227,7 +227,7 @@ serverConfigRoutes.patch("/api/me/server-configs/:configId", async (c) => {
     .get();
 
   if (conflicting) {
-    return c.json({ error: "server config name already exists for this principal" }, 409);
+    return c.json({ error: "server config name already exists for this citizen" }, 409);
   }
 
   db
@@ -252,9 +252,9 @@ serverConfigRoutes.patch("/api/me/server-configs/:configId", async (c) => {
 
 serverConfigRoutes.delete("/api/me/server-configs/:configId", (c) => {
   const configId = c.req.param("configId");
-  const principalId = c.req.query("principalId")?.trim() ?? "";
-  const principalToken = c.req.query("principalToken")?.trim() ?? "";
-  const auth = requirePrincipalAuth({ principalId, principalToken });
+  const citizenId = c.req.query("citizenId")?.trim() ?? "";
+  const citizenToken = c.req.query("citizenToken")?.trim() ?? "";
+  const auth = requireCitizenAuth({ citizenId, citizenToken });
 
   if ("error" in auth) {
     return c.json(auth.error, auth.status);
@@ -270,8 +270,8 @@ serverConfigRoutes.delete("/api/me/server-configs/:configId", (c) => {
     return c.json({ error: "server config not found" }, 404);
   }
 
-  if (current.ownerPrincipalId !== principalId) {
-    return c.json({ error: "server config does not belong to actor principal" }, 403);
+  if (current.ownerCitizenId !== citizenId) {
+    return c.json({ error: "server config does not belong to actor citizen" }, 403);
   }
 
   db.delete(serverConfigs).where(eq(serverConfigs.id, configId)).run();

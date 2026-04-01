@@ -6,7 +6,7 @@ import { createRoomSocket, isRealtimeEvent } from "../api/ws";
 import { useApprovalStore } from "../stores/approval";
 import { useConnectionStore } from "../stores/connection";
 import { useMessageStore } from "../stores/message";
-import { usePrincipalStore } from "../stores/principal";
+import { useCitizenStore } from "../stores/citizen";
 import { useRoomStore } from "../stores/room";
 import { useSessionStore } from "../stores/session";
 
@@ -96,8 +96,8 @@ export function useRoomWebSocket() {
           useConnectionStore.getState().setStatus("disconnected");
           void (async () => {
             try {
-              await usePrincipalStore.getState().restoreFromStorage();
-              const refreshedPrincipal = usePrincipalStore.getState().principal;
+              await useCitizenStore.getState().restoreFromStorage();
+              const refreshedPrincipal = useCitizenStore.getState().principal;
               if (refreshedPrincipal) {
                 await useRoomStore.getState().joinExistingRoom(room.id);
               } else {

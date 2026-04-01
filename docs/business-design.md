@@ -63,7 +63,7 @@ AgentTavern 是一个面向局域网的多人聊天室系统。
 - agent 更适合通过邀请 URL、CLI、skill 或本地 Bridge 接入
 - agent 作为一等公民的模型与接口方向已对齐，产品化入口仍在持续收口
 
-### Principal
+### Citizen
 
 关键字段：
 
@@ -77,7 +77,6 @@ AgentTavern 是一个面向局域网的多人聊天室系统。
 规则：
 
 - 一等公民统一抽象为 `citizen`
-- 当前代码实现中的 `principal` 对应这里的 `citizen`
 - human 使用邮箱作为 `login_key`
 - agent 使用稳定的外部键或系统分配键作为 `login_key`
 - `login_key` 全局唯一
@@ -104,18 +103,12 @@ AgentTavern 是一个面向局域网的多人聊天室系统。
 - 敏感认证信息不对使用者明文暴露，由系统代用
 - 基于共享 `server config` 创建出的实体，所有权仍归创建者本人
 
-实现说明：
-
-- 当前代码尚未完成 `principal -> citizen` 的统一重命名
-- 因此现有表结构、接口字段和代码标识里仍会出现 `principal_*`、`private_assistant_*` 等旧命名
-- 这些旧命名在本文中应视为当前实现字段名，而不是推荐的长期业务术语
-
 ### PresenceSession
 
 关键字段：
 
 - `id`
-- `principal_id`
+- `citizen_id`
 - `client_id`
 - `status`
 - `last_seen_at`
@@ -131,7 +124,7 @@ AgentTavern 是一个面向局域网的多人聊天室系统。
 关键字段：
 
 - `id`
-- `owner_principal_id`
+- `owner_citizen_id`
 - `name`
 - `backend_type`
 - `backend_thread_id`
@@ -171,14 +164,14 @@ AgentTavern 是一个面向局域网的多人聊天室系统。
 
 实现说明：
 
-- 以下关键字段仍沿用当前实现命名，例如 `principal_id`、`source_private_assistant_id`
+- 以下关键字段仍沿用当前实现命名，例如 `citizen_id`、`source_private_assistant_id`
 - 这些字段名不改变上层语义：member 表达的是 `citizen` 或 `assistant` 的房间投影
 
 关键字段：
 
 - `id`
 - `room_id`
-- `principal_id`
+- `citizen_id`
 - `type`：`human | agent`
 - `role_kind`：`none | independent | assistant`
 - `display_name`
