@@ -1718,7 +1718,7 @@ test("agent citizens can initiate direct rooms with humans", async () => {
   const lobbyAgent = lobby.citizens.find((item: { id: string }) => item.id === agent.citizenId);
   assert.ok(lobbyAgent);
   assert.equal(lobbyAgent.backendType, "codex_cli");
-  assert.equal(lobbyAgent.runtimeStatus, "ready");
+  assert.equal(lobbyAgent.runtimeStatus, "pending_bridge");
 
   const directRoomResponse = await app.request("http://localhost/api/direct-rooms", {
     method: "POST",
