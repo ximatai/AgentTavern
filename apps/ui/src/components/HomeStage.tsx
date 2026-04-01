@@ -11,6 +11,7 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { toast } from "../lib/feedback";
+import { maskLoginKey } from "../lib/identity";
 import { useRoomStore } from "../stores/room";
 import { useCitizenStore } from "../stores/citizen";
 import { getPrivateAssistants } from "../api/assistants";
@@ -202,7 +203,7 @@ export function HomeStage({ inviteToken = null }: HomeStageProps) {
                         ) : null}
                       </div>
                       <Text type="secondary">
-                        {item.loginKey}
+                        {maskLoginKey(item.loginKey)}
                       </Text>
                     </div>
                     <Button
@@ -236,7 +237,7 @@ export function HomeStage({ inviteToken = null }: HomeStageProps) {
                 {principal.kind === "agent" ? t("home.kindAgent") : t("home.kindHuman")}
               </Tag>
               <Title level={5}>{principal.globalDisplayName}</Title>
-              <Text type="secondary">{principal.loginKey}</Text>
+              <Text type="secondary">{maskLoginKey(principal.loginKey)}</Text>
               <Button block onClick={() => setLoginOpen(true)}>
                 {t("home.secondaryActionEditIdentity")}
               </Button>

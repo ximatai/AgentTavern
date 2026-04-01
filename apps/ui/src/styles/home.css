@@ -173,26 +173,102 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
 }
 
 .home-side-header h5 {
   margin: 0 !important;
   color: var(--font-primary, #fff) !important;
+  line-height: 1;
+}
+
+.home-side-header .ant-typography-secondary {
+  flex: 0 0 auto;
+  font-size: 12px;
+  line-height: 1;
+  text-align: right;
 }
 
 .home-side-cards {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .home-side-card {
-  background: var(--bg-surface, #1e293b);
-  border-radius: 8px;
+  background: rgba(30, 41, 59, 0.74);
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  box-shadow: none;
+}
+
+.home-side-card .ant-card-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  align-items: center;
+  padding: 10px 12px;
+}
+
+.home-side-card-topline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  grid-column: 1 / 2;
+}
+
+.home-side-card-title {
+  font-size: 15px;
+  line-height: 1.2;
+  font-weight: 600;
+  color: var(--font-primary, #fff);
+  grid-column: 1 / 2;
+}
+
+.home-side-runtime-tag {
+  margin-inline-end: 0;
+  border-color: rgba(34, 211, 238, 0.28);
+  color: #7dd3fc;
+  background: rgba(34, 211, 238, 0.08);
 }
 
 .home-side-card-desc {
   margin-bottom: 0 !important;
+  font-size: 12px;
+  line-height: 1.35;
+  color: rgba(148, 163, 184, 0.9) !important;
+  word-break: break-all;
+  grid-column: 1 / 2;
+}
+
+.home-side-card-action {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+  height: 30px;
+  border-radius: 9px;
+  font-weight: 600;
+}
+
+.home-side-icon-action {
+  grid-column: 2 / 3;
+  grid-row: 1 / span 3;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border-color: rgba(34, 211, 238, 0.28);
+  color: #7dd3fc;
+  background: rgba(15, 23, 42, 0.82);
+  align-self: center;
+  justify-self: end;
+}
+
+.home-side-icon-action:hover,
+.home-side-icon-action:focus {
+  color: #a5f3fc !important;
+  border-color: rgba(103, 232, 249, 0.42) !important;
+  background: rgba(8, 47, 73, 0.88) !important;
 }
 
 .home-side-empty {

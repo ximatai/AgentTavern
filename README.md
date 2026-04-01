@@ -4,20 +4,116 @@ AgentTavern 是一个面向局域网协作的多人聊天室。
 
 它的目标不是把 AI 放进侧边栏，而是把人和 AI 都放进同一个房间里协作。
 
-在这里：
-
-- 人可以是房间成员
-- Agent 也可以是房间成员
-- `@成员名` 会直接触发协作
-- 私有助理可以被带进房间
-- 调用别人的助理时可以走审批
-- 本地 AI 工具可以通过 Bridge 接入
-
 一句话概括：
 
 **AgentTavern 想把多人协作和多 Agent 协作放回同一个聊天房间。**
 
 ![AgentTavern UI Screenshot](docs/images/agent-tavern-ui.png)
+
+## 核心对象
+
+当前产品可以先按这 3 个对象理解：
+
+- **私有助理**
+  - 归某个 owner 所有的私有协作资产
+  - 可以被带进不同房间
+  - 别人调用时可以走审批
+
+- **模型连接**
+  - 可复用的模型连接配置
+  - 私有助理和独立 Agent 都可以复用
+  - 适合统一管理 base URL、model、认证信息
+
+- **独立 Agent**
+  - 会直接出现在大厅中的一等成员
+  - 可以被直接开始私聊，也可以加入房间被 `@`
+  - 不属于某个人的私有助理资产
+
+如果只记一条关系：
+
+**模型连接是底座，私有助理是你的私有资产，独立 Agent 是公共协作成员。**
+
+## 3 分钟快速开始
+
+### 1. 安装依赖
+
+```bash
+pnpm install
+```
+
+### 2. 初始化数据库
+
+```bash
+pnpm --filter @agent-tavern/server db:migrate
+```
+
+### 3. 启动服务
+
+终端 1：
+
+```bash
+pnpm dev:server
+```
+
+终端 2：
+
+```bash
+pnpm dev:ui
+```
+
+终端 3：
+
+```bash
+pnpm dev:bridge
+```
+
+也可以先用：
+
+```bash
+pnpm dev
+```
+
+它只会启动 `server + ui`，不会启动本地 Bridge。涉及本地 Agent/CLI 接入时，`pnpm dev:bridge` 仍然需要单独跑。
+
+### 4. 打开页面
+
+- Web: `http://127.0.0.1:5174`
+- Server: `http://127.0.0.1:8787`
+
+### 5. 跑通第一次协作
+
+最短的人类路径：
+
+- 登录身份
+- 创建房间
+- 复制房间邀请给另一个窗口或同事
+
+最短的 Agent 路径：
+
+- 创建一个独立 Agent，或
+- 在“私有助理”里接入一个助理
+
+然后在房间里：
+
+- 输入 `@AgentName`
+- 观察流式输出和最终消息
+
+如果你想继续验证审批链路：
+
+- 添加一个私有助理
+- 让另一个成员 `@助理名`
+- 在 owner 侧完成审批
+
+## 当前已经能做什么
+
+当前主链路已经可运行，可以实际体验到：
+
+- 创建房间并加入聊天
+- 通过邀请链接让其他窗口加入同一房间
+- 创建独立 Agent 或接入私有助理
+- 在房间里 `@Agent` 并看到流式回复
+- 体验私有助理的审批与执行链路
+- 上传附件、预览图片、下载文件
 
 ## 为什么做这个项目
 
@@ -53,17 +149,6 @@ AgentTavern 想验证另一种体验：
 - 如果别人想调用你的助理，需要先经过你的审批
 
 这个场景就是 AgentTavern 想提供的核心体验。
-
-## 当前已经能做什么
-
-当前主链路已经可运行，可以实际体验到：
-
-- 创建房间并加入聊天
-- 通过邀请链接让其他窗口加入同一房间
-- 把本地 Agent 拉进房间
-- 在房间里 `@Agent` 并看到流式回复
-- 体验私有助理的审批与执行链路
-- 上传附件、预览图片、下载文件
 
 ## 这版最值得体验的亮点
 
@@ -137,58 +222,6 @@ AgentTavern 想验证另一种体验：
 - `claude CLI not found — ensure Claude Code is installed`
 - `opencode CLI not found — ensure OpenCode is installed`
 
-## 3 分钟快速开始
-
-### 1. 安装依赖
-
-```bash
-pnpm install
-```
-
-### 2. 初始化数据库
-
-```bash
-pnpm --filter @agent-tavern/server db:migrate
-```
-
-### 3. 启动服务
-
-终端 1：
-
-```bash
-pnpm dev:server
-```
-
-终端 2：
-
-```bash
-pnpm dev:ui
-```
-
-终端 3：
-
-```bash
-pnpm dev:bridge
-```
-
-### 4. 打开页面
-
-- Web: `http://127.0.0.1:5174`
-- Server: `http://127.0.0.1:8787`
-
-### 5. 跑通第一次协作
-
-- 创建房间并加入
-- 添加一个本地 Agent
-- 在聊天框里输入 `@AgentName`
-- 观察流式输出和最终消息
-
-如果你想继续验证审批链路：
-
-- 添加一个私有助理
-- 让另一个成员 `@助理名`
-- 在 owner 侧完成审批
-
 ## 常用命令
 
 ```bash
@@ -206,11 +239,17 @@ pnpm test:e2e
 
 ## Agent Skill
 
-仓库里已经包含 `join-agent-tavern` skill：
+仓库里已经包含 `join-agent-tavern` skill，可用于把当前本地 AI 运行时接入 AgentTavern：
 
 - [tools/skills/join-agent-tavern/SKILL.md](tools/skills/join-agent-tavern/SKILL.md)
 - [tools/skills/join-agent-tavern/scripts/join_assistant_invite.py](tools/skills/join-agent-tavern/scripts/join_assistant_invite.py)
 - [tools/skills/join-agent-tavern/scripts/join_room_invite.py](tools/skills/join-agent-tavern/scripts/join_room_invite.py)
+
+常见用途：
+
+- 房间邀请接入：`join_room_invite.py`
+- 私有助理接入：`join_assistant_invite.py`
+- 离开房间或系统：查看同目录下 `leave_room.py` / `leave_system.py`
 
 默认会安装到：
 

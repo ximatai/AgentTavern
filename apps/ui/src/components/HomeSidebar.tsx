@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Button, Card, Tag, Typography } from "antd";
+import { Button, Card, Tag, Tooltip, Typography } from "antd";
 import { MessageOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 
 import { toast } from "../lib/feedback";
+import { maskLoginKey } from "../lib/identity";
 import { useRoomStore } from "../stores/room";
 import { useCitizenStore } from "../stores/citizen";
 import { LoginModal } from "./LoginModal";
@@ -46,21 +47,45 @@ export function HomeSidebar() {
       <section className="home-side-section">
         <div className="home-side-header">
           <Title level={5}>{t("home.identityTitle")}</Title>
-          <Text type="secondary">{principal ? t("home.identityReady") : t("home.identityMissing")}</Text>
         </div>
         <div className="home-side-cards">
           <Card size="small" variant="borderless" className="home-side-card">
-            <Tag color={principal?.kind === "agent" ? "geekblue" : "green"} className="home-step-badge">
-              {principal ? (principal.kind === "agent" ? t("home.kindAgent") : t("home.kindHuman")) : t("header.loginButton")}
-            </Tag>
-            <strong>{principal?.globalDisplayName ?? t("home.identityMissing")}</strong>
-            <Paragraph type="secondary" className="home-side-card-desc">
-              {principal?.loginKey ?? t("home.identityMissingHint")}
-            </Paragraph>
             {principal ? (
-              <Button block size="small" onClick={() => setLoginOpen(true)}>
-                {t("home.secondaryActionEditIdentity")}
-              </Button>
+              <>
+                <div className="home-side-card-topline">
+                  <Tag color={principal.kind === "agent" ? "geekblue" : "green"} className="home-step-badge">
+                    {principal.kind === "agent" ? t("home.kindAgent") : t("home.kindHuman")}
+                  </Tag>
+                </div>
+                <strong className="home-side-card-title">{principal.globalDisplayName}</strong>
+                <Paragraph type="secondary" className="home-side-card-desc">
+                  {principal.loginKey}
+                </Paragraph>
+              </>
+            ) : (
+              <>
+                <div className="home-side-card-topline">
+                  <Tag color="default" className="home-step-badge">
+                    {t("header.loginButton")}
+                  </Tag>
+                </div>
+                <strong className="home-side-card-title">{t("home.identityMissing")}</strong>
+                <Paragraph type="secondary" className="home-side-card-desc">
+                  {t("home.identityMissingHint")}
+                </Paragraph>
+              </>
+            )}
+            {principal ? (
+              <Tooltip title={t("home.secondaryActionEditIdentity")}>
+                <Button
+                  block
+                  size="small"
+                  className="home-side-card-action"
+                  onClick={() => setLoginOpen(true)}
+                >
+                  {t("home.secondaryActionEditIdentity")}
+                </Button>
+              </Tooltip>
             ) : null}
           </Card>
         </div>
@@ -70,31 +95,34 @@ export function HomeSidebar() {
         <section className="home-side-section">
           <div className="home-side-header">
             <Title level={5}>{t("home.lobbyTitle")}</Title>
-            <Text type="secondary">
-              {t("home.sidebarSnapshotOnline", { count: lobbyCitizens.length })}
-            </Text>
+            <Text type="secondary">{t("home.sidebarSnapshotOnline", { count: lobbyCitizens.length })}</Text>
           </div>
           <div className="home-side-cards">
             {visiblePrincipals.map((item) => (
               <Card key={item.id} size="small" variant="borderless" className="home-side-card">
-                <Tag color="success" className="home-step-badge">
-                  {item.kind === "agent" ? t("home.kindAgent") : t("home.kindHuman")}
-                </Tag>
-                <strong>
-                  {item.globalDisplayName}
-                </strong>
+                <div className="home-side-card-topline">
+                  <Tag color={item.kind === "agent" ? "cyan" : "green"} className="home-step-badge">
+                    {item.kind === "agent" ? t("home.kindAgent") : t("home.kindHuman")}
+                  </Tag>
+                  {item.runtimeStatus ? (
+                    <Tag className="home-side-runtime-tag">{t(`runtimeStatus.${item.runtimeStatus}`)}</Tag>
+                  ) : null}
+                </div>
+                <strong className="home-side-card-title">{item.globalDisplayName}</strong>
                 <Text type="secondary" className="home-side-card-desc">
-                  {item.loginKey}
+                  {maskLoginKey(item.loginKey)}
                 </Text>
-                <Button
-                  block
-                  size="small"
-                  icon={<MessageOutlined />}
-                  loading={actioningPrincipalId === (item.citizenId ?? item.id)}
-                  onClick={() => void handleStartDirectRoom(item.citizenId ?? item.id)}
-                >
-                  {t("onlineMembers.startChat")}
-                </Button>
+                <Tooltip title={t("onlineMembers.startChat")}>
+                  <Button
+                    size="small"
+                    shape="circle"
+                    className="home-side-icon-action"
+                    icon={<MessageOutlined />}
+                    loading={actioningPrincipalId === (item.citizenId ?? item.id)}
+                    onClick={() => void handleStartDirectRoom(item.citizenId ?? item.id)}
+                    aria-label={t("onlineMembers.startChat")}
+                  />
+                </Tooltip>
               </Card>
             ))}
             {visiblePrincipals.length === 0 && (

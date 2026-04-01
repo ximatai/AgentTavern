@@ -5,6 +5,7 @@ import { Modal, Select } from "antd";
 
 import { toast } from "../lib/feedback";
 import { copyText } from "../lib/clipboard";
+import { maskLoginKey } from "../lib/identity";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 import { LoginModal } from "./LoginModal";
@@ -76,7 +77,7 @@ function IdentitySection() {
           <div className="identity-actions">
             <span className="identity-action">
               <SettingOutlined style={{ fontSize: 12 }} />
-              <span>{t("header.editProfile")}</span>
+              <span>{maskLoginKey(principal.loginKey)}</span>
             </span>
           </div>
         </div>

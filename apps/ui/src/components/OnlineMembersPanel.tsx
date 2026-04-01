@@ -4,6 +4,7 @@ import { TeamOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 
 import { toast } from "../lib/feedback";
+import { maskLoginKey } from "../lib/identity";
 import { useRoomStore } from "../stores/room";
 import { useCitizenStore } from "../stores/citizen";
 
@@ -97,7 +98,7 @@ export function OnlineMembersPanel() {
                     ) : null}
                   </div>
                   <div className="online-members-panel-login-key">
-                    {item.loginKey}
+                    {maskLoginKey(item.loginKey)}
                   </div>
                 </div>
                 {isSelf ? (
