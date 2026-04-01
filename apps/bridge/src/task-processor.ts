@@ -52,6 +52,7 @@ export async function processTask(params: {
   }
 
   let finalText = "";
+  let reasoningText = "";
 
   try {
     for await (const event of driver.run(task)) {
@@ -65,7 +66,27 @@ export async function processTask(params: {
         continue;
       }
 
+      if (event.type === "reasoning") {
+        reasoningText += event.text;
+        await postJson(`/api/bridges/${bridgeId}/tasks/${task.id}/delta`, {
+          bridgeToken,
+          bridgeInstanceId,
+          kind: "reasoning",
+          delta: event.text,
+        });
+        continue;
+      }
+
       if (event.type === "completed") {
+        if (event.reasoningText && !reasoningText) {
+          reasoningText = event.reasoningText;
+          await postJson(`/api/bridges/${bridgeId}/tasks/${task.id}/delta`, {
+            bridgeToken,
+            bridgeInstanceId,
+            kind: "reasoning",
+            delta: event.reasoningText,
+          });
+        }
         const action = compactMessageAction(
           completedEventToAction({
             event,

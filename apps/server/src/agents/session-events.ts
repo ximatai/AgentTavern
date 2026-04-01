@@ -74,6 +74,24 @@ export function createStreamDeltaEvent(
   };
 }
 
+export function createReasoningDeltaEvent(
+  roomId: string,
+  sessionId: string,
+  messageId: string,
+  delta: string,
+): RealtimeEvent {
+  return {
+    type: "agent.stream.reasoning",
+    roomId,
+    timestamp: now(),
+    payload: {
+      sessionId,
+      messageId,
+      delta,
+    },
+  };
+}
+
 export function createMessageCreatedEvent(roomId: string, message: Message): RealtimeEvent {
   return {
     type: "message.created",

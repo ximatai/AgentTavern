@@ -54,6 +54,7 @@ import { toPublicMessage } from "../lib/public";
 import { broadcastToRoom } from "../realtime";
 import {
   completeSessionAction,
+  createReasoningDeltaEvent,
   createStreamDeltaEvent,
   failSession,
   markSessionRunning,
@@ -633,6 +634,7 @@ async function runAgentSession(sessionId: string): Promise<void> {
 
   const runningSession = markSessionRunning(typedSession);
   let finalText = "";
+  let reasoningText = "";
   let completedAction: AgentMessageAction | null = null;
   let failedError: string | null = null;
 
@@ -647,12 +649,28 @@ async function runAgentSession(sessionId: string): Promise<void> {
         continue;
       }
 
+      if (event.type === "reasoning") {
+        reasoningText += event.text;
+        broadcastToRoom(
+          session.roomId,
+          createReasoningDeltaEvent(session.roomId, session.id, outputMessageId, event.text),
+        );
+        continue;
+      }
+
       if (event.type === "failed") {
         failedError = event.error;
         break;
       }
 
       if (event.type === "completed") {
+        if (event.reasoningText && !reasoningText) {
+          reasoningText = event.reasoningText;
+          broadcastToRoom(
+            session.roomId,
+            createReasoningDeltaEvent(session.roomId, session.id, outputMessageId, event.reasoningText),
+          );
+        }
         completedAction = completedEventToAction({
           event,
           streamedText: finalText,

@@ -10,6 +10,7 @@ import { verifyCitizenToken } from "../realtime";
 import { isSupportedAgentBackendType, normalizeAgentBackendConfig, now } from "./support";
 
 const serverConfigRoutes = new Hono();
+const TEST_REQUEST_TIMEOUT_MS = 10_000;
 
 type StoredServerConfig = {
   id: string;
@@ -85,6 +86,54 @@ function requireCitizenAuth(params: { citizenId: string; citizenToken: string })
   }
 
   return { citizen };
+}
+
+async function testOpenAICompatibleConfig(config: OpenAICompatibleBackendConfig): Promise<string | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), TEST_REQUEST_TIMEOUT_MS);
+
+  try {
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+      accept: "application/json",
+      ...(config.headers ?? {}),
+    };
+
+    if (config.apiKey) {
+      headers.authorization = `Bearer ${config.apiKey}`;
+    }
+
+    const response = await fetch(`${config.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model: config.model,
+        stream: false,
+        messages: [{ role: "user", content: "ping" }],
+        max_tokens: 1,
+        temperature: 0,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const bodyText = await response.text().catch(() => "");
+      const trimmed = bodyText.trim();
+      return trimmed
+        ? `openai-compatible backend request failed (${response.status}): ${trimmed}`
+        : `openai-compatible backend request failed (${response.status})`;
+    }
+
+    return null;
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      return "openai-compatible backend request timed out";
+    }
+
+    return error instanceof Error ? error.message : "openai-compatible backend request failed";
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 serverConfigRoutes.get("/api/me/server-configs", (c) => {
@@ -175,6 +224,41 @@ serverConfigRoutes.post("/api/me/server-configs", async (c) => {
   db.insert(serverConfigs).values(record).run();
 
   return c.json(toOwnerPayload(record), 201);
+});
+
+serverConfigRoutes.post("/api/me/server-configs/test", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const citizenId = typeof body?.citizenId === "string" ? body.citizenId.trim() : "";
+  const citizenToken = typeof body?.citizenToken === "string" ? body.citizenToken.trim() : "";
+  const backendType = isSupportedAgentBackendType(body?.backendType) ? body.backendType : null;
+  const auth = requireCitizenAuth({ citizenId, citizenToken });
+
+  if ("error" in auth) {
+    return c.json(auth.error, auth.status);
+  }
+
+  if (!backendType) {
+    return c.json({ error: "backendType is required" }, 400);
+  }
+
+  if (backendType !== "openai_compatible") {
+    return c.json({ error: "only openai_compatible backend supports server config testing" }, 400);
+  }
+
+  const { backendConfig, error } = normalizeAgentBackendConfig(backendType, body?.config);
+
+  if (error || !backendConfig) {
+    return c.json({ error: error ?? "server config requires config" }, 400);
+  }
+
+  const normalizedConfig = JSON.parse(backendConfig) as OpenAICompatibleBackendConfig;
+  const testError = await testOpenAICompatibleConfig(normalizedConfig);
+
+  if (testError) {
+    return c.json({ error: testError }, 400);
+  }
+
+  return c.json({ ok: true });
 });
 
 serverConfigRoutes.patch("/api/me/server-configs/:configId", async (c) => {

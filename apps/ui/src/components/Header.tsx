@@ -9,6 +9,8 @@ import { LanguageSwitcher } from "./LanguageSwitcher";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 import { LoginModal } from "./LoginModal";
 import { AssistantManagementModal } from "./AssistantManagementModal";
+import { ServerConfigManagementModal } from "./ServerConfigManagementModal";
+import { AgentCitizenManagementModal } from "./AgentCitizenManagementModal";
 import { RoomSecretaryModal } from "./RoomSecretaryModal";
 import { useCitizenStore } from "../stores/citizen";
 import { useConnectionStore } from "../stores/connection";
@@ -95,6 +97,8 @@ export function Header() {
   const transferRoomOwnership = useRoomStore((s) => s.transferRoomOwnership);
   const connectionStatus = useConnectionStore((s) => s.status);
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [resourceOpen, setResourceOpen] = useState(false);
+  const [agentCitizenOpen, setAgentCitizenOpen] = useState(false);
   const [secretaryOpen, setSecretaryOpen] = useState(false);
   const [copyingRoomInvite, setCopyingRoomInvite] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
@@ -254,11 +258,29 @@ export function Header() {
           <>
             <button type="button" className="assistant-badge" onClick={() => setAssistantOpen(true)}>
               <RobotOutlined />
-              <span>{t("header.assistants")}</span>
+              <span>{t("header.privateAssistants")}</span>
+            </button>
+            <button type="button" className="assistant-badge assistant-badge-secondary" onClick={() => setResourceOpen(true)}>
+              <SettingOutlined />
+              <span>{t("header.modelConnections")}</span>
+            </button>
+            <button type="button" className="assistant-badge assistant-badge-secondary" onClick={() => setAgentCitizenOpen(true)}>
+              <TeamOutlined />
+              <span>{t("header.independentAgents")}</span>
             </button>
             <AssistantManagementModal
               open={assistantOpen}
               onClose={() => setAssistantOpen(false)}
+              onOpenModelConnections={() => setResourceOpen(true)}
+            />
+            <ServerConfigManagementModal
+              open={resourceOpen}
+              onClose={() => setResourceOpen(false)}
+            />
+            <AgentCitizenManagementModal
+              open={agentCitizenOpen}
+              onClose={() => setAgentCitizenOpen(false)}
+              onOpenModelConnections={() => setResourceOpen(true)}
             />
           </>
         )}

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { PublicMember } from "@agent-tavern/shared";
+import type { PublicMember, PublicMessage } from "@agent-tavern/shared";
 
 import { useMessageStore } from "../stores/message";
 import { useRoomStore } from "../stores/room";
+import { useSessionStore } from "../stores/session";
+import type { SessionStream } from "../types";
 import { MessageRow } from "./MessageRow";
 
 const AUTO_SCROLL_THRESHOLD = 48;
@@ -68,6 +70,10 @@ function buildMessageMemberSnapshot(
   };
 }
 
+function isSessionStream(message: PublicMessage | SessionStream): message is SessionStream {
+  return "sessionId" in message && typeof message.sessionId === "string";
+}
+
 export function MessageList() {
   const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -79,6 +85,7 @@ export function MessageList() {
   const members = useRoomStore((s) => s.members);
   const streams = useMessageStore((s) => s.streams);
   const rawMessages = useMessageStore((s) => s.messages);
+  const sessionSnapshots = useSessionStore((s) => s.sessionSnapshots);
 
   const messages = useMemo(() => {
     return [...rawMessages, ...Object.values(streams)];
@@ -182,7 +189,7 @@ export function MessageList() {
       )}
 
       {visibleMessages.map((msg) => {
-        const isStream = "sessionId" in msg;
+        const isStream = isSessionStream(msg);
         const sender = memberMap.get(msg.senderMemberId) ?? buildMessageMemberSnapshot(msg.senderMemberId, msg);
         const isSelf = msg.senderMemberId === self?.memberId;
         const isAgent = sender?.type === "agent" || msg.messageType === "agent_text";
@@ -216,11 +223,17 @@ export function MessageList() {
         const replyTargetSender = replyTarget
           ? memberMap.get(replyTarget.senderMemberId) ?? buildMessageMemberSnapshot(replyTarget.senderMemberId, replyTarget)
           : undefined;
+        const sessionSnapshot = isStream
+          ? sessionSnapshots[msg.sessionId]
+          : Object.values(sessionSnapshots).find((session) => session.outputMessageId === msg.id);
+        const streamReasoning = isStream ? msg.reasoningContent : undefined;
+        const reasoningContent = streamReasoning ?? sessionSnapshot?.reasoningText ?? "";
 
         return (
           <MessageRow
             key={msg.id}
             message={msg}
+            reasoningContent={reasoningContent}
             authorLabel={authorLabel}
             tone={tone}
             isSelf={isSelf}

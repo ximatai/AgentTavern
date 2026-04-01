@@ -54,6 +54,18 @@ async function createServerConfig(params: {
   });
 }
 
+async function testServerConfig(params: {
+  citizenId: string;
+  citizenToken: string;
+  backendType: AgentBackendType;
+  config: OpenAICompatibleBackendConfig;
+}): Promise<{ ok: true }> {
+  return request<{ ok: true }>("/api/me/server-configs/test", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
 async function updateServerConfig(params: {
   configId: string;
   citizenId: string;
@@ -91,6 +103,7 @@ export {
   getMyServerConfigs,
   getSharedServerConfigs,
   createServerConfig,
+  testServerConfig,
   updateServerConfig,
   removeServerConfig,
 };

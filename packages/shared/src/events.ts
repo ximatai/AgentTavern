@@ -73,6 +73,16 @@ export type AgentSessionEvent =
       };
     }
   | {
+      type: "agent.stream.reasoning";
+      roomId: string;
+      timestamp: string;
+      payload: {
+        sessionId: string;
+        messageId: string;
+        delta: string;
+      };
+    }
+  | {
       type: "agent.message.committed";
       roomId: string;
       timestamp: string;

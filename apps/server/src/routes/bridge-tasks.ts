@@ -8,6 +8,7 @@ import { db } from "../db/client";
 import { agentBindings, agentSessions, bridgeTasks, localBridges, members, rooms } from "../db/schema";
 import {
   completeSessionAction,
+  createReasoningDeltaEvent,
   createStreamDeltaEvent,
   failSession,
   markSessionRunning,
@@ -379,6 +380,7 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/delta", async (c) =>
   const bridgeInstanceId =
     typeof body?.bridgeInstanceId === "string" ? body.bridgeInstanceId.trim() : "";
   const delta = typeof body?.delta === "string" ? body.delta : "";
+  const kind = body?.kind === "reasoning" ? "reasoning" : "content";
 
   if (!bridgeToken || !bridgeInstanceId || !delta) {
     return c.json({ error: "bridgeToken, bridgeInstanceId, and delta are required" }, 400);
@@ -409,7 +411,9 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/delta", async (c) =>
 
   broadcastToRoom(
     task.roomId,
-    createStreamDeltaEvent(task.roomId, task.sessionId, task.outputMessageId, delta),
+    kind === "reasoning"
+      ? createReasoningDeltaEvent(task.roomId, task.sessionId, task.outputMessageId, delta)
+      : createStreamDeltaEvent(task.roomId, task.sessionId, task.outputMessageId, delta),
   );
 
   return c.json({ ok: true });

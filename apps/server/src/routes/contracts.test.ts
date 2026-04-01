@@ -2971,6 +2971,114 @@ test("citizen can manage private and shared server configs", async () => {
   );
 });
 
+test("citizen can test an openai-compatible server config before saving", async () => {
+  const bootstrapResponse = await app.request("http://localho../api/citizens/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "server-config-test@example.com",
+      globalDisplayName: "ServerConfigTest",
+    }),
+  });
+  const citizen = await bootstrapResponse.json();
+
+  const originalFetch = globalThis.fetch;
+  const calls: Array<{ url: string; init?: RequestInit }> = [];
+  globalThis.fetch = (async (url, init) => {
+    calls.push({ url: String(url), init });
+    return new Response(
+      JSON.stringify({
+        id: "chatcmpl_test",
+        choices: [{ message: { role: "assistant", content: "pong" }, finish_reason: "stop" }],
+      }),
+      {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      },
+    );
+  }) as typeof fetch;
+
+  try {
+    const testResponse = await app.request("http://localhost/api/me/server-configs/test", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        citizenId: citizen.citizenId,
+        citizenToken: citizen.citizenToken,
+        backendType: "openai_compatible",
+        config: {
+          baseUrl: "http://127.0.0.1:1234/v1/",
+          model: "qwen-test",
+          apiKey: "secret-token",
+        },
+      }),
+    });
+
+    assert.equal(testResponse.status, 200);
+    assert.deepEqual(await testResponse.json(), { ok: true });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]?.url, "http://127.0.0.1:1234/v1/chat/completions");
+    assert.deepEqual(calls[0]?.init?.headers, {
+      "content-type": "application/json",
+      accept: "application/json",
+      authorization: "Bearer secret-token",
+    });
+    assert.deepEqual(JSON.parse(String(calls[0]?.init?.body)), {
+      model: "qwen-test",
+      stream: false,
+      messages: [{ role: "user", content: "ping" }],
+      max_tokens: 1,
+      temperature: 0,
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("server config test returns backend errors clearly", async () => {
+  const bootstrapResponse = await app.request("http://localho../api/citizens/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "server-config-test-fail@example.com",
+      globalDisplayName: "ServerConfigTestFail",
+    }),
+  });
+  const citizen = await bootstrapResponse.json();
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response('{"error":"bad model"}', {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    })) as typeof fetch;
+
+  try {
+    const testResponse = await app.request("http://localhost/api/me/server-configs/test", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        citizenId: citizen.citizenId,
+        citizenToken: citizen.citizenToken,
+        backendType: "openai_compatible",
+        config: {
+          baseUrl: "http://127.0.0.1:1234/v1/",
+          model: "missing-model",
+        },
+      }),
+    });
+
+    assert.equal(testResponse.status, 400);
+    assert.deepEqual(await testResponse.json(), {
+      error: 'openai-compatible backend request failed (400): {"error":"bad model"}',
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("citizen can create an openai-compatible private assistant from a shared server config", async () => {
   const ownerResponse = await app.request("http://localho../api/citizens/bootstrap", {
     method: "POST",
@@ -5877,6 +5985,20 @@ test("unattached codex binding fails with a local bridge requirement message", a
 test("attached codex binding can be pulled and completed through bridge task endpoints", async () => {
   const roomId = "room_codex_bridge_task";
   const createdAt = new Date("2026-03-25T07:00:00.000Z").toISOString();
+  const requesterToken = issueWsToken("mem_requester_bridge_task", roomId);
+  const sent: string[] = [];
+  const listeners = new Map<string, () => void>();
+  const fakeSocket = {
+    readyState: WebSocket.OPEN,
+    close() {},
+    send(payload: string) {
+      sent.push(payload);
+    },
+    on(event: string, handler: () => void) {
+      listeners.set(event, handler);
+      return this;
+    },
+  };
 
   seedRoom({
     roomId,
@@ -5950,7 +6072,10 @@ test("attached codex binding can be pulled and completed through bridge task end
     detachedAt: null,
   }).run();
 
-  const requesterToken = issueWsToken("mem_requester_bridge_task", roomId);
+  registerSocket(fakeSocket as never, {
+    url: `/?roomId=${roomId}&memberId=mem_requester_bridge_task&wsToken=${requesterToken}`,
+  } as never);
+
   const messageResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -6041,6 +6166,22 @@ test("attached codex binding can be pulled and completed through bridge task end
 
   assert.equal(deltaResponse.status, 200);
 
+  const reasoningDeltaResponse = await app.request(
+    `http://localhost/api/bridges/brg_codex_task/tasks/${pulled.task.id}/delta`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        bridgeToken: "bridge_codex_task_token",
+        bridgeInstanceId: "binst_codex_task",
+        kind: "reasoning",
+        delta: "thinking through the request",
+      }),
+    },
+  );
+
+  assert.equal(reasoningDeltaResponse.status, 200);
+
   const completeResponse = await app.request(
     `http://localhost/api/bridges/brg_codex_task/tasks/${pulled.task.id}/complete`,
     {
@@ -6097,6 +6238,16 @@ test("attached codex binding can be pulled and completed through bridge task end
         message.content === "final bridge output",
     ),
   );
+
+  const reasoningEvent = sent
+    .map((payload) => JSON.parse(payload))
+    .find((event) => event.type === "agent.stream.reasoning");
+
+  assert.equal(reasoningEvent?.payload?.sessionId, session?.id);
+  assert.equal(reasoningEvent?.payload?.messageId, task?.outputMessageId);
+  assert.equal(reasoningEvent?.payload?.delta, "thinking through the request");
+
+  listeners.get("close")?.();
 });
 
 test("bridge-completed agent replies can mention another independent agent and trigger a follow-up session", async () => {
