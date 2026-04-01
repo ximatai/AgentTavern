@@ -139,6 +139,7 @@ export type PrivateAssistant = {
   backendType: AgentBackendType;
   backendThreadId: string | null;
   backendConfig?: string | null;
+  sourceServerConfigId?: string | null;
   status: PrivateAssistantStatus;
   createdAt: string;
 };

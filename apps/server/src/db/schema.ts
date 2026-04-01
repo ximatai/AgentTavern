@@ -79,6 +79,7 @@ export const privateAssistants = sqliteTable("private_assistants", {
   backendType: text("backend_type").notNull(),
   backendThreadId: text("backend_thread_id"),
   backendConfig: text("backend_config"),
+  sourceServerConfigId: text("source_server_config_id").references(() => serverConfigs.id),
   status: text("status").notNull(),
   createdAt: text("created_at").notNull(),
 }, (table) => ({

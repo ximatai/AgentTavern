@@ -2971,6 +2971,94 @@ test("citizen can manage private and shared server configs", async () => {
   );
 });
 
+test("deleting a server config cascades to openai-compatible agents created from it", async () => {
+  const ownerResponse = await app.request("http://localho../api/citizens/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "server-config-cascade-owner@example.com",
+      globalDisplayName: "ServerConfigCascadeOwner",
+    }),
+  });
+  const owner = await ownerResponse.json();
+
+  const configCreateResponse = await app.request("http://localhost/api/me/server-configs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      citizenId: owner.citizenId,
+      citizenToken: owner.citizenToken,
+      name: "Cascade Config",
+      backendType: "openai_compatible",
+      visibility: "private",
+      config: {
+        baseUrl: "http://127.0.0.1:4444/v1/",
+        model: "cascade-qwen",
+        apiKey: "cascade-secret",
+      },
+    }),
+  });
+  assert.equal(configCreateResponse.status, 201);
+  const createdConfig = await configCreateResponse.json();
+
+  const createCitizenResponse = await app.request("http://localhost/api/me/agent-citizens", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      actorCitizenId: owner.citizenId,
+      actorCitizenToken: owner.citizenToken,
+      loginKey: "agent:cascade:config",
+      globalDisplayName: "CascadeAgent",
+      serverConfigId: createdConfig.id,
+    }),
+  });
+  assert.equal(createCitizenResponse.status, 201);
+  const createdCitizen = await createCitizenResponse.json();
+
+  const createAssistantResponse = await app.request("http://localhost/api/me/assistants", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      citizenId: owner.citizenId,
+      citizenToken: owner.citizenToken,
+      name: "CascadeAssistant",
+      serverConfigId: createdConfig.id,
+    }),
+  });
+  assert.equal(createAssistantResponse.status, 201);
+  const createdAssistant = await createAssistantResponse.json();
+
+  const deleteResponse = await app.request(
+    `http://localhost/api/me/server-configs/${createdConfig.id}?citizenId=${owner.citizenId}&citizenToken=${owner.citizenToken}`,
+    {
+      method: "DELETE",
+    },
+  );
+  assert.equal(deleteResponse.status, 200);
+
+  assert.equal(
+    db.select().from(serverConfigs).where(eq(serverConfigs.id, createdConfig.id)).get(),
+    undefined,
+  );
+  assert.equal(
+    db.select().from(citizens).where(eq(citizens.id, createdCitizen.citizenId)).get(),
+    undefined,
+  );
+  assert.equal(
+    db.select().from(agentBindings).where(eq(agentBindings.citizenId, createdCitizen.citizenId)).get(),
+    undefined,
+  );
+  assert.equal(
+    db.select().from(privateAssistants).where(eq(privateAssistants.id, createdAssistant.id)).get(),
+    undefined,
+  );
+  assert.equal(
+    db.select().from(agentBindings).where(eq(agentBindings.privateAssistantId, createdAssistant.id)).get(),
+    undefined,
+  );
+});
+
 test("citizen can test an openai-compatible server config before saving", async () => {
   const bootstrapResponse = await app.request("http://localho../api/citizens/bootstrap", {
     method: "POST",
@@ -3141,6 +3229,7 @@ test("citizen can create an openai-compatible private assistant from a shared se
     .where(eq(privateAssistants.id, assistant.id))
     .get();
   assert.equal(storedAssistant?.ownerCitizenId, consumer.citizenId);
+  assert.equal(storedAssistant?.sourceServerConfigId, createdConfig.id);
   assert.equal(
     storedAssistant?.backendConfig,
     JSON.stringify({

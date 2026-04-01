@@ -5,8 +5,9 @@ import type { AgentBackendType, OpenAICompatibleBackendConfig, ServerConfigVisib
 
 import { db } from "../db/client";
 import { citizens, serverConfigs } from "../db/schema";
+import { deleteAgentAssetsForServerConfig } from "../lib/agent-assets";
 import { createId } from "../lib/id";
-import { verifyCitizenToken } from "../realtime";
+import { broadcastToRoom, revokeCitizenTokensForCitizen, revokeWsTokensForMember, verifyCitizenToken } from "../realtime";
 import { isSupportedAgentBackendType, normalizeAgentBackendConfig, now } from "./support";
 
 const serverConfigRoutes = new Hono();
@@ -358,7 +359,33 @@ serverConfigRoutes.delete("/api/me/server-configs/:configId", (c) => {
     return c.json({ error: "server config does not belong to actor citizen" }, 403);
   }
 
+  const timestamp = now();
+  const deletedAssets = deleteAgentAssetsForServerConfig(configId, timestamp);
   db.delete(serverConfigs).where(eq(serverConfigs.id, configId)).run();
+
+  for (const membership of deletedAssets.citizenMemberships) {
+    revokeWsTokensForMember(membership.id, membership.roomId);
+    broadcastToRoom(membership.roomId, {
+      type: "member.left",
+      roomId: membership.roomId,
+      timestamp,
+      payload: { memberId: membership.id },
+    });
+  }
+
+  for (const projection of deletedAssets.assistantProjections) {
+    broadcastToRoom(projection.roomId, {
+      type: "member.left",
+      roomId: projection.roomId,
+      timestamp,
+      payload: { memberId: projection.id },
+    });
+  }
+
+  for (const removedCitizenId of deletedAssets.removedCitizenIds) {
+    revokeCitizenTokensForCitizen(removedCitizenId);
+  }
+
   return c.json({ ok: true });
 });
 

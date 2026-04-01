@@ -183,6 +183,13 @@
       "when": 1775000000000,
       "tag": "0025_citizen_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1775001000000,
+      "tag": "0026_private_assistant_source_server_config",
+      "breakpoints": true
     }
   ]
 }

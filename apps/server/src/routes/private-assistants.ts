@@ -21,6 +21,7 @@ import {
   rooms,
   serverConfigs,
 } from "../db/schema";
+import { removePrivateAssistantAsset } from "../lib/agent-assets";
 import { resolveBindingForPrivateAssistant } from "../lib/agent-binding-resolution";
 import { createId, createInviteToken } from "../lib/id";
 import { resolveMemberRuntimeStatus } from "../lib/member-runtime";
@@ -323,6 +324,7 @@ privateAssistantRoutes.post("/api/me/assistants", async (c) => {
     backendType,
     backendThreadId,
     backendConfig,
+    sourceServerConfigId: requestedServerConfigId || null,
     status: "pending_bridge",
     createdAt: now(),
   };
@@ -724,19 +726,9 @@ privateAssistantRoutes.delete("/api/me/assistants/:assistantId", (c) => {
     return c.json({ error: "private assistant does not belong to actor citizen" }, 403);
   }
 
-  const projections = db
-    .select()
-    .from(members)
-    .where(eq(members.sourcePrivateAssistantId, assistantId))
-    .all() as Member[];
+  const { projections } = removePrivateAssistantAsset(assistantId);
 
   for (const projection of projections) {
-    db
-      .update(members)
-      .set({ presenceStatus: "offline" })
-      .where(eq(members.id, projection.id))
-      .run();
-
     broadcastToRoom(projection.roomId, {
       type: "member.left",
       roomId: projection.roomId,
@@ -744,20 +736,6 @@ privateAssistantRoutes.delete("/api/me/assistants/:assistantId", (c) => {
       payload: { memberId: projection.id },
     });
   }
-
-  db
-    .update(privateAssistantInvites)
-    .set({ status: "revoked", acceptedPrivateAssistantId: null })
-    .where(
-      and(
-        eq(privateAssistantInvites.ownerCitizenId, citizenId),
-        eq(privateAssistantInvites.acceptedPrivateAssistantId, assistantId),
-      ),
-    )
-    .run();
-
-  db.delete(agentBindings).where(eq(agentBindings.privateAssistantId, assistant.id)).run();
-  db.delete(privateAssistants).where(eq(privateAssistants.id, assistantId)).run();
 
   broadcastPrivateAssistantChanged(citizenId, "assistant_deleted");
 

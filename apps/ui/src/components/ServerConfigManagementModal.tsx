@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Modal, Input, Button, Typography, Tag, Select } from "antd";
-import { ApiOutlined, DeleteOutlined, PlusOutlined } from "@ant-design/icons";
+import { ApiOutlined, DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 
 import { toast } from "../lib/feedback";
@@ -56,10 +56,29 @@ export function ServerConfigManagementModal({
   const [serverConfigModel, setServerConfigModel] = useState("");
   const [serverConfigApiKey, setServerConfigApiKey] = useState("");
   const [serverConfigVisibility, setServerConfigVisibility] = useState<"private" | "shared">("private");
-  const [creatingServerConfig, setCreatingServerConfig] = useState(false);
+  const [editingServerConfigId, setEditingServerConfigId] = useState<string | null>(null);
+  const [savingServerConfig, setSavingServerConfig] = useState(false);
   const [testingServerConfig, setTestingServerConfig] = useState(false);
   const [removingServerConfigId, setRemovingServerConfigId] = useState<string | null>(null);
   const [updatingServerConfigId, setUpdatingServerConfigId] = useState<string | null>(null);
+
+  const resetServerConfigForm = useCallback(() => {
+    setServerConfigNameInput("");
+    setServerConfigBaseUrl("");
+    setServerConfigModel("");
+    setServerConfigApiKey("");
+    setServerConfigVisibility("private");
+    setEditingServerConfigId(null);
+  }, []);
+
+  const startEditingServerConfig = useCallback((config: ServerConfigRecord) => {
+    setEditingServerConfigId(config.id);
+    setServerConfigNameInput(config.name);
+    setServerConfigBaseUrl(config.config.baseUrl);
+    setServerConfigModel(config.config.model);
+    setServerConfigApiKey(config.config.apiKey ?? "");
+    setServerConfigVisibility(config.visibility);
+  }, []);
 
   const refreshData = useCallback(async () => {
     if (!principal) {
@@ -87,37 +106,53 @@ export function ServerConfigManagementModal({
     }
   }, [open, refreshData]);
 
-  async function handleCreateServerConfig() {
+  async function handleSubmitServerConfig() {
     const name = serverConfigNameInput.trim();
     const baseUrl = serverConfigBaseUrl.trim();
     const model = serverConfigModel.trim();
     if (!principal || !name || !baseUrl || !model) return;
 
-    setCreatingServerConfig(true);
+    setSavingServerConfig(true);
     try {
-      const created = await createServerConfig({
+      const payload = {
         citizenId: principal.citizenId,
         citizenToken: principal.citizenToken,
         name,
-        backendType: "openai_compatible",
         visibility: serverConfigVisibility,
         config: {
           baseUrl,
           model,
           ...(serverConfigApiKey.trim() ? { apiKey: serverConfigApiKey.trim() } : {}),
         },
-      });
-      setServerConfigs((prev) => sortByCreatedAt([...prev, created]));
-      setServerConfigNameInput("");
-      setServerConfigBaseUrl("");
-      setServerConfigModel("");
-      setServerConfigApiKey("");
-      setServerConfigVisibility("private");
-      toast().success(t("assistantPanel.createConfigSuccess"));
+      } as const;
+
+      if (editingServerConfigId) {
+        const updated = await updateServerConfig({
+          configId: editingServerConfigId,
+          ...payload,
+        });
+        setServerConfigs((prev) =>
+          sortByCreatedAt(prev.map((item) => (item.id === editingServerConfigId ? updated : item))),
+        );
+        toast().success(t("assistantPanel.updateConfigSuccess"));
+      } else {
+        const created = await createServerConfig({
+          ...payload,
+          backendType: "openai_compatible",
+        });
+        setServerConfigs((prev) => sortByCreatedAt([...prev, created]));
+        toast().success(t("assistantPanel.createConfigSuccess"));
+      }
+
+      resetServerConfigForm();
     } catch (err) {
-      toast().error(err instanceof Error ? err.message : t("assistantPanel.createConfigFailed"));
+      toast().error(
+        err instanceof Error
+          ? err.message
+          : t(editingServerConfigId ? "assistantPanel.updateConfigFailed" : "assistantPanel.createConfigFailed"),
+      );
     } finally {
-      setCreatingServerConfig(false);
+      setSavingServerConfig(false);
     }
   }
 
@@ -240,6 +275,13 @@ export function ServerConfigManagementModal({
                   <div className="am-item-actions">
                     <Button
                       size="small"
+                      onClick={() => startEditingServerConfig(config)}
+                      icon={<EditOutlined />}
+                    >
+                      {t("assistantPanel.editConfig")}
+                    </Button>
+                    <Button
+                      size="small"
                       loading={updatingServerConfigId === config.id}
                       onClick={() => void handleToggleServerConfigVisibility(config)}
                     >
@@ -304,7 +346,9 @@ export function ServerConfigManagementModal({
 
         <div className="am-invite-section">
           <Text type="secondary" className="am-invite-label">
-            {t("resourcePanel.createTitle")}
+            {editingServerConfigId
+              ? t("assistantPanel.editConfigLabel")
+              : t("resourcePanel.createTitle")}
           </Text>
           <div className="am-form-grid">
             <Input
@@ -345,14 +389,21 @@ export function ServerConfigManagementModal({
             >
               {t("assistantPanel.testConfig")}
             </Button>
+            {editingServerConfigId ? (
+              <Button onClick={resetServerConfigForm}>
+                {t("assistantPanel.cancelEditConfig")}
+              </Button>
+            ) : null}
             <Button
               type="primary"
-              loading={creatingServerConfig}
-              onClick={() => void handleCreateServerConfig()}
+              loading={savingServerConfig}
+              onClick={() => void handleSubmitServerConfig()}
               icon={<PlusOutlined />}
               className="am-create-btn"
             >
-              {t("assistantPanel.createConfig")}
+              {editingServerConfigId
+                ? t("assistantPanel.updateConfig")
+                : t("assistantPanel.createConfig")}
             </Button>
           </div>
           <Text type="secondary" className="am-invite-tip">
