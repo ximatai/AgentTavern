@@ -21,7 +21,7 @@ import {
   createDraftAttachmentFromBuffer,
   resolveDraftAttachments,
 } from "../lib/message-attachments";
-import { normalizeRoomSummaryOutput } from "../lib/room-summary";
+import { normalizeRoomSummaryOutput, resolveVisibleReplyForSummaryOnly } from "../lib/room-summary";
 import { broadcastToRoom } from "../realtime";
 
 const bridgeTaskRoutes = new Hono();
@@ -490,15 +490,19 @@ bridgeTaskRoutes.post("/api/bridges/:bridgeId/tasks/:taskId/complete", async (c)
   }
 
   const allowSilentCompletion = allowsSilentCompletion(toAgentSession(session));
-  const parsedSummary =
-    room.secretaryMemberId === session.agentMemberId &&
-      room.secretaryMode === "coordinate_and_summarize"
-      ? normalizeRoomSummaryOutput({
-          visibleContent: action.content ?? "",
-          summaryText: action.summaryText ?? null,
-        })
-      : { visibleContent: action.content ?? "", summaryText: null };
-  const visibleFinalText = parsedSummary.visibleContent.trim();
+  const parsedSummary = normalizeRoomSummaryOutput({
+    visibleContent: action.content ?? "",
+    summaryText:
+      room.secretaryMemberId === session.agentMemberId &&
+        room.secretaryMode === "coordinate_and_summarize"
+        ? action.summaryText ?? null
+        : null,
+  });
+  const visibleFinalText = resolveVisibleReplyForSummaryOnly({
+    visibleContent: parsedSummary.visibleContent,
+    summaryText: parsedSummary.summaryText,
+    allowSilentCompletion,
+  });
 
   if (!visibleFinalText && attachmentIds.length === 0 && !allowSilentCompletion) {
     return c.json(

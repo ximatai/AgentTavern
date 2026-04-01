@@ -14,6 +14,10 @@ type RuntimeBinding = {
 
 type RuntimeBridge = typeof localBridges.$inferSelect | null;
 
+export function backendRequiresBridge(adapterType: string | null): boolean {
+  return adapterType === "codex_cli" || adapterType === "claude_code" || adapterType === "opencode";
+}
+
 export function isBridgeFresh(bridge?: RuntimeBridge): boolean {
   if (!bridge || bridge.status !== "online") {
     return false;
@@ -31,8 +35,12 @@ export function resolveMemberRuntimeStatus(
     return null;
   }
 
-  if (member.adapterType === "local_process") {
+  if (member.adapterType === "local_process" || member.adapterType === "openai_compatible") {
     return "ready";
+  }
+
+  if (!backendRequiresBridge(member.adapterType)) {
+    return null;
   }
 
   if (!binding || binding.status === "pending_bridge" || !binding.bridgeId) {

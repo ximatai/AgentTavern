@@ -107,6 +107,24 @@ function syncPrivateAssistantProjectionPresence(
   }
 }
 
+function resolveAssistantProjectionRuntimeStatus(member: Member): ReturnType<typeof resolveMemberRuntimeStatus> {
+  const binding = member.sourcePrivateAssistantId
+    ? resolveBindingForPrivateAssistant(member.sourcePrivateAssistantId)
+    : null;
+  const bridge = binding?.bridgeId
+    ? db.select().from(localBridges).where(eq(localBridges.id, binding.bridgeId)).get() ?? null
+    : null;
+
+  return resolveMemberRuntimeStatus(
+    {
+      type: member.type,
+      adapterType: member.adapterType,
+    },
+    binding,
+    bridge,
+  );
+}
+
 function ensurePrivateAssistantBinding(assistant: PrivateAssistant): void {
   if (!assistant.backendThreadId) {
     return;
@@ -842,12 +860,12 @@ privateAssistantRoutes.post("/api/rooms/:roomId/assistants/adopt", async (c) => 
       type: "member.joined",
       roomId,
       timestamp: now(),
-      payload: { member: toPublicMember(reusedMember, "pending_bridge") },
+      payload: { member: toPublicMember(reusedMember, resolveAssistantProjectionRuntimeStatus(reusedMember)) },
     };
 
     broadcastToRoom(roomId, event);
 
-    return c.json(toPublicMember(reusedMember, "pending_bridge"), 201);
+    return c.json(toPublicMember(reusedMember, resolveAssistantProjectionRuntimeStatus(reusedMember)), 201);
   }
 
   const dormantProjection = db
@@ -885,12 +903,12 @@ privateAssistantRoutes.post("/api/rooms/:roomId/assistants/adopt", async (c) => 
       type: "member.joined",
       roomId,
       timestamp: now(),
-      payload: { member: toPublicMember(reusedMember, "pending_bridge") },
+      payload: { member: toPublicMember(reusedMember, resolveAssistantProjectionRuntimeStatus(reusedMember)) },
     };
 
     broadcastToRoom(roomId, event);
 
-    return c.json(toPublicMember(reusedMember, "pending_bridge"), 201);
+    return c.json(toPublicMember(reusedMember, resolveAssistantProjectionRuntimeStatus(reusedMember)), 201);
   }
 
   const displayNameConflict = db
@@ -924,12 +942,12 @@ privateAssistantRoutes.post("/api/rooms/:roomId/assistants/adopt", async (c) => 
     type: "member.joined",
     roomId,
     timestamp: now(),
-    payload: { member: toPublicMember(member, "pending_bridge") },
+    payload: { member: toPublicMember(member, resolveAssistantProjectionRuntimeStatus(member)) },
   };
 
   broadcastToRoom(roomId, event);
 
-  return c.json(toPublicMember(member, "pending_bridge"), 201);
+  return c.json(toPublicMember(member, resolveAssistantProjectionRuntimeStatus(member)), 201);
 });
 
 privateAssistantRoutes.post("/api/rooms/:roomId/assistants/:assistantMemberId/offline", async (c) => {

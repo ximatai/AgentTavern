@@ -1718,7 +1718,7 @@ test("agent citizens can initiate direct rooms with humans", async () => {
   const lobbyAgent = lobby.citizens.find((item: { id: string }) => item.id === agent.citizenId);
   assert.ok(lobbyAgent);
   assert.equal(lobbyAgent.backendType, "codex_cli");
-  assert.equal(lobbyAgent.runtimeStatus, "pending_bridge");
+  assert.equal(lobbyAgent.runtimeStatus, "ready");
 
   const directRoomResponse = await app.request("http://localhost/api/direct-rooms", {
     method: "POST",
@@ -2092,7 +2092,7 @@ test("openai-compatible agent citizen bootstrap stores backendConfig and auto-ge
     baseUrl: "http://127.0.0.1:1234/v1",
     model: "qwen2.5-7b-instruct",
   });
-  assert.equal(lobbyAgent.runtimeStatus, "pending_bridge");
+  assert.equal(lobbyAgent.runtimeStatus, "ready");
 
   disconnectAgent();
 });
@@ -4712,6 +4712,275 @@ test("mentioning an independent agent triggers execution and commits a reply", a
         /independent agent:/i.test(message.content),
     ),
   );
+});
+
+test("mentioning an openai-compatible agent executes directly without bridge", async () => {
+  const roomId = "room_openai_direct_agent";
+  const createdAt = new Date("2026-03-25T04:05:00.000Z").toISOString();
+  const originalFetch = globalThis.fetch;
+
+  seedRoom({
+    roomId,
+    name: "OpenAI Direct Agent Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(citizens).values({
+    id: "prn_openai_direct_agent",
+    kind: "agent",
+    loginKey: "agent:openai-direct",
+    globalDisplayName: "OpenAIDirect",
+    backendType: "openai_compatible",
+    backendThreadId: "thread_openai_direct_agent",
+    backendConfig: JSON.stringify({
+      baseUrl: "http://127.0.0.1:1234/v1",
+      model: "qwen-test",
+    }),
+    sourceServerConfigId: null,
+    status: "offline",
+    createdAt,
+  }).run();
+
+  db.insert(agentBindings).values({
+    id: "agb_openai_direct_agent",
+    citizenId: "prn_openai_direct_agent",
+    privateAssistantId: null,
+    bridgeId: null,
+    backendType: "openai_compatible",
+    backendThreadId: "thread_openai_direct_agent",
+    cwd: null,
+    status: "pending_bridge",
+    attachedAt: createdAt,
+    detachedAt: null,
+  }).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_requester_openai_direct",
+      roomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "RequesterOpenAI",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_openai_direct",
+      roomId,
+      citizenId: "prn_openai_direct_agent",
+      type: "agent",
+      roleKind: "independent",
+      displayName: "OpenAIDirect",
+      ownerMemberId: null,
+      adapterType: "openai_compatible",
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+  ]).run();
+
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: "direct openai reply",
+            },
+            finish_reason: "stop",
+          },
+        ],
+      }),
+      {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      },
+    )) as typeof fetch;
+
+  try {
+    const requesterToken = issueWsToken("mem_requester_openai_direct", roomId);
+
+    const response = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        senderMemberId: "mem_requester_openai_direct",
+        wsToken: requesterToken,
+        content: "@OpenAIDirect please help",
+      }),
+    });
+
+    assert.equal(response.status, 201);
+
+    const session = await waitFor(
+      () =>
+        db
+          .select()
+          .from(agentSessions)
+          .where(eq(agentSessions.roomId, roomId))
+          .get(),
+      (value) => Boolean(value && value.status === "completed"),
+    );
+
+    const roomMessages = db
+      .select()
+      .from(messages)
+      .where(eq(messages.roomId, roomId))
+      .all();
+
+    assert.equal(session?.status, "completed");
+    assert.ok(
+      roomMessages.some(
+        (message) =>
+          message.messageType === "agent_text" &&
+          message.content === "direct openai reply",
+      ),
+    );
+    assert.ok(
+      roomMessages.every(
+        (message) =>
+          message.messageType !== "system_notice" ||
+          !String(message.systemData ?? "").includes("bridge_"),
+      ),
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("summary-only reply falls back to a short visible acknowledgement", async () => {
+  const roomId = "room_openai_summary_only_reply";
+  const createdAt = new Date("2026-03-25T04:06:00.000Z").toISOString();
+  const originalFetch = globalThis.fetch;
+
+  seedRoom({
+    roomId,
+    name: "OpenAI Summary Only Reply Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(citizens).values({
+    id: "prn_openai_summary_only",
+    kind: "agent",
+    loginKey: "agent:openai-summary-only",
+    globalDisplayName: "OpenAISummaryOnly",
+    backendType: "openai_compatible",
+    backendThreadId: "thread_openai_summary_only",
+    backendConfig: JSON.stringify({
+      baseUrl: "http://127.0.0.1:1234/v1",
+      model: "qwen-test",
+    }),
+    sourceServerConfigId: null,
+    status: "offline",
+    createdAt,
+  }).run();
+
+  db.insert(agentBindings).values({
+    id: "agb_openai_summary_only",
+    citizenId: "prn_openai_summary_only",
+    privateAssistantId: null,
+    bridgeId: null,
+    backendType: "openai_compatible",
+    backendThreadId: "thread_openai_summary_only",
+    cwd: null,
+    status: "pending_bridge",
+    attachedAt: createdAt,
+    detachedAt: null,
+  }).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_requester_openai_summary_only",
+      roomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "RequesterSummaryOnly",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_openai_summary_only",
+      roomId,
+      citizenId: "prn_openai_summary_only",
+      type: "agent",
+      roleKind: "independent",
+      displayName: "OpenAISummaryOnly",
+      ownerMemberId: null,
+      adapterType: "openai_compatible",
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+  ]).run();
+
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: "[[ROOM_SUMMARY]]User greeted the room; no new question.[[/ROOM_SUMMARY]]",
+            },
+            finish_reason: "stop",
+          },
+        ],
+      }),
+      {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      },
+    )) as typeof fetch;
+
+  try {
+    const requesterToken = issueWsToken("mem_requester_openai_summary_only", roomId);
+
+    const response = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        senderMemberId: "mem_requester_openai_summary_only",
+        wsToken: requesterToken,
+        content: "@OpenAISummaryOnly 你好",
+      }),
+    });
+
+    assert.equal(response.status, 201);
+
+    const session = await waitFor(
+      () =>
+        db
+          .select()
+          .from(agentSessions)
+          .where(eq(agentSessions.roomId, roomId))
+          .get(),
+      (value) => value?.status === "completed",
+    );
+
+    const roomMessages = db
+      .select()
+      .from(messages)
+      .where(eq(messages.roomId, roomId))
+      .all();
+
+    assert.equal(session?.status, "completed");
+    assert.ok(
+      roomMessages.some(
+        (message) =>
+          message.messageType === "agent_text" &&
+          message.content === "收到",
+      ),
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("agent prompts exclude hidden offline private assistants from the room roster", async () => {
