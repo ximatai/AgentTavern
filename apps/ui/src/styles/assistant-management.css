@@ -146,6 +146,11 @@
   flex-wrap: wrap;
 }
 
+.am-item-summary {
+  font-size: 12px !important;
+  word-break: break-all;
+}
+
 .am-item-status {
   font-size: 12px !important;
 }

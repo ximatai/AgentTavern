@@ -34,8 +34,21 @@ async function bootstrapPrincipal(params: {
   });
 }
 
+async function createAgentCitizen(params: {
+  actorPrincipalId: string;
+  actorPrincipalToken: string;
+  loginKey: string;
+  globalDisplayName: string;
+  serverConfigId: string;
+}): Promise<PrincipalSession> {
+  return request<PrincipalSession>("/api/me/agent-citizens", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
 async function getLobbyPresence(): Promise<{ principals: LobbyPrincipal[] }> {
   return request<{ principals: LobbyPrincipal[] }>("/api/presence/lobby");
 }
 
-export { bootstrapPrincipal, getLobbyPresence };
+export { bootstrapPrincipal, createAgentCitizen, getLobbyPresence };

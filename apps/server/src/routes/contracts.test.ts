@@ -1682,7 +1682,7 @@ test("direct room reuses the same two-principal room and room pull adds a lobby 
   assert.ok(roomMembers.find((member) => member.principalId === carol.principalId));
 });
 
-test("agent principals cannot initiate direct rooms because room owners must be human", async () => {
+test("agent principals can initiate direct rooms with humans", async () => {
   const agentResponse = await app.request("http://localhost/api/principals/bootstrap", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -1730,10 +1730,35 @@ test("agent principals cannot initiate direct rooms because room owners must be 
     }),
   });
 
-  assert.equal(directRoomResponse.status, 403);
-  assert.deepEqual(await directRoomResponse.json(), {
-    error: "only human principals can create direct rooms",
+  assert.equal(directRoomResponse.status, 200);
+  const directRoom = await directRoomResponse.json();
+  assert.equal(directRoom.reused, false);
+
+  const roomMembers = db
+    .select()
+    .from(members)
+    .where(eq(members.roomId, directRoom.room.id))
+    .all();
+  const actorMember = roomMembers.find((member) => member.principalId === agent.principalId);
+  const peerMember = roomMembers.find((member) => member.principalId === human.principalId);
+  assert.equal(directRoom.room.ownerMemberId, peerMember?.id);
+  assert.equal(actorMember?.type, "agent");
+  assert.equal(actorMember?.roleKind, "independent");
+  assert.equal(actorMember?.adapterType, "codex_cli");
+  assert.equal(peerMember?.type, "human");
+  assert.equal(peerMember?.roleKind, "none");
+
+  const leaveResponse = await app.request(`http://localhost/api/rooms/${directRoom.room.id}/leave`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      principalId: agent.principalId,
+      principalToken: agent.principalToken,
+    }),
   });
+  assert.equal(leaveResponse.status, 200);
+  const leavePayload = await leaveResponse.json();
+  assert.equal(leavePayload.left, true);
 
   disconnectAgent();
 });
@@ -1788,7 +1813,7 @@ test("agent principal with active binding appears in lobby without principal web
   assert.equal(lobbyAgent.runtimeStatus, "ready");
 });
 
-test("claude agent principals also cannot initiate direct rooms", async () => {
+test("claude agent principals can also initiate direct rooms", async () => {
   const agentResponse = await app.request("http://localhost/api/principals/bootstrap", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -1838,10 +1863,19 @@ test("claude agent principals also cannot initiate direct rooms", async () => {
     }),
   });
 
-  assert.equal(directRoomResponse.status, 403);
-  assert.deepEqual(await directRoomResponse.json(), {
-    error: "only human principals can create direct rooms",
-  });
+  assert.equal(directRoomResponse.status, 200);
+  const directRoom = await directRoomResponse.json();
+  const roomMembers = db
+    .select()
+    .from(members)
+    .where(eq(members.roomId, directRoom.room.id))
+    .all();
+  const actorMember = roomMembers.find((member) => member.principalId === agent.principalId);
+  const peerMember = roomMembers.find((member) => member.principalId === human.principalId);
+  assert.equal(directRoom.room.ownerMemberId, peerMember?.id);
+  assert.equal(actorMember?.type, "agent");
+  assert.equal(actorMember?.roleKind, "independent");
+  assert.equal(actorMember?.adapterType, "claude_code");
 
   disconnectAgent();
 });
@@ -2061,6 +2095,165 @@ test("openai-compatible agent principal bootstrap stores backendConfig and auto-
   assert.equal(lobbyAgent.runtimeStatus, "pending_bridge");
 
   disconnectAgent();
+});
+
+test("principal can create an openai-compatible agent citizen from a shared server config", async () => {
+  const ownerResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "agent-citizen-owner@example.com",
+      globalDisplayName: "OwnerUser",
+    }),
+  });
+  const consumerResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "agent-citizen-consumer@example.com",
+      globalDisplayName: "ConsumerUser",
+    }),
+  });
+  const owner = await ownerResponse.json();
+  const consumer = await consumerResponse.json();
+
+  const configCreateResponse = await app.request("http://localhost/api/me/server-configs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      principalId: owner.principalId,
+      principalToken: owner.principalToken,
+      name: "Shared Citizen Config",
+      backendType: "openai_compatible",
+      visibility: "shared",
+      config: {
+        baseUrl: "http://127.0.0.1:4444/v1/",
+        model: "citizen-qwen",
+        apiKey: "citizen-secret",
+      },
+    }),
+  });
+  assert.equal(configCreateResponse.status, 201);
+  const createdConfig = await configCreateResponse.json();
+
+  const createCitizenResponse = await app.request("http://localhost/api/me/agent-citizens", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      actorPrincipalId: consumer.principalId,
+      actorPrincipalToken: consumer.principalToken,
+      loginKey: "agent:shared-citizen",
+      globalDisplayName: "SharedCitizen",
+      serverConfigId: createdConfig.id,
+    }),
+  });
+
+  assert.equal(createCitizenResponse.status, 201);
+  const createdCitizen = await createCitizenResponse.json();
+  assert.equal(createdCitizen.kind, "agent");
+  assert.equal(createdCitizen.backendType, "openai_compatible");
+  assert.match(createdCitizen.backendThreadId, /^oai_/);
+  assert.deepEqual(createdCitizen.backendConfig, {
+    baseUrl: "http://127.0.0.1:4444/v1",
+    model: "citizen-qwen",
+  });
+
+  const storedPrincipal = db
+    .select()
+    .from(principals)
+    .where(eq(principals.id, createdCitizen.principalId))
+    .get();
+  assert.equal(storedPrincipal?.kind, "agent");
+  assert.equal(storedPrincipal?.loginKey, "agent:shared-citizen");
+  assert.equal(storedPrincipal?.sourceServerConfigId, createdConfig.id);
+  assert.equal(
+    storedPrincipal?.backendConfig,
+    JSON.stringify({
+      baseUrl: "http://127.0.0.1:4444/v1",
+      model: "citizen-qwen",
+      apiKey: "citizen-secret",
+    }),
+  );
+
+  const storedBinding = db
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.principalId, createdCitizen.principalId))
+    .get();
+  assert.equal(storedBinding?.backendType, "openai_compatible");
+  assert.equal(storedBinding?.backendThreadId, createdCitizen.backendThreadId);
+
+  const disconnectAgent = markPrincipalOnline(createdCitizen.principalId, createdCitizen.principalToken);
+  const lobbyResponse = await app.request("http://localhost/api/presence/lobby");
+  assert.equal(lobbyResponse.status, 200);
+  const lobby = await lobbyResponse.json();
+  const lobbyAgent = lobby.principals.find((item: { id: string }) => item.id === createdCitizen.principalId);
+  assert.ok(lobbyAgent);
+  assert.deepEqual(lobbyAgent.backendConfig, {
+    baseUrl: "http://127.0.0.1:4444/v1",
+    model: "citizen-qwen",
+  });
+  disconnectAgent();
+});
+
+test("principal cannot create an agent citizen from another principal's private server config", async () => {
+  const ownerResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "agent-citizen-private-owner@example.com",
+      globalDisplayName: "PrivateOwner",
+    }),
+  });
+  const consumerResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "agent-citizen-private-consumer@example.com",
+      globalDisplayName: "PrivateConsumer",
+    }),
+  });
+  const owner = await ownerResponse.json();
+  const consumer = await consumerResponse.json();
+
+  const configCreateResponse = await app.request("http://localhost/api/me/server-configs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      principalId: owner.principalId,
+      principalToken: owner.principalToken,
+      name: "Private Citizen Config",
+      backendType: "openai_compatible",
+      visibility: "private",
+      config: {
+        baseUrl: "http://127.0.0.1:4545/v1/",
+        model: "private-qwen",
+        apiKey: "private-secret",
+      },
+    }),
+  });
+  assert.equal(configCreateResponse.status, 201);
+  const createdConfig = await configCreateResponse.json();
+
+  const createCitizenResponse = await app.request("http://localhost/api/me/agent-citizens", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      actorPrincipalId: consumer.principalId,
+      actorPrincipalToken: consumer.principalToken,
+      loginKey: "agent:private-citizen",
+      globalDisplayName: "PrivateCitizen",
+      serverConfigId: createdConfig.id,
+    }),
+  });
+  assert.equal(createCitizenResponse.status, 403);
+  assert.deepEqual(await createCitizenResponse.json(), {
+    error: "server config is not available to this principal",
+  });
 });
 
 test("agent principal bootstrap rejects a bound backendThreadId without leaving a principal record", async () => {
@@ -2725,13 +2918,13 @@ test("principal can manage private and shared server configs", async () => {
   );
   assert.equal(sharedListResponse.status, 200);
   const sharedList = await sharedListResponse.json();
-  assert.equal(sharedList.length, 1);
-  assert.equal(sharedList[0].id, createdConfig.id);
-  assert.equal(sharedList[0].config.baseUrl, "http://127.0.0.1:1234/v1");
-  assert.equal(sharedList[0].config.model, "qwen-team");
-  assert.equal(sharedList[0].config.apiKey, undefined);
-  assert.equal(sharedList[0].config.headers, undefined);
-  assert.equal(sharedList[0].hasAuth, true);
+  const sharedConfig = sharedList.find((item: { id: string }) => item.id === createdConfig.id);
+  assert.ok(sharedConfig);
+  assert.equal(sharedConfig.config.baseUrl, "http://127.0.0.1:1234/v1");
+  assert.equal(sharedConfig.config.model, "qwen-team");
+  assert.equal(sharedConfig.config.apiKey, undefined);
+  assert.equal(sharedConfig.config.headers, undefined);
+  assert.equal(sharedConfig.hasAuth, true);
 
   const patchResponse = await app.request(
     `http://localhost/api/me/server-configs/${createdConfig.id}`,
@@ -2760,7 +2953,10 @@ test("principal can manage private and shared server configs", async () => {
   );
   assert.equal(sharedListAfterPatchResponse.status, 200);
   const sharedListAfterPatch = await sharedListAfterPatchResponse.json();
-  assert.equal(sharedListAfterPatch.length, 0);
+  assert.equal(
+    sharedListAfterPatch.some((item: { id: string }) => item.id === createdConfig.id),
+    false,
+  );
 
   const deleteResponse = await app.request(
     `http://localhost/api/me/server-configs/${createdConfig.id}?principalId=${owner.principalId}&principalToken=${owner.principalToken}`,

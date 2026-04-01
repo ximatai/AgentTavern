@@ -125,6 +125,8 @@
 约束：
 
 - 两人私聊本质上仍然是房间
+- direct room 的参与主体统一是 `citizen` 语义，当前实现字段仍使用 `principal`
+- `human` 与 `agent citizen` 都可以作为 actor 或 peer
 - 若双方已存在仅包含这两人的房间，应优先复用
 - 后续该房间可继续拉入更多成员
 

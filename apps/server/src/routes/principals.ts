@@ -1,10 +1,10 @@
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 
-import type { Principal, PrincipalKind } from "@agent-tavern/shared";
+import type { OpenAICompatibleBackendConfig, Principal, PrincipalKind } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
-import { agentBindings, localBridges, members, principals } from "../db/schema";
+import { agentBindings, localBridges, members, principals, serverConfigs } from "../db/schema";
 import { resolveBindingForPrincipal } from "../lib/agent-binding-resolution";
 import { createId } from "../lib/id";
 import { resolveMemberRuntimeStatus } from "../lib/member-runtime";
@@ -43,6 +43,39 @@ function toPublicBackendConfig(raw: string | null): Record<string, unknown> | nu
   } catch {
     return null;
   }
+}
+
+function toPublicReusableBackendConfig(raw: string | null): Record<string, unknown> | null {
+  const parsed = toPublicBackendConfig(raw) as OpenAICompatibleBackendConfig | null;
+
+  if (!parsed) {
+    return null;
+  }
+
+  return {
+    baseUrl: parsed.baseUrl,
+    model: parsed.model,
+    ...(parsed.temperature !== undefined ? { temperature: parsed.temperature } : {}),
+    ...(parsed.maxTokens !== undefined ? { maxTokens: parsed.maxTokens } : {}),
+  };
+}
+
+function toPrincipalSessionPayload(principal: Principal) {
+  const backendConfig = principal.sourceServerConfigId
+    ? toPublicReusableBackendConfig(principal.backendConfig ?? null)
+    : toPublicBackendConfig(principal.backendConfig ?? null);
+
+  return {
+    principalId: principal.id,
+    principalToken: issuePrincipalToken(principal.id),
+    kind: principal.kind,
+    loginKey: principal.loginKey,
+    globalDisplayName: principal.globalDisplayName,
+    backendType: principal.backendType ?? null,
+    backendThreadId: principal.backendThreadId ?? null,
+    backendConfig,
+    status: principal.status,
+  };
 }
 
 function ensureAgentPrincipalBinding(principal: Principal, database: DbExecutor = db): void {
@@ -169,6 +202,7 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
               backendType: kind === "agent" ? resolvedBackendType : null,
               backendThreadId: kind === "agent" ? backendThreadId : null,
               backendConfig: kind === "agent" ? backendConfig : null,
+              sourceServerConfigId: null,
             })
             .where(eq(principals.id, existing.id))
             .run();
@@ -229,17 +263,7 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
         }
       }
 
-      return c.json({
-        principalId: updated.id,
-        principalToken: issuePrincipalToken(updated.id),
-        kind: updated.kind,
-        loginKey: updated.loginKey,
-        globalDisplayName: updated.globalDisplayName,
-        backendType: updated.backendType ?? null,
-        backendThreadId: updated.backendThreadId ?? null,
-        backendConfig: toPublicBackendConfig(updated.backendConfig ?? null),
-        status: updated.status,
-      });
+      return c.json(toPrincipalSessionPayload(updated));
     } catch (error) {
       if (error instanceof Error && error.message === "backendThreadId already bound") {
         return c.json({ error: "backendThreadId already bound" }, 409);
@@ -257,6 +281,7 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
     backendType: kind === "agent" ? resolvedBackendType : null,
     backendThreadId: kind === "agent" ? backendThreadId : null,
     backendConfig: kind === "agent" ? backendConfig : null,
+    sourceServerConfigId: null,
     status: "offline",
     createdAt: now(),
   };
@@ -289,17 +314,116 @@ principalRoutes.post("/api/principals/bootstrap", async (c) => {
     throw error;
   }
 
-  return c.json({
-    principalId: principal.id,
-    principalToken: issuePrincipalToken(principal.id),
-    kind: principal.kind,
-    loginKey: principal.loginKey,
-    globalDisplayName: principal.globalDisplayName,
-    backendType: principal.backendType ?? null,
-    backendThreadId: principal.backendThreadId ?? null,
-    backendConfig: toPublicBackendConfig(principal.backendConfig ?? null),
-    status: principal.status,
-  });
+  return c.json(toPrincipalSessionPayload(principal));
+});
+
+principalRoutes.post("/api/me/agent-citizens", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const actorPrincipalId =
+    typeof body?.actorPrincipalId === "string" ? body.actorPrincipalId.trim() : "";
+  const actorPrincipalToken =
+    typeof body?.actorPrincipalToken === "string" ? body.actorPrincipalToken.trim() : "";
+  const loginKey = typeof body?.loginKey === "string" ? body.loginKey.trim() : "";
+  const globalDisplayName =
+    typeof body?.globalDisplayName === "string" ? body.globalDisplayName.trim() : "";
+  const requestedServerConfigId =
+    typeof body?.serverConfigId === "string" ? body.serverConfigId.trim() : "";
+
+  if (!actorPrincipalId || !actorPrincipalToken || !loginKey || !globalDisplayName || !requestedServerConfigId) {
+    return c.json(
+      { error: "actorPrincipalId, actorPrincipalToken, loginKey, globalDisplayName and serverConfigId are required" },
+      400,
+    );
+  }
+
+  if (!verifyPrincipalToken(actorPrincipalToken, actorPrincipalId)) {
+    return c.json({ error: "invalid principal token" }, 403);
+  }
+
+  const actor = db
+    .select()
+    .from(principals)
+    .where(eq(principals.id, actorPrincipalId))
+    .get() as Principal | undefined;
+
+  if (!actor) {
+    return c.json({ error: "actor principal not found" }, 404);
+  }
+
+  const serverConfig = db
+    .select()
+    .from(serverConfigs)
+    .where(eq(serverConfigs.id, requestedServerConfigId))
+    .get();
+
+  if (!serverConfig) {
+    return c.json({ error: "server config not found" }, 404);
+  }
+
+  if (serverConfig.ownerPrincipalId !== actorPrincipalId && serverConfig.visibility !== "shared") {
+    return c.json({ error: "server config is not available to this principal" }, 403);
+  }
+
+  const backendType = isSupportedAgentBackendType(serverConfig.backendType)
+    ? serverConfig.backendType
+    : null;
+  const backendThreadId = normalizeAgentBackendThreadId(backendType, "");
+
+  if (backendType !== "openai_compatible") {
+    return c.json({ error: "only openai_compatible backend supports agent citizen web creation" }, 400);
+  }
+
+  if (!backendThreadId) {
+    return c.json({ error: "backendThreadId is required" }, 400);
+  }
+
+  const existing = db
+    .select()
+    .from(principals)
+    .where(and(eq(principals.kind, "agent"), eq(principals.loginKey, loginKey)))
+    .get();
+
+  if (existing) {
+    return c.json({ error: "agent principal loginKey already exists" }, 409);
+  }
+
+  const principal: Principal = {
+    id: createId("prn"),
+    kind: "agent",
+    loginKey,
+    globalDisplayName,
+    backendType,
+    backendThreadId,
+    backendConfig: serverConfig.configPayload,
+    sourceServerConfigId: requestedServerConfigId,
+    status: "offline",
+    createdAt: now(),
+  };
+
+  try {
+    db.transaction((tx) => {
+      const conflictingBinding = tx
+        .select()
+        .from(agentBindings)
+        .where(eq(agentBindings.backendThreadId, backendThreadId))
+        .get();
+
+      if (conflictingBinding) {
+        throw new Error("backendThreadId already bound");
+      }
+
+      tx.insert(principals).values(principal).run();
+      ensureAgentPrincipalBinding(principal, tx);
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "backendThreadId already bound") {
+      return c.json({ error: "backendThreadId already bound" }, 409);
+    }
+
+    throw error;
+  }
+
+  return c.json(toPrincipalSessionPayload(principal), 201);
 });
 
 principalRoutes.post("/api/principals/:principalId/leave-system", async (c) => {
@@ -418,7 +542,9 @@ principalRoutes.get("/api/presence/lobby", (c) => {
             globalDisplayName: principal.globalDisplayName,
             backendType: principal.backendType ?? null,
             backendThreadId: principal.backendThreadId ?? null,
-            backendConfig: toPublicBackendConfig(principal.backendConfig ?? null),
+            backendConfig: principal.sourceServerConfigId
+              ? toPublicReusableBackendConfig(principal.backendConfig ?? null)
+              : toPublicBackendConfig(principal.backendConfig ?? null),
             status: visibleInLobby ? "online" : principal.status,
             createdAt: principal.createdAt,
             runtimeStatus,

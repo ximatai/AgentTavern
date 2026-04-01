@@ -15,6 +15,7 @@ export const principals = sqliteTable("principals", {
   backendType: text("backend_type"),
   backendThreadId: text("backend_thread_id"),
   backendConfig: text("backend_config"),
+  sourceServerConfigId: text("source_server_config_id"),
   status: text("status").notNull(),
   createdAt: text("created_at").notNull(),
 }, (table) => ({

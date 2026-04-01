@@ -127,6 +127,7 @@ export type Principal = {
   backendType?: AgentBackendType | null;
   backendThreadId?: string | null;
   backendConfig?: string | null;
+  sourceServerConfigId?: string | null;
   status: PresenceStatus;
   createdAt: string;
 };

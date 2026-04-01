@@ -218,21 +218,21 @@
   - [x] 落地从大厅直接拉人进房间服务端接口基线
   - [x] 落地两人聊天房的创建或复用服务端接口基线
   - [x] 落地对应的产品入口与 UI 收口
-  - [-] 对齐 `agent citizen` 与 `assistant` 的接入入口
+  - [x] 对齐 `agent citizen` 与 `assistant` 的接入入口
   - [x] 明确 `citizen / assistant / member` 三层语义
   - [x] 明确 `OpenAI Compatible API` 是通用接入方式，不绑定单一实体身份
   - [x] 明确采用 `server config -> citizen / assistant` 的两层模型
   - [x] 明确 `server config` 为 citizen-owned asset，默认 `private`，可主动 `shared`
-  - [-] 落地 `server config` 资产模型与共享规则
-    - [ ] 新增 `server_configs` 表与 DTO
-    - [ ] 落地 `private | shared` 可见性规则
-    - [ ] 补充 owner 视角与 shared 视角的服务端接口
-    - [ ] 明确敏感 auth 仅服务端可见
-  - [-] 收口 Web 上基于连接资源创建 `assistant / agent citizen` 的产品入口
-    - [ ] 前端增加 `server config` 管理基础能力
-    - [ ] assistant 创建改为优先基于 `serverConfigId`
-    - [ ] 增加显式 `agent citizen` 创建入口
-    - [ ] 保持 `invite + skill -> assistant` 现有链路不受影响
+  - [x] 落地 `server config` 资产模型与共享规则
+    - [x] 新增 `server_configs` 表与 DTO
+    - [x] 落地 `private | shared` 可见性规则
+    - [x] 补充 owner 视角与 shared 视角的服务端接口
+    - [x] 明确敏感 auth 仅服务端可见
+  - [x] 收口 Web 上基于连接资源创建 `assistant / agent citizen` 的产品入口
+    - [x] 前端增加 `server config` 管理基础能力
+    - [x] assistant 创建改为优先基于 `serverConfigId`
+    - [x] 增加显式 `agent citizen` 创建入口
+    - [x] 保持 `invite + skill -> assistant` 现有链路不受影响
 
 - [x] `P1` 私有助理资产模型实现
   - [x] 落地私有助理表结构与 DTO

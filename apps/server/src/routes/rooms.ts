@@ -639,10 +639,6 @@ roomRoutes.post("/api/direct-rooms", async (c) => {
     return c.json({ error: "principal not found" }, 404);
   }
 
-  if (actor.kind !== "human") {
-    return c.json({ error: "only human principals can create direct rooms" }, 403);
-  }
-
   const reusable = findReusableDirectRoom({ actorPrincipalId, peerPrincipalId });
 
   if (reusable) {
@@ -693,12 +689,12 @@ roomRoutes.post("/api/direct-rooms", async (c) => {
     id: createId("mem"),
     roomId: room.id,
     principalId: actor.id,
-    type: "human",
-    roleKind: "none",
+    type: actor.kind === "agent" ? "agent" : "human",
+    roleKind: actor.kind === "agent" ? "independent" : "none",
     displayName: actor.globalDisplayName,
     ownerMemberId: null,
     sourcePrivateAssistantId: null,
-    adapterType: null,
+    adapterType: actor.kind === "agent" ? (actor.backendType ?? "codex_cli") : null,
     adapterConfig: null,
     presenceStatus: "online",
     membershipStatus: "active",
@@ -723,7 +719,11 @@ roomRoutes.post("/api/direct-rooms", async (c) => {
     createdAt,
   };
 
-  room.ownerMemberId = actorMember.id;
+  room.ownerMemberId = actor.kind === "human"
+    ? actorMember.id
+    : peer.kind === "human"
+      ? peerMember.id
+      : null;
 
   db.insert(rooms).values(room).run();
   db.insert(members).values([actorMember, peerMember]).run();
