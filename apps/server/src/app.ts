@@ -9,6 +9,7 @@ import { messageRoutes } from "./routes/messages";
 import { privateAssistantRoutes } from "./routes/private-assistants";
 import { principalRoutes } from "./routes/principals";
 import { roomRoutes } from "./routes/rooms";
+import { serverConfigRoutes } from "./routes/server-configs";
 
 const app = new Hono();
 
@@ -28,6 +29,7 @@ app.get("/", (c) => {
 
 app.route("/", roomRoutes);
 app.route("/", principalRoutes);
+app.route("/", serverConfigRoutes);
 app.route("/", privateAssistantRoutes);
 app.route("/", attachmentRoutes);
 app.route("/", bridgeRoutes);

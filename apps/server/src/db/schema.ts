@@ -116,6 +116,26 @@ export const privateAssistantInvites = sqliteTable("private_assistant_invites", 
   ),
 }));
 
+export const serverConfigs = sqliteTable("server_configs", {
+  id: text("id").primaryKey(),
+  ownerPrincipalId: text("owner_principal_id")
+    .notNull()
+    .references(() => principals.id),
+  name: text("name").notNull(),
+  backendType: text("backend_type").notNull(),
+  configPayload: text("config_payload").notNull(),
+  visibility: text("visibility").notNull().default("private"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => ({
+  ownerPrincipalIdIdx: index("server_configs_owner_principal_id_idx").on(table.ownerPrincipalId),
+  visibilityIdx: index("server_configs_visibility_idx").on(table.visibility),
+  ownerNameUniqueIdx: uniqueIndex("server_configs_owner_name_unique_idx").on(
+    table.ownerPrincipalId,
+    table.name,
+  ),
+}));
+
 export const messages = sqliteTable("messages", {
   id: text("id").primaryKey(),
   roomId: text("room_id")

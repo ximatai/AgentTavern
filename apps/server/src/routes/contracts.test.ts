@@ -45,6 +45,7 @@ const { db } = dbClient;
   localBridges,
   messageAttachments,
   privateAssistants,
+  serverConfigs,
 } = schema;
 const { createInviteToken } = ids;
 const { issuePrincipalToken, issueWsToken, registerSocket } = realtime;
@@ -2662,6 +2663,196 @@ test("principal can directly connect an openai-compatible private assistant from
     .get();
   assert.equal(storedBinding?.backendType, "openai_compatible");
   assert.equal(storedBinding?.backendThreadId, assistant.backendThreadId);
+});
+
+test("principal can manage private and shared server configs", async () => {
+  const ownerResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "server-config-owner@example.com",
+      globalDisplayName: "ServerConfigOwner",
+    }),
+  });
+  const peerResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "server-config-peer@example.com",
+      globalDisplayName: "ServerConfigPeer",
+    }),
+  });
+  const owner = await ownerResponse.json();
+  const peer = await peerResponse.json();
+
+  const createResponse = await app.request("http://localhost/api/me/server-configs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      principalId: owner.principalId,
+      principalToken: owner.principalToken,
+      name: "Team Shared Qwen",
+      backendType: "openai_compatible",
+      visibility: "shared",
+      config: {
+        baseUrl: "http://127.0.0.1:1234/v1/",
+        model: "qwen-team",
+        apiKey: "secret-token",
+        headers: {
+          Authorization: "Bearer hidden-token",
+        },
+      },
+    }),
+  });
+
+  assert.equal(createResponse.status, 201);
+  const createdConfig = await createResponse.json();
+  assert.equal(createdConfig.visibility, "shared");
+  assert.equal(createdConfig.config.apiKey, "secret-token");
+
+  const ownListResponse = await app.request(
+    `http://localhost/api/me/server-configs?principalId=${owner.principalId}&principalToken=${owner.principalToken}`,
+  );
+  assert.equal(ownListResponse.status, 200);
+  const ownList = await ownListResponse.json();
+  assert.equal(ownList.length, 1);
+  assert.equal(ownList[0].id, createdConfig.id);
+
+  const sharedListResponse = await app.request(
+    `http://localhost/api/server-configs/shared?principalId=${peer.principalId}&principalToken=${peer.principalToken}`,
+  );
+  assert.equal(sharedListResponse.status, 200);
+  const sharedList = await sharedListResponse.json();
+  assert.equal(sharedList.length, 1);
+  assert.equal(sharedList[0].id, createdConfig.id);
+  assert.equal(sharedList[0].config.baseUrl, "http://127.0.0.1:1234/v1");
+  assert.equal(sharedList[0].config.model, "qwen-team");
+  assert.equal(sharedList[0].config.apiKey, undefined);
+  assert.equal(sharedList[0].config.headers, undefined);
+  assert.equal(sharedList[0].hasAuth, true);
+
+  const patchResponse = await app.request(
+    `http://localhost/api/me/server-configs/${createdConfig.id}`,
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        principalId: owner.principalId,
+        principalToken: owner.principalToken,
+        visibility: "private",
+        config: {
+          baseUrl: "http://127.0.0.1:2234/v1/",
+          model: "qwen-owner",
+        },
+      }),
+    },
+  );
+  assert.equal(patchResponse.status, 200);
+  const patched = await patchResponse.json();
+  assert.equal(patched.visibility, "private");
+  assert.equal(patched.config.baseUrl, "http://127.0.0.1:2234/v1");
+  assert.equal(patched.config.model, "qwen-owner");
+
+  const sharedListAfterPatchResponse = await app.request(
+    `http://localhost/api/server-configs/shared?principalId=${peer.principalId}&principalToken=${peer.principalToken}`,
+  );
+  assert.equal(sharedListAfterPatchResponse.status, 200);
+  const sharedListAfterPatch = await sharedListAfterPatchResponse.json();
+  assert.equal(sharedListAfterPatch.length, 0);
+
+  const deleteResponse = await app.request(
+    `http://localhost/api/me/server-configs/${createdConfig.id}?principalId=${owner.principalId}&principalToken=${owner.principalToken}`,
+    {
+      method: "DELETE",
+    },
+  );
+  assert.equal(deleteResponse.status, 200);
+  assert.equal(
+    db.select().from(serverConfigs).where(eq(serverConfigs.id, createdConfig.id)).get(),
+    undefined,
+  );
+});
+
+test("principal can create an openai-compatible private assistant from a shared server config", async () => {
+  const ownerResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "shared-config-owner@example.com",
+      globalDisplayName: "SharedOwner",
+    }),
+  });
+  const consumerResponse = await app.request("http://localhost/api/principals/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "shared-config-consumer@example.com",
+      globalDisplayName: "SharedConsumer",
+    }),
+  });
+  const owner = await ownerResponse.json();
+  const consumer = await consumerResponse.json();
+
+  const configCreateResponse = await app.request("http://localhost/api/me/server-configs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      principalId: owner.principalId,
+      principalToken: owner.principalToken,
+      name: "Shared Assistant Config",
+      backendType: "openai_compatible",
+      visibility: "shared",
+      config: {
+        baseUrl: "http://127.0.0.1:3333/v1/",
+        model: "shared-qwen",
+        apiKey: "shared-secret",
+      },
+    }),
+  });
+  assert.equal(configCreateResponse.status, 201);
+  const createdConfig = await configCreateResponse.json();
+
+  const createAssistantResponse = await app.request("http://localhost/api/me/assistants", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      principalId: consumer.principalId,
+      principalToken: consumer.principalToken,
+      name: "SharedAPIAssistant",
+      serverConfigId: createdConfig.id,
+    }),
+  });
+
+  assert.equal(createAssistantResponse.status, 201);
+  const assistant = await createAssistantResponse.json();
+  assert.equal(assistant.backendType, "openai_compatible");
+
+  const storedAssistant = db
+    .select()
+    .from(privateAssistants)
+    .where(eq(privateAssistants.id, assistant.id))
+    .get();
+  assert.equal(storedAssistant?.ownerPrincipalId, consumer.principalId);
+  assert.equal(
+    storedAssistant?.backendConfig,
+    JSON.stringify({
+      baseUrl: "http://127.0.0.1:3333/v1",
+      model: "shared-qwen",
+      apiKey: "shared-secret",
+    }),
+  );
+
+  const storedBinding = db
+    .select()
+    .from(agentBindings)
+    .where(eq(agentBindings.privateAssistantId, assistant.id))
+    .get();
+  assert.equal(storedBinding?.backendType, "openai_compatible");
+  assert.match(storedBinding?.backendThreadId ?? "", /^oai_/);
 });
 
 test("uploads draft attachments and sends an attachment-only message", async () => {

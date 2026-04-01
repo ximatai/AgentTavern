@@ -12,7 +12,15 @@ import type {
 } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
-import { agentBindings, localBridges, members, privateAssistantInvites, privateAssistants, rooms } from "../db/schema";
+import {
+  agentBindings,
+  localBridges,
+  members,
+  privateAssistantInvites,
+  privateAssistants,
+  rooms,
+  serverConfigs,
+} from "../db/schema";
 import { resolveBindingForPrivateAssistant } from "../lib/agent-binding-resolution";
 import { createId, createInviteToken } from "../lib/id";
 import { resolveMemberRuntimeStatus } from "../lib/member-runtime";
@@ -200,15 +208,11 @@ privateAssistantRoutes.post("/api/me/assistants", async (c) => {
   const principalToken =
     typeof body?.principalToken === "string" ? body.principalToken.trim() : "";
   const name = typeof body?.name === "string" ? body.name.trim() : "";
-  const backendType = isSupportedAgentBackendType(body?.backendType) ? body.backendType : null;
-  const {
-    backendConfig,
-    error: backendConfigError,
-  } = normalizeAgentBackendConfig(backendType, body?.backendConfig);
-  const backendThreadId = normalizeAgentBackendThreadId(backendType, "");
+  const requestedServerConfigId =
+    typeof body?.serverConfigId === "string" ? body.serverConfigId.trim() : "";
 
-  if (!principalId || !principalToken || !name || !backendType) {
-    return c.json({ error: "principalId, principalToken, name and backendType are required" }, 400);
+  if (!principalId || !principalToken || !name) {
+    return c.json({ error: "principalId, principalToken and name are required" }, 400);
   }
 
   if (!verifyPrincipalToken(principalToken, principalId)) {
@@ -218,6 +222,38 @@ privateAssistantRoutes.post("/api/me/assistants", async (c) => {
   if (!isValidDisplayName(name)) {
     return c.json({ error: "name must not contain spaces or @" }, 400);
   }
+
+  let backendType = isSupportedAgentBackendType(body?.backendType) ? body.backendType : null;
+  let backendConfig: string | null = null;
+  let backendConfigError: string | null = null;
+
+  if (requestedServerConfigId) {
+    const serverConfig = db
+      .select()
+      .from(serverConfigs)
+      .where(eq(serverConfigs.id, requestedServerConfigId))
+      .get();
+
+    if (!serverConfig) {
+      return c.json({ error: "server config not found" }, 404);
+    }
+
+    if (
+      serverConfig.ownerPrincipalId !== principalId &&
+      serverConfig.visibility !== "shared"
+    ) {
+      return c.json({ error: "server config is not available to this principal" }, 403);
+    }
+
+    backendType = serverConfig.backendType as AgentBackendType;
+    backendConfig = serverConfig.configPayload;
+  } else {
+    const normalized = normalizeAgentBackendConfig(backendType, body?.backendConfig);
+    backendConfig = normalized.backendConfig;
+    backendConfigError = normalized.error;
+  }
+
+  const backendThreadId = normalizeAgentBackendThreadId(backendType, "");
 
   if (backendType !== "openai_compatible") {
     return c.json({ error: "only openai_compatible backend supports direct web setup" }, 400);

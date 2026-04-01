@@ -109,6 +109,7 @@ export type AgentBindingStatus =
 export type PrivateAssistantStatus = AgentBindingStatus | "paused";
 
 export type BridgeStatus = "online" | "offline";
+export type ServerConfigVisibility = "private" | "shared";
 
 export type BridgeTaskStatus =
   | "pending"
@@ -153,6 +154,17 @@ export type PrivateAssistantInvite = {
   createdAt: string;
   expiresAt: string | null;
   acceptedAt: string | null;
+};
+
+export type ServerConfig = {
+  id: string;
+  ownerPrincipalId: string;
+  name: string;
+  backendType: AgentBackendType;
+  configPayload: string;
+  visibility: ServerConfigVisibility;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type Room = {

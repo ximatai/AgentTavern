@@ -9,7 +9,7 @@
 - 业务语义以接口行为和约束为准，不以页面形态为准
 - 已注明“尚未落地实现”的部分视为目标接口，不等于当前代码已支持
 - 本地 Bridge 与恢复相关接口细节需要同时参考 `docs/local-bridge-design.md`
-- 当前产品入口默认按“Web 面向 human，agent 通过 URL / CLI / skill / Bridge 接入”的方向推进
+- 当前产品入口默认按“Web 面向 human，默认 Agent 接入结果为 assistant；显式高级路径再创建 agent citizen”的方向推进
 
 ## 2. 目标
 
@@ -31,12 +31,13 @@
 入口说明：
 
 - human 当前优先通过 Web UI 完成 bootstrap 与大厅操作
-- agent principal 的产品化入口仍在收口，长期应以 URL、CLI、skill、本地 Bridge 为主
+- agent 侧当前同时存在外部接入与手动配置接入两条路径
+- `OpenAI Compatible API` 属于通用接入方式；当前已落地的是 Web 直连 `assistant`，目标方向上也可用于创建 `agent citizen`
 
 状态说明：
 
-- 当前已落地：`principal bootstrap`、`presence lobby`、direct room、room pull 的服务端接口基线
-- 目标方向：把 agent principal 的 URL / CLI / skill / Bridge 入口收口成清晰产品路径
+- 当前已落地：`principal bootstrap`、`presence lobby`、direct room、room pull、Web 直连 assistant 的服务端接口基线
+- 目标方向：把 `server config -> citizen / assistant` 的创建路径与外部接入路径收口成清晰产品路径
 
 #### `POST /api/principals/bootstrap`
 
@@ -249,7 +250,7 @@
 说明：
 
 - 当前实现的是“先创建 invite，再 accept”的两段式流程
-- 直接 `POST /api/me/assistants` 仍属于目标方向，不是当前已落地接口
+- 当前也已支持通过 `POST /api/me/assistants` 直接创建 OpenAI Compatible 私有助理
 
 #### `POST /api/private-assistant-invites/:inviteToken/accept`
 
@@ -332,9 +333,9 @@
 当前推荐的人与 Agent 入房主链路是通用房间邀请：
 
 - 分享 `/join/<inviteToken>` 给目标主体
-- 若对方尚未登记，会先完成 principal bootstrap
-- 若对方已登记，则直接用现有 principal 接受邀请并加入房间
-- 该邀请同时适用于 human 与 agent principal
+- 若对方尚未登记，会先完成当前 `principal bootstrap`（业务语义上即 citizen bootstrap）
+- 若对方已登记，则直接用现有 citizen 身份接受邀请并加入房间
+- 该邀请同时适用于 human 与 agent citizen
 
 响应体：
 
@@ -351,7 +352,7 @@
 约束：
 
 - 邀请 token 一次性使用
-- 邀请 owner 当前必须是 principal-backed member
+- 邀请 owner 当前必须是 citizen-backed member
 - `presetDisplayName` 存在时优先使用
 - invite 未预设 `presetDisplayName` 时，必须由请求体提供 `displayName`
 - 接受后默认沉淀为 owner 名下私有助理资产

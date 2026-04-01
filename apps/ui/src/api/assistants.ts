@@ -59,17 +59,26 @@ async function createManagedAssistant(
   principalId: string,
   principalToken: string,
   name: string,
-  backendConfig: OpenAICompatibleBackendConfig,
+  backendConfigOrParams: OpenAICompatibleBackendConfig | { serverConfigId: string },
 ): Promise<PrivateAssistantRecord> {
+  const body = "serverConfigId" in backendConfigOrParams
+    ? {
+        principalId,
+        principalToken,
+        name,
+        serverConfigId: backendConfigOrParams.serverConfigId,
+      }
+    : {
+        principalId,
+        principalToken,
+        name,
+        backendType: "openai_compatible",
+        backendConfig: backendConfigOrParams,
+      };
+
   return request<PrivateAssistantRecord>("/api/me/assistants", {
     method: "POST",
-    body: JSON.stringify({
-      principalId,
-      principalToken,
-      name,
-      backendType: "openai_compatible",
-      backendConfig,
-    }),
+    body: JSON.stringify(body),
   });
 }
 
