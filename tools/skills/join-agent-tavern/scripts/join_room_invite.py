@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import glob
 import json
 import os
 import re
@@ -108,8 +109,11 @@ def get_json(url: str) -> Tuple[int, dict]:
         return 597, {"error": "unexpected request error", "reason": str(exc)}
 
 
-def get_bridge_state_path() -> str:
-    return os.environ.get("AGENT_TAVERN_BRIDGE_STATE_PATH", DEFAULT_BRIDGE_STATE_PATH)
+def get_bridge_state_path(explicit_state_path: Optional[str]) -> str:
+    if explicit_state_path and explicit_state_path.strip():
+        return os.path.abspath(os.path.expanduser(explicit_state_path.strip()))
+    configured = os.environ.get("AGENT_TAVERN_BRIDGE_STATE_PATH", DEFAULT_BRIDGE_STATE_PATH)
+    return os.path.abspath(os.path.expanduser(configured))
 
 
 def resolve_thread_id(explicit_thread_id: Optional[str], backend_type: str) -> Tuple[str, str]:
@@ -195,24 +199,24 @@ def resolve_display_name(explicit_display_name: Optional[str], cwd: str, login_k
     return generated, "backendType"
 
 
-def read_bridge_identity() -> Optional[Dict[str, str]]:
+def read_bridge_identity_from_path(state_path: str) -> Optional[Dict[str, str]]:
+    resolved_state_path = os.path.abspath(os.path.expanduser(state_path))
     bridge_id = os.environ.get("AGENT_TAVERN_BRIDGE_ID", "").strip()
     bridge_token = os.environ.get("AGENT_TAVERN_BRIDGE_TOKEN", "").strip()
-    state_path = get_bridge_state_path()
 
     if bridge_id and bridge_token:
         return {
             "bridgeId": bridge_id,
             "bridgeToken": bridge_token,
             "source": "env",
-            "statePath": state_path,
+            "statePath": resolved_state_path,
         }
 
-    if not os.path.exists(state_path):
+    if not os.path.exists(resolved_state_path):
         return None
 
     try:
-        with open(state_path, "r", encoding="utf-8") as handle:
+        with open(resolved_state_path, "r", encoding="utf-8") as handle:
             data = json.load(handle)
     except Exception:
         return None
@@ -224,15 +228,117 @@ def read_bridge_identity() -> Optional[Dict[str, str]]:
             "bridgeId": bridge_id,
             "bridgeToken": bridge_token,
             "source": "file",
-            "statePath": state_path,
+            "statePath": resolved_state_path,
+            "serverBaseUrl": normalize_base_url(str(data.get("serverBaseUrl", "")).strip()) if data.get("serverBaseUrl") else "",
+            "bridgeName": str(data.get("bridgeName", "")).strip(),
         }
     return None
 
 
-def persist_bridge_identity(state_path: str, bridge_id: str, bridge_token: str) -> None:
+def describe_bridge_identity(identity: Dict[str, str]) -> str:
+    bridge_name = identity.get("bridgeName") or "(unnamed bridge)"
+    bridge_id = identity.get("bridgeId") or "(missing bridgeId)"
+    state_path = identity.get("statePath") or "(unknown state path)"
+    candidate_base_url = identity.get("serverBaseUrl") or "(unknown server)"
+    return f"{bridge_name} [{bridge_id}] {state_path} -> {candidate_base_url}"
+
+
+def public_bridge_identity(identity: Dict[str, str]) -> Dict[str, str]:
+    return {
+        "bridgeId": identity.get("bridgeId", ""),
+        "statePath": identity.get("statePath", ""),
+        "serverBaseUrl": identity.get("serverBaseUrl", ""),
+        "bridgeName": identity.get("bridgeName", ""),
+    }
+
+
+class BridgeSelectionError(RuntimeError):
+    def __init__(self, message: str, *, code: str, candidates: Optional[list[Dict[str, str]]] = None):
+        super().__init__(message)
+        self.code = code
+        self.candidates = candidates or []
+
+
+def find_bridge_candidates(base_url: str) -> Tuple[list[Dict[str, str]], list[Dict[str, str]]]:
+    state_dir = os.path.join(Path.home(), ".agent-tavern")
+    all_candidates: list[Dict[str, str]] = []
+    matching_candidates: list[Dict[str, str]] = []
+    for state_path in sorted(glob.glob(os.path.join(state_dir, "*.json"))):
+        identity = read_bridge_identity_from_path(state_path)
+        if not identity:
+            continue
+        all_candidates.append(identity)
+        candidate_base_url = normalize_base_url(identity.get("serverBaseUrl", "").strip())
+        if candidate_base_url == base_url:
+            matching_candidates.append(identity)
+    return matching_candidates, all_candidates
+
+
+def resolve_bridge_identity(explicit_state_path: Optional[str], base_url: str) -> Dict[str, str]:
+    env_bridge_id = os.environ.get("AGENT_TAVERN_BRIDGE_ID", "").strip()
+    env_bridge_token = os.environ.get("AGENT_TAVERN_BRIDGE_TOKEN", "").strip()
+    if env_bridge_id and env_bridge_token:
+        identity = read_bridge_identity_from_path(get_bridge_state_path(explicit_state_path))
+        return identity or {
+            "bridgeId": env_bridge_id,
+            "bridgeToken": env_bridge_token,
+            "source": "env",
+            "statePath": get_bridge_state_path(explicit_state_path),
+            "serverBaseUrl": base_url,
+        }
+
+    if explicit_state_path and explicit_state_path.strip():
+        identity = read_bridge_identity_from_path(get_bridge_state_path(explicit_state_path))
+        if not identity:
+            raise RuntimeError(f"bridge state file not found or invalid: {get_bridge_state_path(explicit_state_path)}")
+        return identity
+
+    configured_state_path = os.environ.get("AGENT_TAVERN_BRIDGE_STATE_PATH", "").strip()
+    if configured_state_path:
+        identity = read_bridge_identity_from_path(get_bridge_state_path(configured_state_path))
+        if not identity:
+            raise RuntimeError(f"bridge state file not found or invalid: {get_bridge_state_path(configured_state_path)}")
+        return identity
+
+    matching_candidates, all_candidates = find_bridge_candidates(base_url)
+    if not all_candidates:
+        raise BridgeSelectionError(
+            f"no local bridge found for {base_url}; start a bridge first, for example: "
+            f"AGENT_TAVERN_SERVER_URL={base_url} pnpm dev:bridge",
+            code="NO_LOCAL_BRIDGE",
+        )
+    if not matching_candidates:
+        raise BridgeSelectionError(
+            f"no local bridge is configured for {base_url}. Available local bridges: "
+            + "; ".join(describe_bridge_identity(candidate) for candidate in all_candidates),
+            code="NO_MATCHING_BRIDGE",
+            candidates=[public_bridge_identity(candidate) for candidate in all_candidates],
+        )
+    if len(matching_candidates) > 1:
+        raise BridgeSelectionError(
+            f"multiple local bridges match {base_url}; choose one and re-run with --bridge-state-path",
+            code="MULTIPLE_MATCHING_BRIDGES",
+            candidates=[public_bridge_identity(candidate) for candidate in matching_candidates],
+        )
+    return matching_candidates[0]
+
+
+def persist_bridge_identity(
+    state_path: str,
+    bridge_id: str,
+    bridge_token: str,
+    *,
+    server_base_url: Optional[str] = None,
+    bridge_name: Optional[str] = None,
+) -> None:
     os.makedirs(os.path.dirname(state_path), exist_ok=True)
     with open(state_path, "w", encoding="utf-8") as handle:
-        json.dump({"bridgeId": bridge_id, "bridgeToken": bridge_token}, handle, indent=2)
+        payload = {"bridgeId": bridge_id, "bridgeToken": bridge_token}
+        if server_base_url:
+            payload["serverBaseUrl"] = normalize_base_url(server_base_url)
+        if bridge_name:
+            payload["bridgeName"] = bridge_name
+        json.dump(payload, handle, indent=2)
 
 
 def resolve_bridge_name() -> str:
@@ -293,6 +399,10 @@ def main() -> int:
     parser.add_argument("--login-key", help="Stable login key for the agent principal")
     parser.add_argument("--display-name", help="Display name for the agent principal")
     parser.add_argument("--cwd", help="Workspace directory to bind on bridge attach")
+    parser.add_argument(
+        "--bridge-state-path",
+        help="Explicit bridge state file path (defaults to AGENT_TAVERN_BRIDGE_STATE_PATH or ~/.agent-tavern/bridge-state.json)",
+    )
     args = parser.parse_args()
 
     try:
@@ -318,6 +428,38 @@ def main() -> int:
     login_key, login_key_source = resolve_login_key(args.login_key, backend_type, thread_id)
     cwd, cwd_source = resolve_cwd(args.cwd)
     display_name, display_name_source = resolve_display_name(args.display_name, cwd, login_key, backend_type)
+    try:
+        bridge_identity = resolve_bridge_identity(args.bridge_state_path, base_url)
+    except BridgeSelectionError as exc:
+        error_result = {
+            "ok": False,
+            "inviteResolved": True,
+            "room": room_data,
+            "bootstrapped": False,
+            "joined": False,
+            "status": 412,
+            "baseUrl": base_url,
+            "inviteToken": invite_token,
+            "backendType": backend_type,
+            "backendThreadId": thread_id,
+            "threadIdSource": thread_id_source,
+            "loginKey": login_key,
+            "loginKeySource": login_key_source,
+            "globalDisplayName": display_name,
+            "displayNameSource": display_name_source,
+            "cwd": cwd,
+            "cwdSource": cwd_source,
+            "errorCode": exc.code,
+            "bridgeCandidates": exc.candidates,
+            "error": str(exc),
+        }
+        if args.bridge_state_path and args.bridge_state_path.strip():
+            error_result["bridgeStatePath"] = get_bridge_state_path(args.bridge_state_path)
+        print(json.dumps(error_result, ensure_ascii=True))
+        return 1
+    except RuntimeError as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=True))
+        return 1
 
     bootstrap_status, bootstrap_data = post_json(
         f"{base_url}/api/citizens/bootstrap",
@@ -365,6 +507,7 @@ def main() -> int:
         "joined": joined,
         "status": join_status,
         "baseUrl": base_url,
+        "bridgeStatePath": bridge_identity.get("statePath", ""),
         "inviteToken": invite_token,
         "backendType": backend_type,
         "backendThreadId": thread_id,
@@ -382,14 +525,6 @@ def main() -> int:
     if not joined:
         print(json.dumps(result, ensure_ascii=True))
         return 1
-
-    bridge_identity = read_bridge_identity()
-    if not bridge_identity:
-        result["attached"] = False
-        result["attachPending"] = True
-        result["attachError"] = "local bridge identity not found"
-        print(json.dumps(result, ensure_ascii=True))
-        return 0
 
     attach_status, attach_data = post_json(
         f"{base_url}/api/bridges/{bridge_identity['bridgeId']}/agents/attach",
@@ -410,13 +545,15 @@ def main() -> int:
                 "bridgeId": str(recover_data.get("bridgeId", "")).strip(),
                 "bridgeToken": str(recover_data.get("bridgeToken", "")).strip(),
                 "source": "file",
-                "statePath": bridge_identity.get("statePath", get_bridge_state_path()),
+                "statePath": bridge_identity.get("statePath", get_bridge_state_path(args.bridge_state_path)),
             }
             if bridge_identity["bridgeId"] and bridge_identity["bridgeToken"]:
                 persist_bridge_identity(
                     bridge_identity["statePath"],
                     bridge_identity["bridgeId"],
                     bridge_identity["bridgeToken"],
+                    server_base_url=base_url,
+                    bridge_name=resolve_bridge_name(),
                 )
                 attach_status, attach_data = post_json(
                     f"{base_url}/api/bridges/{bridge_identity['bridgeId']}/agents/attach",

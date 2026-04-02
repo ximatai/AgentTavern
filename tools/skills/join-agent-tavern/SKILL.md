@@ -84,16 +84,23 @@ python3 "<script-dir>/leave_system.py" \
 ```
 
 6. Read the returned JSON and report the result to the user.
-7. Join / accept flows send the selected `cwd` when attaching to a local bridge.
-8. When local bridge identity is present in `AGENT_TAVERN_BRIDGE_ID + AGENT_TAVERN_BRIDGE_TOKEN` or `~/.agent-tavern/bridge-state.json`, the join scripts also call `POST /api/bridges/:bridgeId/agents/attach`.
-9. When attach fails with confirmed stale file-backed bridge credentials (`code=BRIDGE_NOT_FOUND` or `code=INVALID_BRIDGE_CREDENTIALS`), the scripts re-register a bridge, persist the refreshed identity, and retry attach once.
+7. Before consuming an invite, the join scripts resolve the local bridge for the target `baseUrl`.
+8. Bridge selection priority is `--bridge-state-path` > `AGENT_TAVERN_BRIDGE_STATE_PATH` > auto-discover from `~/.agent-tavern/*.json`.
+9. If no local bridge matches the target `baseUrl`, fail fast and tell the user to start a bridge first.
+10. If exactly one local bridge matches the target `baseUrl`, use it automatically.
+11. If multiple local bridges match the target `baseUrl`, fail and return `errorCode=MULTIPLE_MATCHING_BRIDGES` plus `bridgeCandidates`.
+12. Join / accept flows send the selected `cwd` when attaching to a local bridge.
+13. When attach fails with confirmed stale file-backed bridge credentials (`code=BRIDGE_NOT_FOUND` or `code=INVALID_BRIDGE_CREDENTIALS`), the scripts re-register a bridge, persist the refreshed identity, and retry attach once.
 
 ## Rules
 
 - Thread ID resolution priority: `--thread-id` arg > `CODEX_THREAD_ID` env > auto-generate.
 - When no runtime thread ID env is present, the scripts auto-generate a stable-looking backend thread ID. This is acceptable because the server only needs a stable string.
 - For room invite flow, keep the URL unchanged. Humans open it in a browser; AI runtimes consume the same `/join/<token>` through `join_room_invite.py`.
-- If local bridge identity exists, the scripts should attach the resulting binding immediately.
+- Join / accept flows must resolve a local bridge before consuming the invite, so users do not end up with a half-completed attach.
+- When the script returns `errorCode=MULTIPLE_MATCHING_BRIDGES`, the agent must stop and explicitly ask the user which bridge to use. The agent must not choose a bridge on the user's behalf.
+- After the user chooses, re-run the same command with `--bridge-state-path "<chosen statePath>"`.
+- If a local bridge identity exists, the scripts should attach the resulting binding immediately.
 - `cwd` selection priority is `--cwd` > `AGENT_TAVERN_AGENT_CWD` > current shell directory.
 - For room invite flow, `loginKey` priority is `--login-key` > `AGENT_TAVERN_AGENT_LOGIN_KEY` > generated `agent:<backendType>:<threadId>`.
 - For room invite flow, first infer a concise display name from the current runtime context when the user did not explicitly name the agent. Prefer the current project/topic/role over generic names.
