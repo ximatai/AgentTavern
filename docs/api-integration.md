@@ -9,37 +9,40 @@
 - 业务语义以接口行为和约束为准，不以页面形态为准
 - 已注明“尚未落地实现”的部分视为目标接口，不等于当前代码已支持
 - 本地 Bridge 与恢复相关接口细节需要同时参考 `docs/local-bridge-design.md`
-- 当前产品入口默认按“Web 面向 human，默认 Agent 接入结果为 assistant；显式高级路径再创建 agent citizen”的方向推进
+- 当前产品入口按“Web 优先服务 human 协作与审批，Agent 通过邀请 / skill / CLI / Bridge 接入执行链路”的方向推进
 
 ## 2. 目标
 
 接口层服务以下目标：
 
-- HTTP 负责轻身份登记、一等公民大厅与房间动作
-- HTTP 负责创建、查询、提交动作
-- WebSocket 负责房间实时事件广播
-- Agent 调用通过统一执行协议接入
-- 接口表达业务语义，不绑定前端形态
-- 服务端长期不直接执行客户端本地 Agent
+- 让房间成为统一协作上下文
+- 让 owner / approval / authorization 的边界通过接口清晰表达
+- 让 HTTP 负责轻身份登记、一等公民大厅、房间和审批动作
+- 让 WebSocket 负责房间实时事件广播
+- 让 Agent 调用通过统一执行协议接入
+- 保持接口表达业务语义，而不是绑定前端形态
+- 保持“服务端负责调度，客户端本地 Bridge 负责执行”的职责分离
 
 ## 3. HTTP 接口
 
 ### 轻身份与大厅
 
-以下接口为新的产品方向约束，当前部分尚未落地实现。
+这一组接口服务于“谁进入系统、谁出现在大厅、谁被拉入房间”。
+
+当前部分接口已落地，部分仍处于目标方向说明阶段。
 
 入口说明：
 
 - human 当前优先通过 Web UI 完成 bootstrap 与大厅操作
-- agent 侧当前同时存在外部接入与手动配置接入两条路径
-- `OpenAI Compatible API` 属于通用接入方式；当前已落地的是 Web 直连 `assistant`，目标方向上也可用于创建 `agent citizen`
+- agent 当前更适合通过邀请 URL、skill、CLI 或本地 Bridge 接入
+- `OpenAI Compatible API` 属于通用接入方式；当前已落地的是 Web 直连 assistant，目标方向上也可用于创建 agent citizen
 
 状态说明：
 
 - 当前已落地：`citizen bootstrap`、`presence lobby`、direct room、room pull、Web 直连 assistant 的服务端接口基线
-- 目标方向：把 `server config -> citizen / assistant` 的创建路径与外部接入路径收口成清晰产品路径
+- 目标方向：把 `server config -> citizen / assistant` 的创建路径，与邀请 / skill / Bridge 这些外部接入路径收口成更清晰的产品主路径
 
-#### `POS../api/citizens/bootstrap`
+#### `POST /api/citizens/bootstrap`
 
 首次访问登记或恢复轻身份。
 
@@ -130,6 +133,8 @@
 - 后续该房间可继续拉入更多成员
 
 ### 房间
+
+这一组接口服务于“谁进入房间、谁在房间内协作、谁可以把其他主体拉进来”。
 
 #### `POST /api/rooms`
 
@@ -309,6 +314,10 @@
 
 ### 邀请链接
 
+这一组接口服务于房间加入主链路。
+
+当前推荐的人与 agent 入房主链路，都是基于通用房间邀请完成。
+
 #### `GET /api/invites/:inviteToken`
 
 通过邀请 token 获取房间信息。
@@ -338,26 +347,11 @@
 - 若对方已登记，则直接用现有 citizen 身份接受邀请并加入房间
 - 该邀请同时适用于 human 与 agent citizen
 
-响应体：
+说明：
 
-```json
-{
-  "memberId": "mem_xxx",
-  "roomId": "room_xxx",
-  "displayName": "BackendThread",
-  "ownerMemberId": "mem_owner_xxx",
-  "privateAssistantId": "pa_xxx"
-}
-```
-
-约束：
-
-- 邀请 token 一次性使用
-- 邀请 owner 当前必须是 citizen-backed member
-- `presetDisplayName` 存在时优先使用
-- invite 未预设 `presetDisplayName` 时，必须由请求体提供 `displayName`
-- 接受后默认沉淀为 owner 名下私有助理资产
-- 同一个 `backendThreadId` 最终只折叠到同 owner 的一个私有助理资产
+- 这里描述的是推荐主链路，而不是额外新增的一组独立接口
+- human 与 agent citizen 在“加入房间”这件事上共享同一套房间邀请语义
+- 私有助理接入仍通过独立的 assistant invite 路径完成
 - 房间侧加入的是该私有助理资产在当前房间里的 projection
 - 房间侧自动分配或复用唯一 `memberId`
 - 接受时必须绑定 `backendThreadId`
