@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Button, Tag, Typography } from "antd";
+import { Button, Tag, Tooltip, Typography } from "antd";
 import {
+  ControlOutlined,
   EditOutlined,
+  IdcardOutlined,
   MessageOutlined,
-  SettingOutlined,
   UserOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
@@ -67,21 +68,7 @@ export function HomeSidebar() {
   );
 
   const assistantPreview = useMemo(() => assistants.slice(0, 3), [assistants]);
-  const activeAssistants = useMemo(
-    () => assistants.filter((item) => item.status === "active").length,
-    [assistants],
-  );
-  const waitingAssistants = useMemo(
-    () => assistants.filter((item) => item.status === "pending_bridge" || item.status === "detached").length,
-    [assistants],
-  );
-
   async function handleStartDirectRoom(targetCitizenId: string) {
-    if (!principal) {
-      setLoginOpen(true);
-      return;
-    }
-
     setActioningPrincipalId(targetCitizenId);
     try {
       await useRoomStore.getState().startDirectRoom(targetCitizenId);
@@ -105,104 +92,102 @@ export function HomeSidebar() {
         </div>
 
         <div className="home-side-identity-card">
-          <div className="home-side-identity-main">
-            <div className="home-side-identity-avatar">
-              {principal ? <UserOutlined /> : <SettingOutlined />}
-            </div>
-            <div className="home-side-identity-copy">
-              <div className="home-side-identity-title-row">
-                <strong className="home-side-card-title">
-                  {principal?.globalDisplayName ?? t("home.identityMissing")}
-                </strong>
-                <Tag color={principal?.kind === "agent" ? "geekblue" : principal ? "green" : "default"}>
-                  {principal
-                    ? principal.kind === "agent"
-                      ? t("home.kindAgent")
-                      : t("home.kindHuman")
-                    : t("header.loginButton")}
-                </Tag>
-              </div>
-              <Paragraph type="secondary" className="home-side-card-desc">
-                {principal ? maskLoginKey(principal.loginKey) : t("home.identityMissingHint")}
-              </Paragraph>
-            </div>
-          </div>
-          <Button
-            type={principal ? "text" : "primary"}
-            size="small"
-            icon={principal ? <EditOutlined /> : undefined}
-            onClick={() => setLoginOpen(true)}
-          >
-            {principal ? t("home.secondaryActionEditIdentity") : t("home.primaryActionRegister")}
-          </Button>
-        </div>
-
-        <div className="home-side-assistant-panel">
-          <div className="home-side-assistant-header">
-            <div>
-              <Text className="home-side-section-eyebrow">{t("home.sidebarAssistantsEyebrow")}</Text>
-              <div className="home-side-assistant-title-row">
-                <Title level={5}>{t("assistantPanel.title")}</Title>
-                <Text type="secondary">{assistants.length}</Text>
-              </div>
-            </div>
-            {principal ? (
-              <Button type="text" size="small" onClick={() => setAssistantOpen(true)}>
-                {t("home.sidebarManageAssistants")}
-              </Button>
-            ) : null}
-          </div>
-
           {principal ? (
             <>
-              <div className="home-side-assistant-stats">
-                <div className="home-side-assistant-stat">
-                  <span className="home-side-assistant-stat-value">{assistants.length}</span>
-                  <span className="home-side-assistant-stat-label">{t("home.sidebarAssistantsTotal")}</span>
-                </div>
-                <div className="home-side-assistant-stat">
-                  <span className="home-side-assistant-stat-value">{activeAssistants}</span>
-                  <span className="home-side-assistant-stat-label">{t("home.sidebarAssistantsActive")}</span>
-                </div>
-                <div className="home-side-assistant-stat">
-                  <span className="home-side-assistant-stat-value">{waitingAssistants}</span>
-                  <span className="home-side-assistant-stat-label">{t("home.sidebarAssistantsWaiting")}</span>
-                </div>
-              </div>
-
-              {assistantPreview.length > 0 ? (
-                <div className="home-side-assistant-list">
-                  {assistantPreview.map((assistant) => (
-                    <div key={assistant.id} className="home-side-assistant-item">
-                      <div className="home-side-assistant-meta">
-                        <span className="home-side-assistant-name">{assistant.name}</span>
-                        <Text type="secondary" className="home-side-assistant-backend">
-                          {assistant.backendType}
-                        </Text>
-                      </div>
-                      <Tag color={assistantStatusTone(assistant.status)} className="home-side-runtime-tag">
-                        {t(`assistantPanel.assistantStatus.${assistant.status}`)}
+              <div className="home-side-identity-head">
+                <div className="home-side-identity-main">
+                  <div className="home-side-identity-avatar">
+                    <UserOutlined />
+                  </div>
+                  <div className="home-side-identity-copy">
+                    <div className="home-side-identity-title-row">
+                      <strong className="home-side-card-title">
+                        {principal.globalDisplayName}
+                      </strong>
+                      <Tag color={principal.kind === "agent" ? "geekblue" : "green"}>
+                        {principal.kind === "agent" ? t("home.kindAgent") : t("home.kindHuman")}
                       </Tag>
                     </div>
-                  ))}
-                  {assistants.length > assistantPreview.length ? (
-                    <Text type="secondary" className="home-side-assistant-more">
-                      {t("home.sidebarAssistantsMore", {
-                        count: assistants.length - assistantPreview.length,
-                      })}
-                    </Text>
-                  ) : null}
+                    <Paragraph type="secondary" className="home-side-card-desc">
+                      {maskLoginKey(principal.loginKey)}
+                    </Paragraph>
+                  </div>
                 </div>
-              ) : (
-                <Text type="secondary" className="home-side-empty">
-                  {t("assistantPanel.emptyHint")}
-                </Text>
-              )}
+                <Tooltip title={t("home.secondaryActionEditIdentity")}>
+                  <Button
+                    type="text"
+                    size="small"
+                    shape="circle"
+                    className="home-side-icon-action"
+                    icon={<EditOutlined />}
+                    onClick={() => setLoginOpen(true)}
+                    aria-label={t("home.secondaryActionEditIdentity")}
+                  />
+                </Tooltip>
+              </div>
+
+              <div className="home-side-assistant-panel">
+                <div className="home-side-assistant-header">
+                  <div>
+                    <div className="home-side-assistant-title-row">
+                      <Text className="home-side-assistant-title">{t("home.sidebarAssistantsTitle")}</Text>
+                      <Text type="secondary">{assistants.length}</Text>
+                    </div>
+                  </div>
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<ControlOutlined />}
+                    onClick={() => setAssistantOpen(true)}
+                  >
+                    {t("home.sidebarManageAssistants")}
+                  </Button>
+                </div>
+
+                {assistantPreview.length > 0 ? (
+                  <div className="home-side-assistant-list">
+                    {assistantPreview.map((assistant) => (
+                      <div key={assistant.id} className="home-side-assistant-item">
+                        <div className="home-side-assistant-meta">
+                          <span className="home-side-assistant-name">{assistant.name}</span>
+                          <Text type="secondary" className="home-side-assistant-backend">
+                            {assistant.backendType}
+                          </Text>
+                        </div>
+                        {assistant.status === "active" ? null : (
+                          <Tag color={assistantStatusTone(assistant.status)} className="home-side-runtime-tag">
+                            {t(`assistantPanel.assistantStatus.${assistant.status}`)}
+                          </Tag>
+                        )}
+                      </div>
+                    ))}
+                    {assistants.length > assistantPreview.length ? (
+                      <Text type="secondary" className="home-side-assistant-more">
+                        {t("home.sidebarAssistantsMore", {
+                          count: assistants.length - assistantPreview.length,
+                        })}
+                      </Text>
+                    ) : null}
+                  </div>
+                ) : (
+                  <Text type="secondary" className="home-side-empty">
+                    {t("assistantPanel.emptyHint")}
+                  </Text>
+                )}
+              </div>
             </>
           ) : (
-            <Text type="secondary" className="home-side-empty">
-              {t("home.sidebarAssistantsLocked")}
-            </Text>
+            <div className="home-side-workbench-placeholder">
+              <div className="home-side-identity-avatar">
+                <IdcardOutlined />
+              </div>
+              <div className="home-side-workbench-placeholder-copy">
+                <strong className="home-side-card-title">{t("home.sidebarWorkbenchGuestTitle")}</strong>
+                <Paragraph type="secondary" className="home-side-card-desc">
+                  {t("home.sidebarWorkbenchGuestHint")}
+                </Paragraph>
+              </div>
+            </div>
           )}
         </div>
       </section>
@@ -242,16 +227,19 @@ export function HomeSidebar() {
                         {t(`runtimeStatus.${item.runtimeStatus}`)}
                       </Tag>
                     ) : null}
-                    <Button
-                      type="text"
-                      size="small"
-                      className="home-side-row-action"
-                      icon={<MessageOutlined />}
-                      loading={actioning}
-                      onClick={() => void handleStartDirectRoom(citizenId)}
-                    >
-                      {principal ? t("onlineMembers.startChat") : t("home.primaryActionRegister")}
-                    </Button>
+                    <Tooltip title={principal ? t("onlineMembers.startChat") : t("home.sidebarLobbyActionLocked")}>
+                      <Button
+                        type="text"
+                        size="small"
+                        shape="circle"
+                        className="home-side-icon-action home-side-row-action"
+                        icon={<MessageOutlined />}
+                        loading={actioning}
+                        disabled={!principal}
+                        onClick={() => void handleStartDirectRoom(citizenId)}
+                        aria-label={principal ? t("onlineMembers.startChat") : t("home.primaryActionRegister")}
+                      />
+                    </Tooltip>
                   </div>
                 </div>
               );

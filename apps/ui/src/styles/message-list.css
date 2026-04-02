@@ -296,12 +296,12 @@
 
 .approval-card {
   position: relative;
-  background: linear-gradient(180deg, rgba(30, 41, 59, 0.96), rgba(22, 32, 49, 0.96));
+  background: color-mix(in srgb, var(--bg-inset, #111827) 82%, var(--bg-surface, #1e293b));
   border-radius: 14px;
   padding: 16px 18px;
-  border: 1px solid rgba(148, 163, 184, 0.12);
+  border: 1px solid color-mix(in srgb, var(--border-default, #1e293b) 72%, transparent);
   border-left: 4px solid #fbbf24;
-  box-shadow: 0 12px 28px rgba(2, 6, 23, 0.22);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--bg-base, #0a0f1c) 10%, transparent);
 }
 
 .approval-card-header {
@@ -331,7 +331,7 @@
 
 .approval-card-grant {
   font-size: 11px;
-  color: var(--font-tertiary, #64748b);
+  color: var(--font-secondary, #94a3b8);
 }
 
 .approval-card-toggle {
@@ -341,12 +341,13 @@
   padding: 0;
   font-size: 12px;
   font-weight: 600;
-  color: #7dd3fc;
+  color: var(--accent, #22d3ee);
   cursor: pointer;
 }
 
 .approval-card-toggle:hover {
-  color: #bae6fd;
+  color: var(--accent, #22d3ee);
+  opacity: 0.78;
 }
 
 .approval-card-title {
@@ -369,7 +370,7 @@
   margin: 0;
   font-size: 12px;
   line-height: 1.5;
-  color: var(--font-tertiary, #94a3b8);
+  color: var(--font-secondary, #94a3b8);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -382,8 +383,8 @@
   padding: 12px 14px;
   margin-bottom: 14px;
   border-radius: 12px;
-  background: rgba(15, 23, 42, 0.42);
-  border: 1px solid rgba(148, 163, 184, 0.08);
+  background: color-mix(in srgb, var(--bg-surface, #1e293b) 76%, var(--bg-input, #1a2332));
+  border: 1px solid color-mix(in srgb, var(--border-default, #1e293b) 58%, transparent);
 }
 
 .approval-card-item {
@@ -398,13 +399,13 @@
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--font-muted, #475569);
+  color: var(--font-tertiary, #64748b);
 }
 
 .approval-card-item-value {
   font-size: 13px;
   font-weight: 600;
-  color: var(--font-secondary, #cbd5e1);
+  color: var(--font-primary, #fff);
   word-break: break-word;
 }
 
@@ -481,7 +482,7 @@
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--font-muted, #475569);
+  color: var(--font-tertiary, #64748b);
 }
 
 .approval-card-select {
@@ -541,7 +542,7 @@
   font-size: 14px;
   font-weight: normal;
   line-height: 1.5;
-  color: var(--font-primary, #FFFFFF);
+  color: #ffffff;
 }
 
 /* ── Focused Message Highlight ── */

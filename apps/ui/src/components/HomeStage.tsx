@@ -1,20 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, Card, Tag, Typography } from "antd";
 import {
-  UserOutlined,
-  RobotOutlined,
-  HistoryOutlined,
   LoginOutlined,
-  MessageOutlined,
   PlusOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 
 import { toast } from "../lib/feedback";
-import { maskLoginKey } from "../lib/identity";
 import { useRoomStore } from "../stores/room";
 import { useCitizenStore } from "../stores/citizen";
-import { getPrivateAssistants } from "../api/assistants";
 import { LoginModal } from "./LoginModal";
 import { RoomModal } from "./RoomModal";
 
@@ -28,31 +22,17 @@ interface HomeStageProps {
 
 export function HomeStage({ inviteToken = null }: HomeStageProps) {
   const { t } = useTranslation();
-  const lobbyCitizens = useRoomStore((s) => s.lobbyCitizens);
-  const recentRooms = useRoomStore((s) => s.recentRooms);
   const principal = useCitizenStore((s) => s.principal);
   const restoreReady = useCitizenStore((s) => s.restoreReady);
   const joinRoom = useRoomStore((s) => s.joinRoom);
-  const [assistantCount, setAssistantCount] = useState(0);
   const [loginOpen, setLoginOpen] = useState(false);
   const [roomModalOpen, setRoomModalOpen] = useState(false);
-  const [actioningPrincipalId, setActioningPrincipalId] = useState<string | null>(null);
   const [invitePromptShown, setInvitePromptShown] = useState(false);
   const [loginPromptShown, setLoginPromptShown] = useState(false);
 
   useEffect(() => {
     useRoomStore.getState().refreshLobbyPresence();
   }, []);
-
-  useEffect(() => {
-    if (!principal) {
-      setAssistantCount(0);
-      return;
-    }
-    getPrivateAssistants(principal.citizenId, principal.citizenToken)
-      .then((list) => setAssistantCount(list.length))
-      .catch(() => setAssistantCount(0));
-  }, [principal]);
 
   useEffect(() => {
     if (!restoreReady || !inviteToken || principal || invitePromptShown) return;
@@ -65,29 +45,6 @@ export function HomeStage({ inviteToken = null }: HomeStageProps) {
     setLoginOpen(true);
     setLoginPromptShown(true);
   }, [inviteToken, principal, loginPromptShown, restoreReady]);
-
-  const visibleLobbyCitizens = useMemo(
-    () => lobbyCitizens.filter((item) => (item.citizenId ?? item.id) !== principal?.citizenId),
-    [lobbyCitizens, principal?.citizenId],
-  );
-
-  async function handleStartDirectRoom(targetCitizenId: string) {
-    if (!principal) {
-      setLoginOpen(true);
-      return;
-    }
-
-    setActioningPrincipalId(targetCitizenId);
-    try {
-      await useRoomStore.getState().startDirectRoom(targetCitizenId);
-    } catch (error) {
-      toast().error(
-        error instanceof Error ? error.message : t("onlineMembers.startChatFailed"),
-      );
-    } finally {
-      setActioningPrincipalId(null);
-    }
-  }
 
   async function handleInviteBootstrap() {
     if (!inviteToken) return;
@@ -148,110 +105,6 @@ export function HomeStage({ inviteToken = null }: HomeStageProps) {
           </Tag>
           <Title level={4}>{t("home.step3Title")}</Title>
           <Paragraph type="secondary">{t("home.step3Description")}</Paragraph>
-        </Card>
-      </div>
-
-      <div className="home-stats-row">
-        <Card className="home-stat-card" variant="borderless">
-          <UserOutlined className="home-stat-icon" />
-          <div className="home-stat-value">{lobbyCitizens.length}</div>
-          <Text type="secondary">{t("home.statsOnline")}</Text>
-        </Card>
-        <Card className="home-stat-card" variant="borderless">
-          <RobotOutlined className="home-stat-icon" />
-          <div className="home-stat-value">{assistantCount}</div>
-          <Text type="secondary">{t("home.statsAssistants")}</Text>
-        </Card>
-        <Card className="home-stat-card" variant="borderless">
-          <HistoryOutlined className="home-stat-icon" />
-          <div className="home-stat-value">{recentRooms.length}</div>
-          <Text type="secondary">{t("home.statsRecentRooms")}</Text>
-        </Card>
-      </div>
-
-      <div className="home-lobby-grid">
-        <Card className="home-lobby-card" variant="borderless">
-          <div className="home-section-header">
-            <div>
-              <Title level={4}>{t("home.lobbyTitle")}</Title>
-              <Text type="secondary">
-                {principal ? t("home.lobbyHintRegistered") : t("home.lobbyHintAnonymous")}
-              </Text>
-            </div>
-            <Tag color="cyan">{t("home.sidebarSnapshotOnline", { count: lobbyCitizens.length })}</Tag>
-          </div>
-
-          <div className="home-lobby-list">
-            {visibleLobbyCitizens.length === 0 ? (
-              <div className="home-lobby-empty">
-                <Text type="secondary">{t("home.lobbyEmpty")}</Text>
-              </div>
-            ) : (
-              visibleLobbyCitizens.map((item) => {
-                const citizenId = item.citizenId ?? item.id;
-                const actioning = actioningPrincipalId === citizenId;
-                return (
-                  <div key={item.id} className="home-lobby-item">
-                    <div className="home-lobby-meta">
-                      <div className="home-lobby-name-row">
-                        <strong>{item.globalDisplayName}</strong>
-                        <Tag className="home-lobby-kind-tag">
-                          {item.kind === "agent" ? t("home.kindAgent") : t("home.kindHuman")}
-                        </Tag>
-                        {item.runtimeStatus ? (
-                          <Tag color="processing">{t(`runtimeStatus.${item.runtimeStatus}`)}</Tag>
-                        ) : null}
-                      </div>
-                      <Text type="secondary">
-                        {maskLoginKey(item.loginKey)}
-                      </Text>
-                    </div>
-                    <Button
-                      type="primary"
-                      icon={<MessageOutlined />}
-                      loading={actioning}
-                      onClick={() => void handleStartDirectRoom(citizenId)}
-                    >
-                      {principal ? t("onlineMembers.startChat") : t("home.primaryActionRegister")}
-                    </Button>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </Card>
-
-        <Card className="home-identity-card" variant="borderless">
-          <div className="home-section-header">
-            <div>
-              <Title level={4}>{t("home.identityTitle")}</Title>
-              <Text type="secondary">
-                {principal ? t("home.identityReady") : t("home.identityMissing")}
-              </Text>
-            </div>
-          </div>
-
-          {principal ? (
-            <div className="home-identity-body">
-              <Tag color={principal.kind === "agent" ? "geekblue" : "green"}>
-                {principal.kind === "agent" ? t("home.kindAgent") : t("home.kindHuman")}
-              </Tag>
-              <Title level={5}>{principal.globalDisplayName}</Title>
-              <Text type="secondary">{maskLoginKey(principal.loginKey)}</Text>
-              <Button block onClick={() => setLoginOpen(true)}>
-                {t("home.secondaryActionEditIdentity")}
-              </Button>
-            </div>
-          ) : (
-            <div className="home-identity-body">
-              <Paragraph type="secondary">
-                {t("home.identityMissingHint")}
-              </Paragraph>
-              <Button type="primary" block icon={<LoginOutlined />} onClick={() => setLoginOpen(true)}>
-                {t("home.primaryActionRegister")}
-              </Button>
-            </div>
-          )}
         </Card>
       </div>
 

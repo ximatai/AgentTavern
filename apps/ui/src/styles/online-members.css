@@ -1,15 +1,15 @@
 .online-members-popover .ant-popover-inner {
   border-radius: 18px;
-  background: rgba(248, 250, 252, 0.98);
-  box-shadow: 0 24px 56px rgba(15, 23, 42, 0.18);
-  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: color-mix(in srgb, var(--bg-inset, #111827) 92%, var(--bg-surface, #1e293b));
+  box-shadow: 0 24px 56px color-mix(in srgb, var(--bg-base, #0a0f1c) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-default, #1e293b) 72%, transparent);
 }
 
 .online-members-panel {
   width: 336px;
   max-height: 420px;
   overflow-y: auto;
-  color: #0f172a;
+  color: var(--font-primary, #fff);
 }
 
 .online-members-panel-header {
@@ -22,12 +22,12 @@
 .online-members-panel-title {
   font-size: 14px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--font-primary, #fff);
 }
 
 .online-members-panel-count {
   font-size: 12px;
-  color: #64748b;
+  color: var(--font-secondary, #94a3b8);
 }
 
 .online-members-panel-list {
@@ -43,8 +43,8 @@
   gap: 12px;
   padding: 12px 14px;
   border-radius: 14px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(241, 245, 249, 0.96));
-  border: 1px solid rgba(203, 213, 225, 0.9);
+  background: color-mix(in srgb, var(--bg-surface, #1e293b) 76%, var(--bg-input, #1a2332));
+  border: 1px solid color-mix(in srgb, var(--border-default, #1e293b) 68%, transparent);
 }
 
 .online-members-panel-meta {
@@ -59,7 +59,7 @@
   gap: 6px;
   font-size: 13px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--font-primary, #fff);
 }
 
 .online-members-panel-kind {
@@ -73,12 +73,12 @@
 
 .online-members-panel-kind.is-human {
   color: #0f766e;
-  background: rgba(45, 212, 191, 0.14);
+  background: color-mix(in srgb, #2dd4bf 14%, transparent);
 }
 
 .online-members-panel-kind.is-agent {
   color: #0369a1;
-  background: rgba(14, 165, 233, 0.14);
+  background: color-mix(in srgb, #0ea5e9 14%, transparent);
 }
 
 .online-members-panel-runtime {
@@ -89,25 +89,25 @@
   font-size: 10px;
   font-weight: 700;
   color: #047857;
-  background: rgba(16, 185, 129, 0.14);
+  background: color-mix(in srgb, #10b981 14%, transparent);
 }
 
 .online-members-panel-runtime.is-waiting {
   color: #b45309;
-  background: rgba(245, 158, 11, 0.16);
+  background: color-mix(in srgb, #f59e0b 16%, transparent);
 }
 
 .online-members-panel-login-key {
   margin-top: 4px;
   font-size: 11px;
-  color: #64748b;
+  color: var(--font-secondary, #94a3b8);
   word-break: break-all;
 }
 
 .online-members-panel-empty {
   margin: 0;
   text-align: center;
-  color: #94a3b8;
+  color: var(--font-tertiary, #64748b);
   font-size: 12px;
   padding: 18px 0 8px;
 }

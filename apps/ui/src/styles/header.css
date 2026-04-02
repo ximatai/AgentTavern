@@ -115,7 +115,7 @@
 }
 
 .identity-button:hover {
-  background: var(--bg-surface, #1e293b);
+  background: color-mix(in srgb, var(--bg-surface, #1e293b) 82%, transparent);
 }
 
 .identity-avatar {
@@ -130,7 +130,7 @@
 }
 
 .identity-avatar-text {
-  color: var(--font-primary, #fff);
+  color: #ffffff;
   font-size: 14px;
   font-weight: 600;
   font-family: "Inter", sans-serif;
@@ -146,7 +146,7 @@
 .identity-name {
   font-size: 13px;
   font-weight: 500;
-  color: var(--font-secondary, #94a3b8);
+  color: var(--font-primary, #fff);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -163,14 +163,14 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  color: var(--font-muted, #475569);
+  color: var(--font-secondary, #94a3b8);
   font-size: 11px;
   cursor: pointer;
   transition: color 0.2s;
 }
 
 .identity-action:hover {
-  color: var(--font-secondary, #94a3b8);
+  color: var(--font-primary, #fff);
 }
 
 .identity-action.logout:hover {
