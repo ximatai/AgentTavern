@@ -113,6 +113,10 @@
   border-bottom: 1px solid var(--border-default, rgba(30, 41, 59, 0.5));
 }
 
+.am-list-item-pending {
+  align-items: flex-start;
+}
+
 .am-list-item:last-child {
   border-bottom: none;
 }
@@ -186,9 +190,21 @@
 }
 
 .am-invite-prompt {
+  display: block;
   font-size: 12px !important;
-  word-break: break-all;
-  max-width: 400px;
+  line-height: 1.6;
+  color: var(--font-secondary, #cbd5e1) !important;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.am-invite-prompt-block {
+  margin-top: 4px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(56, 189, 248, 0.18);
+  background: rgba(15, 23, 42, 0.72);
+  max-width: 100%;
 }
 
 .am-item-actions {

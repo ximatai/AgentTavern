@@ -16,6 +16,8 @@ test("readStoredBridgeIdentity prefers configured env identity", () => {
   persistBridgeIdentity(statePath, {
     bridgeId: "brg_file",
     bridgeToken: "tok_file",
+    serverBaseUrl: "http://127.0.0.1:8787",
+    bridgeName: "dev-bridge",
   });
 
   const identity = readStoredBridgeIdentity({
@@ -36,6 +38,8 @@ test("persistBridgeIdentity round-trips with readStoredBridgeIdentity", () => {
   persistBridgeIdentity(statePath, {
     bridgeId: "brg_roundtrip",
     bridgeToken: "tok_roundtrip",
+    serverBaseUrl: "http://127.0.0.1:8787",
+    bridgeName: "dev-bridge",
   });
 
   const identity = readStoredBridgeIdentity({
@@ -45,6 +49,28 @@ test("persistBridgeIdentity round-trips with readStoredBridgeIdentity", () => {
   assert.deepEqual(identity, {
     bridgeId: "brg_roundtrip",
     bridgeToken: "tok_roundtrip",
+    serverBaseUrl: "http://127.0.0.1:8787",
+    bridgeName: "dev-bridge",
+  });
+});
+
+test("readStoredBridgeIdentity remains compatible with legacy state files", () => {
+  const statePath = createTempStatePath();
+  fs.writeFileSync(
+    statePath,
+    JSON.stringify({
+      bridgeId: "brg_legacy",
+      bridgeToken: "tok_legacy",
+    }),
+  );
+
+  const identity = readStoredBridgeIdentity({
+    bridgeStatePath: statePath,
+  });
+
+  assert.deepEqual(identity, {
+    bridgeId: "brg_legacy",
+    bridgeToken: "tok_legacy",
   });
 });
 

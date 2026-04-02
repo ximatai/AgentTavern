@@ -21,6 +21,13 @@ def resolve_claude_home() -> Path:
     return (Path.home() / ".claude").resolve()
 
 
+def resolve_opencode_home() -> Path:
+    opencode_home = os.environ.get("OPENCODE_HOME", "").strip()
+    if opencode_home:
+        return Path(opencode_home).expanduser().resolve()
+    return (Path.home() / ".config" / "opencode").resolve()
+
+
 def resolve_skill_name(value: str) -> str:
     skill_name = value.strip()
     if not skill_name or skill_name in {".", ".."} or "/" in skill_name or "\\" in skill_name:
@@ -52,7 +59,7 @@ def main() -> int:
     parser.add_argument("skill_name", help="Skill folder name under tools/skills")
     parser.add_argument(
         "--target",
-        choices=["codex", "claude", "all"],
+        choices=["codex", "claude", "opencode", "all"],
         default="all",
         help="Which agent runtime to install into (default: all)",
     )
@@ -79,6 +86,8 @@ def main() -> int:
         targets.append(("codex", resolve_codex_home() / "skills" / skill_name))
     if args.target in ("claude", "all"):
         targets.append(("claude", resolve_claude_home() / "skills" / skill_name))
+    if args.target in ("opencode", "all"):
+        targets.append(("opencode", resolve_opencode_home() / "skills" / skill_name))
 
     installed: list[str] = []
     errors: list[str] = []

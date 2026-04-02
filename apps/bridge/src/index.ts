@@ -37,6 +37,26 @@ const bridgeMetadata = buildBridgeMetadata({
   taskLoopEnabled: enableTaskLoop,
 });
 
+class BridgeRequestError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+
+  constructor(message: string, options: { status: number; code?: string | null }) {
+    super(message);
+    this.name = "BridgeRequestError";
+    this.status = options.status;
+    this.code = options.code ?? null;
+  }
+}
+
+function isStaleBridgeCredentialError(error: unknown): boolean {
+  if (!(error instanceof BridgeRequestError)) {
+    return false;
+  }
+
+  return error.code === "BRIDGE_NOT_FOUND" || error.code === "INVALID_BRIDGE_CREDENTIALS";
+}
+
 const postJson: PostJson = async <T>(
   path: string,
   body: Record<string, unknown>,
@@ -47,17 +67,20 @@ const postJson: PostJson = async <T>(
     body: JSON.stringify(body),
   });
 
-  const data = (await response.json().catch(() => ({}))) as T & { error?: string };
+  const data = (await response.json().catch(() => ({}))) as T & { error?: string; code?: string };
 
   if (!response.ok) {
-    throw new Error((data as { error?: string }).error ?? `request failed: ${response.status}`);
+    throw new BridgeRequestError((data as { error?: string }).error ?? `request failed: ${response.status}`, {
+      status: response.status,
+      code: typeof data.code === "string" ? data.code : null,
+    });
   }
 
   return data;
 };
 
 async function registerBridge(): Promise<void> {
-  const result = await postJson<BridgeRegistration>("/api/bridges/register", {
+  const registerBody = (): Record<string, unknown> => ({
     bridgeId: bridgeId || undefined,
     bridgeToken: bridgeToken || undefined,
     bridgeInstanceId,
@@ -67,9 +90,31 @@ async function registerBridge(): Promise<void> {
     metadata: bridgeMetadata,
   });
 
+  let result: BridgeRegistration;
+
+  try {
+    result = await postJson<BridgeRegistration>("/api/bridges/register", registerBody());
+  } catch (error) {
+    if (!bridgeId || !bridgeToken || !isStaleBridgeCredentialError(error)) {
+      throw error;
+    }
+
+    console.warn(
+      `[bridge] stale credentials detected for id=${bridgeId}; registering a new bridge identity`,
+    );
+    bridgeId = "";
+    bridgeToken = "";
+    result = await postJson<BridgeRegistration>("/api/bridges/register", registerBody());
+  }
+
   bridgeId = result.bridgeId;
   bridgeToken = result.bridgeToken;
-  persistBridgeIdentity(bridgeStatePath, { bridgeId, bridgeToken });
+  persistBridgeIdentity(bridgeStatePath, {
+    bridgeId,
+    bridgeToken,
+    serverBaseUrl,
+    bridgeName,
+  });
 
   console.log(
     `[bridge] registered id=${bridgeId} instance=${bridgeInstanceId} status=${result.status}`,

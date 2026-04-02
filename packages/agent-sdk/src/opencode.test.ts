@@ -101,6 +101,59 @@ test("createOpenCodeAdapter streams deltas and returns session id", async () => 
   ]);
 });
 
+test("createOpenCodeAdapter does not pass placeholder backend thread ids as --session", async () => {
+  const child = new FakeChildProcess();
+
+  let observedSpawn:
+    | {
+        command: string;
+        args: ReadonlyArray<string>;
+        options: { stdio: ["pipe", "pipe", "pipe"]; cwd?: string };
+      }
+    | undefined;
+
+  const spawnProcess: OpenCodeSpawn = ((command, args, options) => {
+    observedSpawn = { command, args, options };
+
+    queueMicrotask(() => {
+      child.stdout.end();
+      child.emit("close", 0);
+    });
+
+    return child as never;
+  }) as OpenCodeSpawn;
+
+  const adapter = createOpenCodeAdapter(
+    {
+      sessionId: "agent-thread-placeholder",
+      cwd: "/tmp/opencode-project",
+    },
+    spawnProcess,
+  );
+
+  for await (const _event of adapter.run({
+    roomId: "room_1",
+    agentMemberId: "agent_1",
+    agentDisplayName: "OpenCode Agent",
+    requesterMemberId: "user_1",
+    requesterDisplayName: "Requester",
+    triggerMessageId: "msg_1",
+    prompt: "say hello",
+    contextMessages: [],
+  })) {
+    // no-op
+  }
+
+  assert.deepEqual(observedSpawn, {
+    command: "opencode",
+    args: ["run", "--format", "json"],
+    options: {
+      stdio: ["pipe", "pipe", "pipe"],
+      cwd: "/tmp/opencode-project",
+    },
+  });
+});
+
 test("createOpenCodeAdapter reports a clear failure when opencode is not installed", async () => {
   const spawnProcess: OpenCodeSpawn = (() => {
     const child = new FakeChildProcess();

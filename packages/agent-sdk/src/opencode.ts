@@ -48,6 +48,8 @@ type OpenCodeJsonEvent = {
   };
 };
 
+const OPENCODE_SESSION_ID_RE = /^ses_[A-Za-z0-9_-]+$/;
+
 function extractTextFromEvent(event: OpenCodeJsonEvent): string | null {
   if (event.type !== "text") return null;
   const part = event.part;
@@ -77,7 +79,10 @@ export function createOpenCodeAdapter(
 
       const args = ["run", "--format", "json"];
 
-      if (config.sessionId) {
+      // Only resume when we have a session id that looks like an OpenCode-native id.
+      // AgentTavern may temporarily store placeholder backend thread ids before the
+      // first successful OpenCode completion refreshes them.
+      if (config.sessionId && OPENCODE_SESSION_ID_RE.test(config.sessionId)) {
         args.push("--session", config.sessionId);
       }
       if (config.model) {

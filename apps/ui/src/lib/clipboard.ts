@@ -18,9 +18,24 @@ export async function copyText(text: string): Promise<void> {
   document.body.appendChild(textarea);
   textarea.focus();
   textarea.select();
+  let copied = false;
 
-  const copied = document.execCommand("copy");
-  document.body.removeChild(textarea);
+  const handleCopy = (event: ClipboardEvent) => {
+    event.preventDefault();
+    event.clipboardData?.setData("text/plain", text);
+    copied = true;
+  };
+
+  document.addEventListener("copy", handleCopy);
+  try {
+    const execCopied = document.execCommand("copy");
+    if (!execCopied && !copied) {
+      throw new Error("Clipboard copy failed");
+    }
+  } finally {
+    document.removeEventListener("copy", handleCopy);
+    document.body.removeChild(textarea);
+  }
 
   if (!copied) {
     throw new Error("Clipboard copy failed");

@@ -65,7 +65,12 @@ function buildInvitePrompt(
   const fullUrl = path
     ? new URL(path, resolveInviteOrigin()).toString()
     : "接入链接暂不可用，请重新生成";
-  return `请使用 join-agent-tavern skill 接受这个 AgentTavern 私有助理邀请，并把当前 ${backendPromptName(invite.backendType)} 会话接入为我的私有助理“${invite.name}”：${fullUrl}`;
+  return [
+    `请把当前 ${backendPromptName(invite.backendType)} 会话接入 AgentTavern 私有助理“${invite.name}”。`,
+    "",
+    "邀请链接：",
+    fullUrl,
+  ].join("\n");
 }
 
 interface AssistantManagementModalProps {
@@ -375,7 +380,7 @@ export function AssistantManagementModal({
             </div>
             <div className="am-list">
               {pendingInvites.map((invite) => (
-                <div key={invite.id} className="am-list-item">
+                <div key={invite.id} className="am-list-item am-list-item-pending">
                   <div className="am-item-left">
                     <div className="am-item-name-row">
                       <span className="am-source-icon" aria-hidden="true">
@@ -388,6 +393,11 @@ export function AssistantManagementModal({
                       <Tag className="am-status-tag">{inviteStatusLabel(invite.status)}</Tag>
                       <Text type="secondary" className="am-item-summary">
                         {t("assistantPanel.pendingHint")}
+                      </Text>
+                    </div>
+                    <div className="am-invite-prompt-block">
+                      <Text className="am-invite-prompt">
+                        {buildInvitePrompt(invite)}
                       </Text>
                     </div>
                   </div>

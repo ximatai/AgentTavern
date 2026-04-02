@@ -4,6 +4,8 @@ import path from "node:path";
 export type BridgeIdentity = {
   bridgeId: string;
   bridgeToken: string;
+  serverBaseUrl?: string;
+  bridgeName?: string;
 };
 
 export function readStoredBridgeIdentity(input: {
@@ -40,6 +42,12 @@ export function readStoredBridgeIdentity(input: {
       return {
         bridgeId: raw.bridgeId.trim(),
         bridgeToken: raw.bridgeToken.trim(),
+        ...(typeof raw.serverBaseUrl === "string" && raw.serverBaseUrl.trim()
+          ? { serverBaseUrl: raw.serverBaseUrl.trim() }
+          : {}),
+        ...(typeof raw.bridgeName === "string" && raw.bridgeName.trim()
+          ? { bridgeName: raw.bridgeName.trim() }
+          : {}),
       };
     }
   } catch (error) {
