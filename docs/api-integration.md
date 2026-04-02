@@ -8,7 +8,7 @@
 
 - 业务语义以接口行为和约束为准，不以页面形态为准
 - 已注明“尚未落地实现”的部分视为目标接口，不等于当前代码已支持
-- 本地 Bridge 与恢复相关接口细节需要同时参考 `docs/local-bridge-design.md`
+- 本地 Bridge 与恢复相关接口细节需要同时参考 [docs/local-bridge-design.md](local-bridge-design.md)
 - 当前产品入口按“Web 优先服务 human 协作与审批，Agent 通过邀请 / skill / CLI / Bridge 接入执行链路”的方向推进
 
 ## 2. 目标
@@ -396,7 +396,7 @@
 说明：
 
 - 以上为下一阶段领域事件方向
-- 具体字段以 `docs/local-bridge-design.md` 为准
+- 具体字段以 [docs/local-bridge-design.md](local-bridge-design.md) 为准
 - 当前服务端内置 `local_process` 仍可作为过渡执行方案
 - 当前已落地的是 HTTP 接口，不是这些 dotted name 事件
 

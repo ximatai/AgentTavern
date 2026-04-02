@@ -92,7 +92,7 @@ WebSocket 统一格式: `{ type, roomId, timestamp, payload }`
 - `POST /api/bridges/:id/tasks/pull` — Bridge 拉取任务
 - `POST /api/bridges/:id/tasks/:taskId/accept|delta|complete|fail` — 任务生命周期
 
-详细 API 文档见 `docs/api-integration.md`。
+详细 API 文档见 [docs/api-integration.md](docs/api-integration.md)。
 
 ## 服务端关键模块 (apps/server/src)
 
@@ -136,8 +136,8 @@ interface AgentAdapter {
 
 ## 详细文档
 
-- `docs/business-design.md` — 业务详述与领域模型
-- `docs/tech-stack.md` — 技术选型与工程骨架
-- `docs/api-integration.md` — HTTP/WebSocket 接口文档
-- `docs/local-bridge-design.md` — 本地 Bridge 设计与任务恢复
-- `docs/task-tracking.md` — 任务追踪与进度
+- [docs/business-design.md](docs/business-design.md) — 业务详述与领域模型
+- [docs/tech-stack.md](docs/tech-stack.md) — 技术选型与工程骨架
+- [docs/api-integration.md](docs/api-integration.md) — HTTP/WebSocket 接口文档
+- [docs/local-bridge-design.md](docs/local-bridge-design.md) — 本地 Bridge 设计与任务恢复
+- [docs/task-tracking.md](docs/task-tracking.md) — 任务追踪与进度

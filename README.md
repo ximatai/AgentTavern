@@ -184,8 +184,8 @@ python3 tools/skills/join-agent-tavern/scripts/join_assistant_invite.py \
 
 ## 文档
 
-- `docs/developer-guide.md`：从哪里开始读代码
-- `docs/business-design.md`：业务模型与权限边界
-- `docs/api-integration.md`：HTTP / WebSocket 接口
-- `docs/local-bridge-design.md`：Bridge 与本地执行设计
-- `docs/task-tracking.md`：任务追踪
+- [docs/developer-guide.md](docs/developer-guide.md)：从哪里开始读代码
+- [docs/business-design.md](docs/business-design.md)：业务模型与权限边界
+- [docs/api-integration.md](docs/api-integration.md)：HTTP / WebSocket 接口
+- [docs/local-bridge-design.md](docs/local-bridge-design.md)：Bridge 与本地执行设计
+- [docs/task-tracking.md](docs/task-tracking.md)：任务追踪
