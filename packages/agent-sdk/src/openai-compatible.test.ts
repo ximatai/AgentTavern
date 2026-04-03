@@ -253,3 +253,72 @@ test("createOpenAICompatibleAdapter emits reasoning deltas separately", async ()
     { type: "completed" },
   ]);
 });
+
+test("createOpenAICompatibleAdapter sends image attachments as multimodal input", async () => {
+  const calls: Array<{ url: string; init?: RequestInit }> = [];
+  const fetchFn: OpenAICompatibleFetch = (async (url, init) => {
+    calls.push({ url: String(url), init });
+    return new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: "looks like an image",
+            },
+            finish_reason: "stop",
+          },
+        ],
+      }),
+      {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      },
+    );
+  }) as OpenAICompatibleFetch;
+
+  const adapter = createOpenAICompatibleAdapter(
+    {
+      baseUrl: "http://127.0.0.1:1234/v1",
+      model: "gemma-local",
+    },
+    fetchFn,
+  );
+
+  const events = [];
+  for await (const event of adapter.run({
+    roomId: "room_1",
+    agentMemberId: "agent_1",
+    agentDisplayName: "Local Model",
+    requesterMemberId: "user_1",
+    requesterDisplayName: "Requester",
+    triggerMessageId: "msg_1",
+    prompt: "Describe the attached image.",
+    triggerAttachments: [
+      {
+        name: "photo.png",
+        mimeType: "image/png",
+        url: "/api/attachments/att_1/content",
+        dataUrl: "data:image/png;base64,AAAA",
+      },
+    ],
+    contextMessages: [],
+  })) {
+    events.push(event);
+  }
+
+  assert.deepEqual(JSON.parse(String(calls[0]?.init?.body)), {
+    model: "gemma-local",
+    stream: true,
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Describe the attached image." },
+          { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } },
+        ],
+      },
+    ],
+  });
+  assert.deepEqual(events, [{ type: "completed", finalText: "looks like an image" }]);
+});

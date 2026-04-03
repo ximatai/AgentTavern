@@ -3,6 +3,7 @@ import { Hono } from "hono";
 
 import type { AgentBinding, Member, Citizen, Room, RoomSecretaryMode } from "@agent-tavern/shared";
 
+import { stopAgentSession } from "../agents/runtime";
 import { db } from "../db/client";
 import {
   agentAuthorizations,
@@ -281,6 +282,74 @@ function leaveRoomByPrincipal(params: {
       roomId: params.roomId,
       citizenId: params.principal.id,
       memberId: existingMembership.id,
+    },
+  };
+}
+
+function removeRoomMember(params: {
+  room: Room;
+  roomId: string;
+  actor: Member;
+  target: Member;
+}) {
+  if (!isHumanMember(params.actor) || !isRoomOwner(params.room, params.actor)) {
+    return {
+      error: {
+        error: "only the room owner can remove members",
+      },
+      status: 403 as const,
+    };
+  }
+
+  if (!isActiveMember(params.target)) {
+    return {
+      error: {
+        error: "target member is not active",
+      },
+      status: 409 as const,
+    };
+  }
+
+  if (params.target.id === params.actor.id) {
+    return {
+      error: {
+        error: "room owner cannot remove self",
+      },
+      status: 409 as const,
+    };
+  }
+
+  if (isRoomOwner(params.room, params.target)) {
+    return {
+      error: {
+        error: "room owner cannot be removed",
+      },
+      status: 409 as const,
+    };
+  }
+
+  db
+    .update(members)
+    .set({
+      presenceStatus: "offline",
+      membershipStatus: "left",
+      leftAt: now(),
+    })
+    .where(eq(members.id, params.target.id))
+    .run();
+  revokeWsTokensForMember(params.target.id, params.roomId);
+  broadcastToRoom(params.roomId, {
+    type: "member.left",
+    roomId: params.roomId,
+    timestamp: now(),
+    payload: { memberId: params.target.id },
+  });
+
+  return {
+    payload: {
+      removed: true,
+      roomId: params.roomId,
+      memberId: params.target.id,
     },
   };
 }
@@ -1157,6 +1226,118 @@ roomRoutes.post("/api/rooms/:roomId/leave", async (c) => {
     return c.json(result.error, result.status);
   }
   return c.json(result.payload);
+});
+
+roomRoutes.post("/api/rooms/:roomId/remove-member", async (c) => {
+  const roomId = c.req.param("roomId");
+  const room = db.select().from(rooms).where(eq(rooms.id, roomId)).get() as Room | undefined;
+
+  if (!room) {
+    return c.json({ error: "room not found" }, 404);
+  }
+
+  const body = await c.req.json().catch(() => null);
+  const actorMemberId =
+    typeof body?.actorMemberId === "string" ? body.actorMemberId.trim() : "";
+  const wsToken = typeof body?.wsToken === "string" ? body.wsToken.trim() : "";
+  const targetMemberId =
+    typeof body?.targetMemberId === "string" ? body.targetMemberId.trim() : "";
+
+  if (!actorMemberId || !wsToken || !targetMemberId) {
+    return c.json({ error: "actorMemberId, wsToken and targetMemberId are required" }, 400);
+  }
+
+  const actor = db
+    .select()
+    .from(members)
+    .where(and(eq(members.id, actorMemberId), eq(members.roomId, roomId)))
+    .get() as Member | undefined;
+
+  if (!actor || !isActiveMember(actor)) {
+    return c.json({ error: "actor not found in room" }, 404);
+  }
+
+  if (!verifyWsToken(wsToken, actorMemberId, roomId)) {
+    return c.json({ error: "invalid wsToken for actor" }, 403);
+  }
+
+  const target = db
+    .select()
+    .from(members)
+    .where(and(eq(members.id, targetMemberId), eq(members.roomId, roomId)))
+    .get() as Member | undefined;
+
+  if (!target) {
+    return c.json({ error: "target member not found in room" }, 404);
+  }
+
+  const result = removeRoomMember({
+    room,
+    roomId,
+    actor,
+    target,
+  });
+  if ("error" in result) {
+    return c.json(result.error, result.status);
+  }
+  return c.json(result.payload);
+});
+
+roomRoutes.post("/api/rooms/:roomId/agent-sessions/:sessionId/stop", async (c) => {
+  const roomId = c.req.param("roomId");
+  const sessionId = c.req.param("sessionId");
+  const room = db.select().from(rooms).where(eq(rooms.id, roomId)).get() as Room | undefined;
+
+  if (!room) {
+    return c.json({ error: "room not found" }, 404);
+  }
+
+  if (isRoomArchived(room)) {
+    return c.json({ error: "room is archived" }, 410);
+  }
+
+  const body = await c.req.json().catch(() => null);
+  const actorMemberId =
+    typeof body?.actorMemberId === "string" ? body.actorMemberId.trim() : "";
+  const wsToken = typeof body?.wsToken === "string" ? body.wsToken.trim() : "";
+
+  if (!actorMemberId || !wsToken) {
+    return c.json({ error: "actorMemberId and wsToken are required" }, 400);
+  }
+
+  const actor = db
+    .select()
+    .from(members)
+    .where(and(eq(members.id, actorMemberId), eq(members.roomId, roomId)))
+    .get() as Member | undefined;
+
+  if (!actor || !isActiveMember(actor)) {
+    return c.json({ error: "actor not found in room" }, 404);
+  }
+
+  if (!verifyWsToken(wsToken, actorMemberId, roomId)) {
+    return c.json({ error: "invalid wsToken for actor" }, 403);
+  }
+
+  if (!isHumanMember(actor) || !isRoomOwner(room, actor)) {
+    return c.json({ error: "only the room owner can stop agent output" }, 403);
+  }
+
+  const session = stopAgentSession({
+    roomId,
+    sessionId,
+    stoppedByMemberId: actor.id,
+  });
+
+  if (!session) {
+    return c.json({ error: "session not found" }, 404);
+  }
+
+  if (!["pending", "running", "cancelled"].includes(session.status)) {
+    return c.json({ error: "session is not stoppable" }, 409);
+  }
+
+  return c.json({ session });
 });
 
 roomRoutes.post("/api/rooms/:roomId/pull", async (c) => {

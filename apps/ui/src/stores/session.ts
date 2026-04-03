@@ -55,6 +55,11 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
   },
 
   updateSession: (session: AgentSession, lastError?: string | null) => {
+    const existingOutputMessageId = get().sessionSnapshots[session.id]?.outputMessageId ?? null;
+    if (session.status !== "running" && existingOutputMessageId) {
+      useMessageStore.getState().removeStream(existingOutputMessageId);
+    }
+
     set((state) => ({
       sessionSnapshots: {
         ...state.sessionSnapshots,
@@ -94,7 +99,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             startedAt: new Date().toISOString(),
             endedAt: null,
             lastError: null,
-            outputMessageId: null,
+            outputMessageId: messageId,
           } satisfies SessionSnapshot,
         },
       }));
@@ -119,6 +124,16 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       agentMemberId: existingStream?.agentMemberId ?? actor?.agentMemberId ?? "",
       reasoningContent: existingStream?.reasoningContent ?? "",
     });
+
+    set((state) => ({
+      sessionSnapshots: {
+        ...state.sessionSnapshots,
+        [sessionId]: {
+          ...state.sessionSnapshots[sessionId],
+          outputMessageId: messageId,
+        },
+      },
+    }));
   },
 
   updateReasoning: (payload: { sessionId: string; messageId: string; delta: string }) => {
@@ -145,7 +160,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             startedAt: new Date().toISOString(),
             endedAt: null,
             lastError: null,
-            outputMessageId: null,
+            outputMessageId: messageId,
             reasoningText: delta,
           } satisfies SessionSnapshot,
         },
@@ -180,6 +195,16 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       agentMemberId: existingStream?.agentMemberId ?? actor?.agentMemberId ?? "",
       reasoningContent: `${existingStream?.reasoningContent ?? ""}${delta}`,
     });
+
+    set((state) => ({
+      sessionSnapshots: {
+        ...state.sessionSnapshots,
+        [sessionId]: {
+          ...state.sessionSnapshots[sessionId],
+          outputMessageId: messageId,
+        },
+      },
+    }));
   },
 
   removeStream: (messageId: string) => {

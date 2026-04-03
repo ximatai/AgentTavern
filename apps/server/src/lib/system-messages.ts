@@ -32,6 +32,15 @@ export function createAgentFailedSystemData(error: string): SystemMessageData {
   };
 }
 
+export function createAgentCancelledSystemData(detail: string): SystemMessageData {
+  return {
+    kind: "agent_cancelled",
+    status: "warning",
+    title: "Agent run stopped",
+    detail,
+  };
+}
+
 export function createAgentBusySystemData(
   agentDisplayName: string,
   agentMemberId?: string | null,

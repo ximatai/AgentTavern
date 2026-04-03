@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Button, Select } from "antd";
-import { CloseOutlined, DownOutlined, RobotOutlined, UpOutlined } from "@ant-design/icons";
+import { Button, Modal, Select, Tooltip } from "antd";
+import { CloseOutlined, DeleteOutlined, DownOutlined, PauseCircleOutlined, RobotOutlined, UpOutlined } from "@ant-design/icons";
 import type {
   AgentSessionKind,
   AgentSessionStatus,
@@ -14,6 +14,7 @@ import { useRoomStore } from "../stores/room";
 import { useApprovalStore } from "../stores/approval";
 import { useSessionStore } from "../stores/session";
 import { useMessageStore } from "../stores/message";
+import { toast } from "../lib/feedback";
 import { RoomAssistantModal } from "./RoomAssistantModal";
 
 import "../styles/room-sidebar.css";
@@ -131,6 +132,8 @@ export function RoomSidebar() {
   const roomSummary = useRoomStore((s) => s.roomSummary);
   const self = useRoomStore((s) => s.self);
   const members = useRoomStore((s) => s.members);
+  const removeRoomMember = useRoomStore((s) => s.removeRoomMember);
+  const stopAgentSession = useRoomStore((s) => s.stopAgentSession);
   const pendingApprovals = useApprovalStore((s) => s.pendingApprovals);
   const approvalGrants = useApprovalStore((s) => s.approvalGrants);
   const setGrantDuration = useApprovalStore((s) => s.setGrantDuration);
@@ -141,6 +144,7 @@ export function RoomSidebar() {
   const streams = useMessageStore((s) => s.streams);
 
   const [busyApprovalId, setBusyApprovalId] = useState<string | null>(null);
+  const [busyStopSessionId, setBusyStopSessionId] = useState<string | null>(null);
   const [collabExpanded, setCollabExpanded] = useState(false);
   const [dismissedCollabIds, setDismissedCollabIds] = useState<string[]>([]);
   const [assistantModalOpen, setAssistantModalOpen] = useState(false);
@@ -199,6 +203,7 @@ export function RoomSidebar() {
     [members],
   );
   const secretaryMemberId = room?.secretaryMemberId ?? null;
+  const isRoomOwner = !!room && !!self && room.ownerMemberId === self.memberId;
 
   const runningSessionSummaries = useMemo(
     () =>
@@ -248,6 +253,55 @@ export function RoomSidebar() {
     },
     [approve, reject, self],
   );
+
+  const handleRemoveMember = useCallback((member: PublicMember) => {
+    if (!room || !self) return;
+
+    Modal.confirm({
+      title: t("roomSidebar.removeMemberTitle"),
+      content: t("roomSidebar.removeMemberConfirm", {
+        roomName: room.name,
+        name: member.displayName,
+      }),
+      okText: t("roomSidebar.removeMemberAction"),
+      cancelText: t("common.cancel"),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await removeRoomMember(member.id);
+          toast().success(t("roomSidebar.removeMemberSuccess"));
+        } catch (error) {
+          toast().error(error instanceof Error ? error.message : t("roomSidebar.removeMemberFailed"));
+        }
+      },
+    });
+  }, [removeRoomMember, room, self, t]);
+
+  const handleStopSession = useCallback((sessionId: string, agentName: string) => {
+    if (!room || !self) return;
+
+    Modal.confirm({
+      title: t("roomSidebar.stopAgentTitle"),
+      content: t("roomSidebar.stopAgentConfirm", {
+        roomName: room.name,
+        name: agentName,
+      }),
+      okText: t("roomSidebar.stopAgentAction"),
+      cancelText: t("common.cancel"),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setBusyStopSessionId(sessionId);
+        try {
+          await stopAgentSession(sessionId);
+          toast().success(t("roomSidebar.stopAgentSuccess"));
+        } catch (error) {
+          toast().error(error instanceof Error ? error.message : t("roomSidebar.stopAgentFailed"));
+        } finally {
+          setBusyStopSessionId(null);
+        }
+      },
+    });
+  }, [room, self, stopAgentSession, t]);
 
   const collabItems = useMemo<CollabItem[]>(() => {
     const items: CollabItem[] = [];
@@ -441,6 +495,21 @@ export function RoomSidebar() {
               >
                 {t("roomSidebar.viewTrigger")}
               </button>
+              {isRoomOwner ? (
+                <button
+                  type="button"
+                  className="chat-action-button chat-action-button-danger"
+                  disabled={busyStopSessionId === session.id}
+                  onClick={() => handleStopSession(session.id, agent?.displayName ?? session.agentMemberId)}
+                >
+                  <PauseCircleOutlined />
+                  <span>
+                    {busyStopSessionId === session.id
+                      ? t("roomSidebar.stoppingAgent")
+                      : t("roomSidebar.stopAgentAction")}
+                  </span>
+                </button>
+              ) : null}
             </div>
           </article>
         ),
@@ -612,6 +681,18 @@ export function RoomSidebar() {
                   </div>
                   <p>{t("roomSidebar.inRoom")}</p>
                 </div>
+                {isRoomOwner && human.id !== self?.memberId ? (
+                  <Tooltip title={t("roomSidebar.removeMember")}>
+                    <button
+                      type="button"
+                      className="rs-member-action"
+                      aria-label={t("roomSidebar.removeMember")}
+                      onClick={() => handleRemoveMember(human)}
+                    >
+                      <DeleteOutlined />
+                    </button>
+                  </Tooltip>
+                ) : null}
               </div>
               {assistants.length > 0 && (
                 <div className="rs-assistant-children">
@@ -643,6 +724,18 @@ export function RoomSidebar() {
                           })}
                         </p>
                       </div>
+                      {isRoomOwner ? (
+                        <Tooltip title={t("roomSidebar.removeMember")}>
+                          <button
+                            type="button"
+                            className="rs-member-action"
+                            aria-label={t("roomSidebar.removeMember")}
+                            onClick={() => handleRemoveMember(assistant)}
+                          >
+                            <DeleteOutlined />
+                          </button>
+                        </Tooltip>
+                      ) : null}
                     </div>
                   ))}
                 </div>
@@ -679,6 +772,18 @@ export function RoomSidebar() {
                 </div>
                 <p>{t("roomSidebar.canBeMentioned")}</p>
               </div>
+              {isRoomOwner ? (
+                <Tooltip title={t("roomSidebar.removeMember")}>
+                  <button
+                    type="button"
+                    className="rs-member-action"
+                    aria-label={t("roomSidebar.removeMember")}
+                    onClick={() => handleRemoveMember(member)}
+                  >
+                    <DeleteOutlined />
+                  </button>
+                </Tooltip>
+              ) : null}
             </div>
           ))}
         </div>

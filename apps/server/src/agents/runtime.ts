@@ -46,6 +46,7 @@ import {
   MAX_TOTAL_ATTACHMENT_BYTES,
   createDraftAttachmentFromBuffer,
   deleteDraftAttachment,
+  loadMessageAttachments,
 } from "../lib/message-attachments";
 import {
   createAgentBusySystemData,
@@ -57,6 +58,7 @@ import { toDomainMessage } from "../lib/message-records";
 import { toPublicMessage } from "../lib/public";
 import { broadcastToRoom } from "../realtime";
 import {
+  cancelSession,
   completeSessionAction,
   createReasoningDeltaEvent,
   createStreamDeltaEvent,
@@ -66,6 +68,7 @@ import {
 } from "./session-events";
 
 const agentRunQueue = new Map<string, Promise<void>>();
+const runningSessionControllers = new Map<string, AbortController>();
 const CONTEXT_MESSAGE_LIMIT = Number(process.env.AGENT_CONTEXT_MESSAGE_LIMIT ?? 20);
 const BRIDGE_STALE_AFTER_MS = Number(process.env.AGENT_TAVERN_BRIDGE_STALE_AFTER_MS ?? 20_000);
 
@@ -606,6 +609,14 @@ async function runAgentSession(sessionId: string): Promise<void> {
   }));
 
   const outputMessageId = createId("msg");
+  const triggerAttachments = loadMessageAttachments(typedTriggerMessage.id).map((attachment) => ({
+    name: attachment.name,
+    mimeType: attachment.mimeType,
+    url: attachment.url,
+    ...(attachment.mimeType.startsWith("image/")
+      ? { dataUrl: `data:${attachment.mimeType};base64,${attachment.content.toString("base64")}` }
+      : {}),
+  }));
   const input: AgentRunInput = {
     roomId: session.roomId,
     agentMemberId: typedAgent.id,
@@ -621,6 +632,7 @@ async function runAgentSession(sessionId: string): Promise<void> {
       sessionKind: typedSession.kind,
       contextMessages,
     }),
+    triggerAttachments,
     contextMessages,
   };
 
@@ -682,13 +694,19 @@ async function runAgentSession(sessionId: string): Promise<void> {
   }
 
   const runningSession = markSessionRunning(typedSession);
+  const abortController = new AbortController();
+  runningSessionControllers.set(runningSession.id, abortController);
   let finalText = "";
   let reasoningText = "";
   let completedAction: AgentMessageAction | null = null;
   let failedError: string | null = null;
 
   try {
-    for await (const event of adapter.run(input)) {
+    for await (const event of adapter.run({ ...input, abortSignal: abortController.signal })) {
+      if (abortController.signal.aborted) {
+        return;
+      }
+
       if (event.type === "delta") {
         finalText += event.text;
         broadcastToRoom(
@@ -728,6 +746,12 @@ async function runAgentSession(sessionId: string): Promise<void> {
     }
   } catch (error) {
     failedError = error instanceof Error ? error.message : "Agent execution failed.";
+  } finally {
+    runningSessionControllers.delete(runningSession.id);
+  }
+
+  if (abortController.signal.aborted) {
+    return;
   }
 
   if (failedError) {
@@ -780,6 +804,67 @@ async function runAgentSession(sessionId: string): Promise<void> {
   for (const queuedSessionId of committed.queuedSessionIds) {
     queueAgentSession(queuedSessionId);
   }
+}
+
+export function stopAgentSession(params: {
+  roomId: string;
+  sessionId: string;
+  stoppedByMemberId: string;
+}): AgentSession | null {
+  const sessionRow = db
+    .select()
+    .from(agentSessions)
+    .where(eq(agentSessions.id, params.sessionId))
+    .get();
+
+  if (!sessionRow || sessionRow.roomId !== params.roomId) {
+    return null;
+  }
+
+  const session = toAgentSession(sessionRow);
+  if (!["pending", "running"].includes(session.status)) {
+    return session;
+  }
+
+  const stopper = db
+    .select({ displayName: members.displayName })
+    .from(members)
+    .where(eq(members.id, params.stoppedByMemberId))
+    .get();
+  const stopDetail = stopper
+    ? `Stopped by room owner ${stopper.displayName}.`
+    : "Stopped by room owner.";
+
+  const acceptedTask = db
+    .select()
+    .from(bridgeTasks)
+    .where(
+      and(
+        eq(bridgeTasks.sessionId, session.id),
+        or(
+          eq(bridgeTasks.status, "pending"),
+          eq(bridgeTasks.status, "assigned"),
+          eq(bridgeTasks.status, "accepted"),
+        ),
+      ),
+    )
+    .get();
+
+  if (acceptedTask) {
+    const timestamp = now();
+    db
+      .update(bridgeTasks)
+      .set({
+        status: "failed",
+        failedAt: timestamp,
+      })
+      .where(eq(bridgeTasks.id, acceptedTask.id))
+      .run();
+  }
+
+  runningSessionControllers.get(session.id)?.abort();
+
+  return cancelSession(session, stopDetail);
 }
 
 export function queueAgentSession(sessionId: string): void {

@@ -48,7 +48,12 @@ function mentionSignature(
   return mention ? `${mention.start}:${mention.query}` : "";
 }
 
-function getRoleLabel(member: PublicMember, t: (key: string) => string): string {
+function getRoleLabel(
+  member: PublicMember,
+  isSecretary: boolean,
+  t: (key: string) => string,
+): string {
+  if (isSecretary) return t("header.secretary");
   if (member.type !== "agent") return t("chat.roleHuman");
   if (member.roleKind === "assistant") return t("chat.roleAssistant");
   return t("chat.roleAgent");
@@ -60,6 +65,31 @@ type MentionSuggestion = {
   roleLabel: string;
   metaLabel?: string;
 };
+
+function compareMentionMembers(a: PublicMember, b: PublicMember, members: PublicMember[]): number {
+  const rank = (member: PublicMember): number => {
+    if (member.type === "agent" && member.roleKind === "assistant") return 0;
+    if (member.type === "agent") return 1;
+    return 2;
+  };
+
+  const rankDiff = rank(a) - rank(b);
+  if (rankDiff !== 0) return rankDiff;
+
+  if (
+    a.type === "agent" &&
+    a.roleKind === "assistant" &&
+    b.type === "agent" &&
+    b.roleKind === "assistant"
+  ) {
+    const ownerNameA = members.find((owner) => owner.id === a.ownerMemberId)?.displayName ?? "";
+    const ownerNameB = members.find((owner) => owner.id === b.ownerMemberId)?.displayName ?? "";
+    const ownerDiff = ownerNameA.localeCompare(ownerNameB, "zh-Hans-CN");
+    if (ownerDiff !== 0) return ownerDiff;
+  }
+
+  return a.displayName.localeCompare(b.displayName, "zh-Hans-CN");
+}
 
 export function InputBar() {
   const { t } = useTranslation();
@@ -83,6 +113,7 @@ export function InputBar() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<TextAreaRef>(null);
+  const mentionItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   // Resolve reply target message and sender
   const replyTarget: PublicMessage | undefined = useMemo(
@@ -114,10 +145,11 @@ export function InputBar() {
                 .toLowerCase()
                 .startsWith(mentionQuery.query.toLowerCase()),
             )
+            .sort((a, b) => compareMentionMembers(a, b, members))
             .map((m) => ({
               memberId: m.id,
               displayName: m.displayName,
-              roleLabel: getRoleLabel(m, t),
+              roleLabel: getRoleLabel(m, room?.secretaryMemberId === m.id, t),
               metaLabel:
                 m.type === "agent" && m.roleKind === "assistant"
                   ? t("inputBar.assistantOwner", {
@@ -128,7 +160,7 @@ export function InputBar() {
                   : undefined,
             }))
         : [],
-    [mentionMenuVisible, mentionQuery, self, members, t],
+    [mentionMenuVisible, mentionQuery, self, members, room?.secretaryMemberId, t],
   );
 
   // Clear dismissed signature when query changes
@@ -138,6 +170,16 @@ export function InputBar() {
       setDismissedMentionSignature("");
     }
   }, [composerCaret, dismissedMentionSignature, input]);
+
+  useEffect(() => {
+    if (mentionSuggestions.length === 0) {
+      mentionItemRefs.current = [];
+      return;
+    }
+
+    const activeItem = mentionItemRefs.current[selectedMentionIndex];
+    activeItem?.scrollIntoView({ block: "nearest" });
+  }, [mentionSuggestions.length, selectedMentionIndex]);
 
   const canSend =
     !!self &&
@@ -365,6 +407,9 @@ export function InputBar() {
           {mentionSuggestions.map((suggestion, index) => (
             <button
               key={suggestion.memberId}
+              ref={(node) => {
+                mentionItemRefs.current[index] = node;
+              }}
               type="button"
               className={`mention-popup-item${index === selectedMentionIndex ? " mention-popup-item-active" : ""}`}
               onMouseDown={(e) => {

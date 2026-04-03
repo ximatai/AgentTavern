@@ -8,6 +8,37 @@ const wsTarget = process.env.VITE_WS_TARGET ?? apiTarget.replace(/^http/i, "ws")
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) {
+            return undefined;
+          }
+
+          if (id.includes("/antd/") || id.includes("/@ant-design/")) {
+            return "antd-vendor";
+          }
+
+          if (id.includes("/react-markdown/") || id.includes("/remark-gfm/")) {
+            return "markdown-vendor";
+          }
+
+          if (
+            id.includes("/react/") ||
+            id.includes("/react-dom/") ||
+            id.includes("/zustand/") ||
+            id.includes("/i18next/") ||
+            id.includes("/react-i18next/")
+          ) {
+            return "react-vendor";
+          }
+
+          return "vendor";
+        },
+      },
+    },
+  },
   server: {
     host: devHost,
     port: devPort,

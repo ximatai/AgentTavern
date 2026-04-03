@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { WebSocket } from "ws";
 
 function uniqueTempDbPath(): string {
@@ -17,13 +17,14 @@ function uniqueTempDbPath(): string {
 const databasePath = uniqueTempDbPath();
 process.env.AGENT_TAVERN_DB_PATH = databasePath;
 
-const [{ runMigrations }, appModule, dbClient, schema, ids, realtime] = await Promise.all([
+const [{ runMigrations }, appModule, dbClient, schema, ids, realtime, messageAttachmentsLib] = await Promise.all([
   import("../db/migrate.js"),
   import("../app.js"),
   import("../db/client.js"),
   import("../db/schema.js"),
   import("../lib/id.js"),
   import("../realtime.js"),
+  import("../lib/message-attachments.js"),
 ]);
 
 runMigrations();
@@ -49,6 +50,7 @@ const { db } = dbClient;
 } = schema;
 const { createInviteToken } = ids;
 const { issueCitizenToken, issueWsToken, registerSocket } = realtime;
+const { createDraftAttachmentFromBuffer } = messageAttachmentsLib;
 
 function seedRoom(params: {
   roomId: string;
@@ -2030,6 +2032,313 @@ test("room owner cannot leave before transferring ownership", async () => {
   assert.equal(response.status, 409);
   assert.deepEqual(await response.json(), {
     error: "room owner must transfer ownership before leaving",
+  });
+});
+
+test("room owner can remove another active member", async () => {
+  const roomId = "room_owner_remove_member";
+  const createdAt = new Date("2026-03-25T01:32:00.000Z").toISOString();
+  seedRoom({
+    roomId,
+    name: "Owner Remove Room",
+    inviteToken: createInviteToken(),
+    ownerMemberId: "mem_remove_owner",
+  });
+
+  db.insert(citizens).values([
+    {
+      id: "prn_remove_owner",
+      kind: "human",
+      loginKey: "human:remove-owner",
+      globalDisplayName: "OwnerRemove",
+      status: "offline",
+      createdAt,
+      updatedAt: createdAt,
+    },
+    {
+      id: "prn_remove_target",
+      kind: "human",
+      loginKey: "human:remove-target",
+      globalDisplayName: "TargetRemove",
+      status: "offline",
+      createdAt,
+      updatedAt: createdAt,
+    },
+  ]).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_remove_owner",
+      roomId,
+      citizenId: "prn_remove_owner",
+      type: "human",
+      roleKind: "none",
+      displayName: "OwnerRemove",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt: new Date("2026-03-25T01:33:00.000Z").toISOString(),
+    },
+    {
+      id: "mem_remove_target",
+      roomId,
+      citizenId: "prn_remove_target",
+      type: "human",
+      roleKind: "none",
+      displayName: "TargetRemove",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt: new Date("2026-03-25T01:34:00.000Z").toISOString(),
+    },
+  ]).run();
+
+  const ownerToken = issueWsToken("mem_remove_owner", roomId);
+  const response = await app.request(`http://localhost/api/rooms/${roomId}/remove-member`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      actorMemberId: "mem_remove_owner",
+      wsToken: ownerToken,
+      targetMemberId: "mem_remove_target",
+    }),
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    removed: true,
+    roomId,
+    memberId: "mem_remove_target",
+  });
+
+  const removedMember = db
+    .select()
+    .from(members)
+    .where(eq(members.id, "mem_remove_target"))
+    .get();
+  assert.equal(removedMember?.membershipStatus, "left");
+  assert.equal(removedMember?.presenceStatus, "offline");
+  assert.ok(removedMember?.leftAt);
+});
+
+test("room owner can force stop a running agent session", async () => {
+  const roomId = "room_owner_stop_agent";
+  seedRoom({
+    roomId,
+    name: "Owner Stop Agent Room",
+    inviteToken: createInviteToken(),
+    ownerMemberId: "mem_stop_owner",
+  });
+
+  db.insert(members).values([
+    {
+      id: "mem_stop_owner",
+      roomId,
+      citizenId: null,
+      type: "human",
+      roleKind: "none",
+      displayName: "Owner",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt: new Date("2026-03-25T01:35:00.000Z").toISOString(),
+    },
+    {
+      id: "mem_stop_agent",
+      roomId,
+      citizenId: null,
+      type: "agent",
+      roleKind: "independent",
+      displayName: "Writer",
+      ownerMemberId: null,
+      adapterType: "local_process",
+      adapterConfig: JSON.stringify({
+        command: process.execPath,
+        args: [
+          "-e",
+          "setTimeout(()=>process.stdout.write(JSON.stringify({ type: 'completed', finalText: 'late reply' })+'\\n'), 500)",
+        ],
+        inputFormat: "text",
+        outputFormat: "jsonl",
+      }),
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt: new Date("2026-03-25T01:36:00.000Z").toISOString(),
+    },
+  ]).run();
+
+  const ownerToken = issueWsToken("mem_stop_owner", roomId);
+  const sendResponse = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_stop_owner",
+      wsToken: ownerToken,
+      content: "@Writer please start working",
+    }),
+  });
+
+  assert.equal(sendResponse.status, 201);
+
+  const runningSession = await waitFor(
+    () => db.select().from(agentSessions).where(eq(agentSessions.roomId, roomId)).get(),
+    (session) => Boolean(session && ["pending", "running"].includes(session.status)),
+    1_500,
+  );
+  assert.ok(runningSession);
+
+  const stopResponse = await app.request(
+    `http://localhost/api/rooms/${roomId}/agent-sessions/${runningSession!.id}/stop`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        actorMemberId: "mem_stop_owner",
+        wsToken: ownerToken,
+      }),
+    },
+  );
+
+  assert.equal(stopResponse.status, 200);
+
+  const cancelledSession = await waitFor(
+    () => db.select().from(agentSessions).where(eq(agentSessions.id, runningSession!.id)).get(),
+    (session) => session?.status === "cancelled",
+    1_500,
+  );
+  assert.equal(cancelledSession?.status, "cancelled");
+
+  await new Promise((resolve) => setTimeout(resolve, 650));
+
+  const agentReplies = db
+    .select()
+    .from(messages)
+    .where(and(eq(messages.roomId, roomId), eq(messages.senderMemberId, "mem_stop_agent")))
+    .all()
+    .filter((message) => message.messageType === "agent_text");
+  assert.equal(agentReplies.length, 0);
+
+  const systemNotice = db
+    .select()
+    .from(messages)
+    .where(and(eq(messages.roomId, roomId), eq(messages.senderMemberId, "mem_stop_agent")))
+    .all()
+    .find((message) => message.systemData?.includes("\"kind\":\"agent_cancelled\""));
+  assert.ok(systemNotice);
+});
+
+test("non-owner cannot remove room members", async () => {
+  const roomId = "room_non_owner_remove_member";
+  const createdAt = new Date("2026-03-25T01:35:00.000Z").toISOString();
+  seedRoom({
+    roomId,
+    name: "Non Owner Remove Room",
+    inviteToken: createInviteToken(),
+    ownerMemberId: "mem_remove_owner_guard",
+  });
+
+  db.insert(citizens).values([
+    {
+      id: "prn_remove_owner_guard",
+      kind: "human",
+      loginKey: "human:remove-owner-guard",
+      globalDisplayName: "OwnerGuard",
+      status: "offline",
+      createdAt,
+      updatedAt: createdAt,
+    },
+    {
+      id: "prn_remove_actor_guard",
+      kind: "human",
+      loginKey: "human:remove-actor-guard",
+      globalDisplayName: "ActorGuard",
+      status: "offline",
+      createdAt,
+      updatedAt: createdAt,
+    },
+    {
+      id: "prn_remove_target_guard",
+      kind: "human",
+      loginKey: "human:remove-target-guard",
+      globalDisplayName: "TargetGuard",
+      status: "offline",
+      createdAt,
+      updatedAt: createdAt,
+    },
+  ]).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_remove_owner_guard",
+      roomId,
+      citizenId: "prn_remove_owner_guard",
+      type: "human",
+      roleKind: "none",
+      displayName: "OwnerGuard",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt: new Date("2026-03-25T01:35:00.000Z").toISOString(),
+    },
+    {
+      id: "mem_remove_actor_guard",
+      roomId,
+      citizenId: "prn_remove_actor_guard",
+      type: "human",
+      roleKind: "none",
+      displayName: "ActorGuard",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt: new Date("2026-03-25T01:36:00.000Z").toISOString(),
+    },
+    {
+      id: "mem_remove_target_guard",
+      roomId,
+      citizenId: "prn_remove_target_guard",
+      type: "human",
+      roleKind: "none",
+      displayName: "TargetGuard",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      membershipStatus: "active",
+      leftAt: null,
+      createdAt: new Date("2026-03-25T01:37:00.000Z").toISOString(),
+    },
+  ]).run();
+
+  const actorToken = issueWsToken("mem_remove_actor_guard", roomId);
+  const response = await app.request(`http://localhost/api/rooms/${roomId}/remove-member`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      actorMemberId: "mem_remove_actor_guard",
+      wsToken: actorToken,
+      targetMemberId: "mem_remove_target_guard",
+    }),
+  });
+
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), {
+    error: "only the room owner can remove members",
   });
 });
 
@@ -5266,6 +5575,160 @@ test("mentioning an openai-compatible agent executes directly without bridge", a
           !String(message.systemData ?? "").includes("bridge_"),
       ),
     );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("openai-compatible direct agent forwards image attachments as multimodal content", async () => {
+  const roomId = "room_openai_direct_agent_image";
+  const createdAt = new Date("2026-03-25T04:05:30.000Z").toISOString();
+  const originalFetch = globalThis.fetch;
+  const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+
+  seedRoom({
+    roomId,
+    name: "OpenAI Direct Agent Image Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(citizens).values({
+    id: "prn_openai_direct_agent_image",
+    kind: "agent",
+    loginKey: "agent:openai-direct-image",
+    globalDisplayName: "OpenAIImage",
+    backendType: "openai_compatible",
+    backendThreadId: "thread_openai_direct_agent_image",
+    backendConfig: JSON.stringify({
+      baseUrl: "http://127.0.0.1:1234/v1",
+      model: "gemma-test",
+    }),
+    sourceServerConfigId: null,
+    status: "offline",
+    createdAt,
+  }).run();
+
+  db.insert(agentBindings).values({
+    id: "agb_openai_direct_agent_image",
+    citizenId: "prn_openai_direct_agent_image",
+    privateAssistantId: null,
+    bridgeId: null,
+    backendType: "openai_compatible",
+    backendThreadId: "thread_openai_direct_agent_image",
+    cwd: null,
+    status: "pending_bridge",
+    attachedAt: createdAt,
+    detachedAt: null,
+  }).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_requester_openai_direct_image",
+      roomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "RequesterOpenAIImage",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_openai_direct_image",
+      roomId,
+      citizenId: "prn_openai_direct_agent_image",
+      type: "agent",
+      roleKind: "independent",
+      displayName: "OpenAIImage",
+      ownerMemberId: null,
+      adapterType: "openai_compatible",
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+  ]).run();
+
+  globalThis.fetch = (async (url, init) => {
+    fetchCalls.push({ url: String(url), init });
+    return new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: "I can see the image.",
+            },
+            finish_reason: "stop",
+          },
+        ],
+      }),
+      {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      },
+    );
+  }) as typeof fetch;
+
+  try {
+    const attachment = createDraftAttachmentFromBuffer({
+      roomId,
+      uploaderMemberId: "mem_requester_openai_direct_image",
+      fileName: "vision.png",
+      mimeType: "image/png",
+      content: Buffer.from("fake-png"),
+      createdAt,
+    });
+    const requesterToken = issueWsToken("mem_requester_openai_direct_image", roomId);
+
+    const response = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        senderMemberId: "mem_requester_openai_direct_image",
+        wsToken: requesterToken,
+        content: "@OpenAIImage please describe this image",
+        attachmentIds: [attachment.id],
+      }),
+    });
+
+    assert.equal(response.status, 201);
+
+    await waitFor(
+      () =>
+        db
+          .select()
+          .from(agentSessions)
+          .where(eq(agentSessions.roomId, roomId))
+          .get(),
+      (value) => Boolean(value && value.status === "completed"),
+    );
+
+    const payload = JSON.parse(String(fetchCalls[0]?.init?.body)) as {
+      messages: Array<{
+        role: string;
+        content:
+          | string
+          | Array<
+              | { type: "text"; text: string }
+              | { type: "image_url"; image_url: { url: string } }
+            >;
+      }>;
+    };
+    assert.equal(payload.messages[0]?.role, "user");
+    assert.ok(Array.isArray(payload.messages[0]?.content));
+    const contentParts = payload.messages[0]!.content as Array<
+      | { type: "text"; text: string }
+      | { type: "image_url"; image_url: { url: string } }
+    >;
+    assert.equal(contentParts[0]?.type, "text");
+    assert.match(contentParts[0]?.type === "text" ? contentParts[0].text : "", /please describe this image/);
+    assert.deepEqual(contentParts[1], {
+      type: "image_url",
+      image_url: {
+        url: `data:image/png;base64,${Buffer.from("fake-png").toString("base64")}`,
+      },
+    });
   } finally {
     globalThis.fetch = originalFetch;
   }

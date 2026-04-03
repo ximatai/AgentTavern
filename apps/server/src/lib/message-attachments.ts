@@ -143,6 +143,30 @@ export function hydrateMessagesWithAttachments(
   }));
 }
 
+export function loadMessageAttachments(messageId: string): Array<{
+  id: string;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  url: string;
+  content: Buffer;
+}> {
+  const rows = db
+    .select()
+    .from(messageAttachments)
+    .where(eq(messageAttachments.messageId, messageId))
+    .all();
+
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.originalName,
+    mimeType: row.mimeType,
+    sizeBytes: row.sizeBytes,
+    url: buildAttachmentUrl(row.id),
+    content: fs.readFileSync(row.storagePath),
+  }));
+}
+
 export async function createDraftAttachments(params: {
   roomId: string;
   uploaderMemberId: string;

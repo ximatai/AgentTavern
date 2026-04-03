@@ -15,6 +15,7 @@ import { insertMessage } from "../lib/message-records";
 import { normalizeRoomSummaryOutput, upsertRoomSummary } from "../lib/room-summary";
 import { submitMessageInternal } from "../lib/message-submission";
 import {
+  createAgentCancelledSystemData,
   createAgentFailedSystemData,
   createStructuredSystemMessage,
 } from "../lib/system-messages";
@@ -380,4 +381,42 @@ export function failSession(
   broadcastToRoom(session.roomId, createMessageCreatedEvent(session.roomId, failureMessage));
 
   return failedSession;
+}
+
+export function cancelSession(
+  session: AgentSession,
+  detail: string,
+): AgentSession {
+  const endedAt = now();
+  const cancelledSession: AgentSession = {
+    ...session,
+    status: "cancelled",
+    endedAt,
+  };
+
+  db
+    .update(agentSessions)
+    .set({
+      status: cancelledSession.status,
+      endedAt: cancelledSession.endedAt,
+    })
+    .where(eq(agentSessions.id, session.id))
+    .run();
+
+  broadcastToRoom(
+    session.roomId,
+    createSessionFailedEvent(session.roomId, cancelledSession, detail),
+  );
+
+  const message = createFailureMessage(
+    session.roomId,
+    session.agentMemberId,
+    session.triggerMessageId,
+    createAgentCancelledSystemData(detail),
+  );
+
+  insertMessage(message);
+  broadcastToRoom(session.roomId, createMessageCreatedEvent(session.roomId, message));
+
+  return cancelledSession;
 }

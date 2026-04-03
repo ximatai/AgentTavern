@@ -19,11 +19,18 @@ export type AgentRunInput = {
   requesterDisplayName: string;
   triggerMessageId: string;
   prompt: string;
+  triggerAttachments?: Array<{
+    name: string;
+    mimeType: string;
+    url: string;
+    dataUrl?: string;
+  }>;
   contextMessages: Array<{
     senderName: string;
     content: string;
     createdAt: string;
   }>;
+  abortSignal?: AbortSignal;
 };
 
 export type AgentStreamEvent =

@@ -260,6 +260,26 @@
   background: var(--bg-surface, rgba(255, 255, 255, 0.03));
 }
 
+.rs-member-action {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: #f87171;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0;
+  border-radius: 8px;
+}
+
+.rs-member-action:hover {
+  background: rgba(248, 113, 113, 0.12);
+}
+
 .rs-member-avatar {
   width: 32px;
   height: 32px;

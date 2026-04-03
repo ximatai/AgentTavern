@@ -80,6 +80,7 @@ export function MessageList() {
   const [userScrolledUp, setUserScrolledUp] = useState(false);
   const focusedIdRef = useRef<string | null>(null);
   const focusTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const autoScrollRafRef = useRef<number | null>(null);
 
   const self = useRoomStore((s) => s.self);
   const members = useRoomStore((s) => s.members);
@@ -125,6 +126,23 @@ export function MessageList() {
     return isToday(visibleMessages[0].createdAt);
   }, [visibleMessages]);
 
+  const lastMessageSignature = useMemo(() => {
+    const last = visibleMessages.at(-1);
+    if (!last) return "";
+
+    const streamReasoning = isSessionStream(last) ? last.reasoningContent ?? "" : "";
+    const isLastStreaming = isSessionStream(last) || last.id in streams;
+    return [
+      last.id,
+      isLastStreaming ? "streaming" : "settled",
+      last.createdAt,
+      last.messageType,
+      last.content,
+      streamReasoning,
+      last.attachments.length,
+    ].join("|");
+  }, [visibleMessages, streams]);
+
   const focusMessage = useCallback((messageId: string) => {
     focusedIdRef.current = messageId;
     const el = document.querySelector(`[data-message-id="${messageId}"]`);
@@ -149,19 +167,40 @@ export function MessageList() {
   useEffect(() => {
     return () => {
       if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current);
+      if (autoScrollRafRef.current !== null) {
+        window.cancelAnimationFrame(autoScrollRafRef.current);
+        autoScrollRafRef.current = null;
+      }
     };
   }, []);
 
-  // Auto-scroll to bottom when new messages arrive (if user hasn't scrolled up)
-  const prevCountRef = useRef(visibleMessages.length);
+  // Auto-scroll to bottom when the tail message changes or grows,
+  // unless the user has explicitly scrolled up.
+  const prevTailSignatureRef = useRef(lastMessageSignature);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    if (visibleMessages.length > prevCountRef.current && !userScrolledUp) {
-      el.scrollTop = el.scrollHeight;
+    if (lastMessageSignature !== prevTailSignatureRef.current && !userScrolledUp) {
+      const syncToBottom = () => {
+        const current = scrollRef.current;
+        if (!current) return;
+        current.scrollTop = current.scrollHeight;
+      };
+
+      syncToBottom();
+      if (autoScrollRafRef.current !== null) {
+        window.cancelAnimationFrame(autoScrollRafRef.current);
+      }
+      autoScrollRafRef.current = window.requestAnimationFrame(() => {
+        syncToBottom();
+        autoScrollRafRef.current = window.requestAnimationFrame(() => {
+          syncToBottom();
+          autoScrollRafRef.current = null;
+        });
+      });
     }
-    prevCountRef.current = visibleMessages.length;
-  }, [visibleMessages.length, userScrolledUp]);
+    prevTailSignatureRef.current = lastMessageSignature;
+  }, [lastMessageSignature, userScrolledUp]);
 
   // Scroll to bottom on initial load
   useEffect(() => {

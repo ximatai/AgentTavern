@@ -41,6 +41,12 @@ pnpm test:e2e                   # Playwright E2E 测试
 pnpm --filter @agent-tavern/server db:migrate  # 数据库迁移
 ```
 
+## 项目内 Skills
+
+- 发布 / 部署 / deploy / 上线：
+  使用 [./.local/skills/agenttavern-rocky-deploy/SKILL.md](/Users/aruis/develop/workspace-github/AgentTavern/.local/skills/agenttavern-rocky-deploy/SKILL.md)
+  该 skill 约定直接在仓库根目录执行 `bash .local/deploy-rocky.sh`，不要临时改写部署流程。
+
 ## 核心领域模型
 
 三层架构：**一等公民 (Principal)** → **私有助理 (PrivateAssistant)** → **聊天室成员 (Member)**

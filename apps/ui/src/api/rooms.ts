@@ -55,6 +55,26 @@ export type DisbandRoomResult = {
 };
 
 export type TransferRoomOwnershipResult = Room;
+export type RemoveRoomMemberResult = {
+  removed: boolean;
+  roomId: string;
+  memberId: string;
+};
+export type StopAgentSessionResult = {
+  session: {
+    id: string;
+    roomId: string;
+    agentMemberId: string;
+    kind: string;
+    triggerMessageId: string;
+    requesterMemberId: string;
+    approvalId: string | null;
+    approvalRequired: boolean;
+    status: string;
+    startedAt: string | null;
+    endedAt: string | null;
+  };
+};
 
 export type CreateRoomResult = {
   room: {
@@ -195,6 +215,30 @@ async function leaveRoom(
   });
 }
 
+async function removeRoomMember(
+  roomId: string,
+  actorMemberId: string,
+  wsToken: string,
+  targetMemberId: string,
+): Promise<RemoveRoomMemberResult> {
+  return request<RemoveRoomMemberResult>(`/api/rooms/${roomId}/remove-member`, {
+    method: "POST",
+    body: JSON.stringify({ actorMemberId, wsToken, targetMemberId }),
+  });
+}
+
+async function stopAgentSession(
+  roomId: string,
+  sessionId: string,
+  actorMemberId: string,
+  wsToken: string,
+): Promise<StopAgentSessionResult> {
+  return request<StopAgentSessionResult>(`/api/rooms/${roomId}/agent-sessions/${sessionId}/stop`, {
+    method: "POST",
+    body: JSON.stringify({ actorMemberId, wsToken }),
+  });
+}
+
 export {
   getRoom,
   getRoomSummary,
@@ -211,4 +255,6 @@ export {
   disbandRoom,
   transferRoomOwnership,
   leaveRoom,
+  removeRoomMember,
+  stopAgentSession,
 };

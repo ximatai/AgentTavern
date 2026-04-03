@@ -1,6 +1,6 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
-import { Alert } from "antd";
+import { Alert, Modal } from "antd";
 import { RobotOutlined } from "@ant-design/icons";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -40,12 +40,8 @@ function ReasoningBlock({
   isStreaming: boolean;
 }) {
   const { t } = useTranslation();
-  const [isOpen, setIsOpen] = useState(isStreaming);
+  const [isOpen, setIsOpen] = useState(false);
   const preview = reasoningContent.replace(/\s+/g, " ").trim();
-
-  useEffect(() => {
-    setIsOpen(isStreaming);
-  }, [isStreaming]);
 
   if (!reasoningContent) return null;
 
@@ -123,6 +119,8 @@ function systemTitleKey(kind: string): string | null {
   switch (kind) {
     case "agent_failed":
       return "systemNotice.agentFailed";
+    case "agent_cancelled":
+      return "systemNotice.agentCancelled";
     case "agent_busy":
       return "systemNotice.agentBusy";
     case "agent_unavailable":
@@ -157,30 +155,68 @@ function formatFileSize(bytes: number): string {
 }
 
 function MessageAttachments({ attachments }: { attachments: MessageAttachment[] }) {
+  const [previewAttachment, setPreviewAttachment] = useState<MessageAttachment | null>(null);
   if (attachments.length === 0) return null;
   return (
-    <div className="message-attachments">
-      {attachments.map((att) => (
-        <a
-          key={att.id}
-          className="message-attachment"
-          href={att.url}
-          download={att.name}
-          target="_blank"
-          rel="noreferrer"
-        >
-          {isImageAttachment(att) ? (
-            <img src={att.url} alt={att.name} className="message-attachment-preview" />
+    <>
+      <div className="message-attachments">
+        {attachments.map((att) =>
+          isImageAttachment(att) ? (
+            <button
+              key={att.id}
+              type="button"
+              className="message-attachment message-attachment-image"
+              onClick={() => setPreviewAttachment(att)}
+            >
+              <img src={att.url} alt={att.name} className="message-attachment-preview" />
+              <span className="message-attachment-copy">
+                <strong>{att.name}</strong>
+                <span>{formatFileSize(att.sizeBytes)}</span>
+              </span>
+            </button>
           ) : (
-            <span className="message-attachment-icon"><FileOutlined /></span>
-          )}
-          <span className="message-attachment-copy">
-            <strong>{att.name}</strong>
-            <span>{formatFileSize(att.sizeBytes)}</span>
-          </span>
-        </a>
-      ))}
-    </div>
+            <a
+              key={att.id}
+              className="message-attachment"
+              href={att.url}
+              download={att.name}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <span className="message-attachment-icon"><FileOutlined /></span>
+              <span className="message-attachment-copy">
+                <strong>{att.name}</strong>
+                <span>{formatFileSize(att.sizeBytes)}</span>
+              </span>
+            </a>
+          ),
+        )}
+      </div>
+      <Modal
+        open={Boolean(previewAttachment)}
+        footer={null}
+        onCancel={() => setPreviewAttachment(null)}
+        centered
+        width="min(92vw, 1080px)"
+        className="message-image-preview-modal"
+      >
+        {previewAttachment ? (
+          <div className="message-image-preview-wrap">
+            <img
+              src={previewAttachment.url}
+              alt={previewAttachment.name}
+              className="message-image-preview-full"
+            />
+            <div className="message-image-preview-meta">
+              <strong>{previewAttachment.name}</strong>
+              <a href={previewAttachment.url} download={previewAttachment.name} target="_blank" rel="noreferrer">
+                {formatFileSize(previewAttachment.sizeBytes)}
+              </a>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+    </>
   );
 }
 

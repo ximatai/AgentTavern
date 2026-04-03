@@ -132,6 +132,17 @@ export function createLocalProcessAdapter(
         }, gracefulShutdownMs);
       }, maxRuntimeMs);
 
+      const handleAbort = () => {
+        stderr = stderr
+          ? `${stderr}\nlocal process aborted by caller`
+          : "local process aborted by caller";
+        child.kill("SIGTERM");
+        forceKillTimeout = setTimeout(() => {
+          child.kill("SIGKILL");
+        }, gracefulShutdownMs);
+      };
+      input.abortSignal?.addEventListener("abort", handleAbort, { once: true });
+
       child.stdin.on("error", () => {
         // Ignore broken pipe errors from fast-exiting children.
       });
@@ -248,6 +259,7 @@ export function createLocalProcessAdapter(
         if (forceKillTimeout) {
           clearTimeout(forceKillTimeout);
         }
+        input.abortSignal?.removeEventListener("abort", handleAbort);
 
         if (timedOut) {
           yield {
@@ -288,6 +300,7 @@ export function createLocalProcessAdapter(
         if (forceKillTimeout) {
           clearTimeout(forceKillTimeout);
         }
+        input.abortSignal?.removeEventListener("abort", handleAbort);
       }
     },
   };

@@ -42,6 +42,15 @@
 
 .mention-popup-item-active {
   background: var(--accent-dim, #0e7490) !important;
+  color: #f8fafc;
+}
+
+.mention-popup-item-active strong {
+  color: #f8fafc;
+}
+
+.mention-popup-item-active em {
+  color: color-mix(in srgb, #f8fafc 78%, transparent);
 }
 
 .mention-popup-item strong {
@@ -71,7 +80,8 @@
 }
 
 .mention-popup-item-active span {
-  color: var(--ant-color-text-secondary, #94a3b8);
+  color: #f8fafc;
+  background: color-mix(in srgb, #ffffff 18%, transparent);
 }
 
 /* ── Reply Banner ── */

@@ -14,6 +14,8 @@ import {
   joinRoom as joinRoomAPI,
   leaveRoom as leaveRoomAPI,
   pullPrincipal as pullPrincipalAPI,
+  removeRoomMember as removeRoomMemberAPI,
+  stopAgentSession as stopAgentSessionAPI,
   transferRoomOwnership as transferRoomOwnershipAPI,
   updateRoomSecretary as updateRoomSecretaryAPI,
 } from "../api/rooms";
@@ -79,6 +81,8 @@ interface RoomActions {
     secretaryMemberId?: string | null;
   }) => Promise<void>;
   transferRoomOwnership: (nextOwnerMemberId: string) => Promise<void>;
+  removeRoomMember: (targetMemberId: string) => Promise<void>;
+  stopAgentSession: (sessionId: string) => Promise<void>;
   disbandRoom: () => Promise<void>;
   leaveRoom: () => Promise<void>;
   clearCurrentRoom: (roomId?: string) => void;
@@ -277,6 +281,32 @@ export const useRoomStore = create<RoomStore>()((set, get) => ({
       nextOwnerMemberId,
     );
     set({ room: updatedRoom });
+  },
+
+  removeRoomMember: async (targetMemberId) => {
+    const room = get().room;
+    const self = get().self;
+    if (!room || !self) throw new Error("Room not ready");
+
+    await removeRoomMemberAPI(
+      room.id,
+      self.memberId,
+      self.wsToken,
+      targetMemberId,
+    );
+  },
+
+  stopAgentSession: async (sessionId) => {
+    const room = get().room;
+    const self = get().self;
+    if (!room || !self) throw new Error("Room not ready");
+
+    await stopAgentSessionAPI(
+      room.id,
+      sessionId,
+      self.memberId,
+      self.wsToken,
+    );
   },
 
   clearCurrentRoom: (roomId) => {

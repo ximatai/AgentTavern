@@ -21,6 +21,7 @@ export type SystemMessageStatus = "info" | "success" | "warning" | "error";
 
 export type SystemMessageKind =
   | "agent_failed"
+  | "agent_cancelled"
   | "agent_busy"
   | "agent_unavailable"
   | "bridge_attach_required"

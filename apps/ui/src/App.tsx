@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { App as AntdApp, ConfigProvider } from "antd";
 import { I18nextProvider } from "react-i18next";
 import { useTranslation } from "react-i18next";
@@ -13,15 +13,9 @@ import "./styles/room-sidebar.css";
 import "./styles/message-list.css";
 import "./styles/input-bar.css";
 import "./styles/error-boundary.css";
-import { Header } from "./components/Header";
 import { ChatSidebar } from "./components/ChatSidebar";
-import { HomeStage } from "./components/HomeStage";
-import { JoinInviteCard } from "./components/JoinInviteCard";
-import { HomeSidebar } from "./components/HomeSidebar";
-import { RoomSidebar } from "./components/RoomSidebar";
 import { OnlineMembersPanel } from "./components/OnlineMembersPanel";
-import { MessageList } from "./components/MessageList";
-import { InputBar } from "./components/InputBar";
+import { AppLoading } from "./components/AppLoading";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import {
   useSettingsStore,
@@ -36,6 +30,9 @@ import { useRoomWebSocket } from "./hooks/useRoomWebSocket";
 import { useCitizenWebSocket } from "./hooks/useCitizenWebSocket";
 import { usePollingSync } from "./hooks/usePollingSync";
 
+const HomeEntry = lazy(async () => import("./components/HomeEntry").then((module) => ({ default: module.HomeEntry })));
+const RoomEntry = lazy(async () => import("./components/RoomEntry").then((module) => ({ default: module.RoomEntry })));
+
 function FeedbackBridge() {
   const { message } = AntdApp.useApp();
 
@@ -46,16 +43,35 @@ function FeedbackBridge() {
   return null;
 }
 
+function parseAppPath(pathname: string): { roomId: string | null; joinInviteToken: string | null } {
+  const roomMatch = pathname.match(/^\/rooms\/([^/]+)$/);
+  if (roomMatch) {
+    return { roomId: roomMatch[1] ?? null, joinInviteToken: null };
+  }
+
+  const joinMatch = pathname.match(/^\/join\/([^/]+)$/);
+  if (joinMatch) {
+    return { roomId: null, joinInviteToken: joinMatch[1] ?? null };
+  }
+
+  return { roomId: null, joinInviteToken: null };
+}
+
 function App() {
   const { t } = useTranslation();
   const principal = useCitizenStore((s) => s.principal);
   const room = useRoomStore((s) => s.room);
+  const [pathname, setPathname] = useState(() => window.location.pathname);
   const themeId = useSettingsStore((s) => s.themeId);
   const antdThemeConfig = getAntdThemeConfig(themeId);
+  const previousRoomIdRef = useRef<string | null>(null);
+  const joiningRoomIdRef = useRef<string | null>(null);
   useSystemThemeListener();
   useRoomWebSocket();
   useCitizenWebSocket();
   usePollingSync();
+
+  const route = useMemo(() => parseAppPath(pathname), [pathname]);
 
   useEffect(() => {
     applyThemeCssVars(themeId);
@@ -78,10 +94,59 @@ function App() {
     void roomStore.refreshJoinedRooms();
   }, [principal]);
 
-  const joinInviteToken = (() => {
-    const match = window.location.pathname.match(/^\/join\/([^/]+)$/);
-    return match?.[1] ?? null;
-  })();
+  useEffect(() => {
+    const onPopState = () => {
+      setPathname(window.location.pathname);
+    };
+
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  useEffect(() => {
+    const currentRoomId = room?.id ?? null;
+    const previousRoomId = previousRoomIdRef.current;
+    const desiredRoomPath = currentRoomId ? `/rooms/${currentRoomId}` : null;
+    const previousRoomPath = previousRoomId ? `/rooms/${previousRoomId}` : null;
+
+    if (desiredRoomPath && pathname !== desiredRoomPath) {
+      window.history.pushState(null, "", desiredRoomPath);
+      setPathname(desiredRoomPath);
+    } else if (!desiredRoomPath && previousRoomPath && pathname === previousRoomPath) {
+      window.history.pushState(null, "", "/");
+      setPathname("/");
+    }
+
+    previousRoomIdRef.current = currentRoomId;
+  }, [pathname, room]);
+
+  useEffect(() => {
+    const roomStore = useRoomStore.getState();
+    const liveRoute = parseAppPath(window.location.pathname);
+
+    if (route.roomId) {
+      if (!principal || room || joiningRoomIdRef.current === route.roomId) {
+        return;
+      }
+
+      joiningRoomIdRef.current = route.roomId;
+      void roomStore.joinExistingRoom(route.roomId).catch(() => {
+        if (window.location.pathname === `/rooms/${route.roomId}`) {
+          window.history.replaceState(null, "", "/");
+          setPathname("/");
+        }
+      }).finally(() => {
+        if (joiningRoomIdRef.current === route.roomId) {
+          joiningRoomIdRef.current = null;
+        }
+      });
+      return;
+    }
+
+    if (room && !liveRoute.roomId) {
+      roomStore.clearCurrentRoom(room.id);
+    }
+  }, [pathname, principal, room, route.roomId]);
 
   return (
     <ConfigProvider theme={antdThemeConfig}>
@@ -101,22 +166,11 @@ function App() {
                 <ChatSidebar />
               </aside>
               <section className="chat-shell">
-                <Header />
-                <div className="chat-layout">
-                  <section className="message-column">
-                    <section className="message-panel">
-                      {room
-                        ? <MessageList />
-                        : joinInviteToken && principal
-                          ? <JoinInviteCard inviteToken={joinInviteToken} />
-                          : <HomeStage inviteToken={joinInviteToken} />}
-                    </section>
-                    {room ? <InputBar /> : null}
-                  </section>
-                  <aside className="member-sidebar">
-                    {room ? <RoomSidebar /> : <HomeSidebar />}
-                  </aside>
-                </div>
+                <Suspense fallback={<AppLoading />}>
+                  {room
+                    ? <RoomEntry />
+                    : <HomeEntry inviteToken={route.joinInviteToken} hasPrincipal={Boolean(principal)} />}
+                </Suspense>
               </section>
               <OnlineMembersPanel />
             </div>

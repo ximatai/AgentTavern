@@ -28,6 +28,43 @@ type OpenAICompatibleChunk = {
   }>;
 };
 
+type OpenAICompatibleInputContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
+function buildUserContent(input: AgentRunInput): string | OpenAICompatibleInputContentPart[] {
+  const attachments = input.triggerAttachments ?? [];
+  if (attachments.length === 0) {
+    return input.prompt;
+  }
+
+  const content: OpenAICompatibleInputContentPart[] = [{ type: "text", text: input.prompt }];
+
+  const nonImageNotes: string[] = [];
+  for (const attachment of attachments) {
+    if (attachment.mimeType.startsWith("image/")) {
+      content.push({
+        type: "image_url",
+        image_url: {
+          url: attachment.dataUrl ?? attachment.url,
+        },
+      });
+      continue;
+    }
+
+    nonImageNotes.push(`- ${attachment.name} (${attachment.mimeType})`);
+  }
+
+  if (nonImageNotes.length > 0) {
+    content.push({
+      type: "text",
+      text: `User attached non-image files:\n${nonImageNotes.join("\n")}`,
+    });
+  }
+
+  return content;
+}
+
 function extractErrorText(errorValue: OpenAICompatibleChunk["error"]): string {
   if (!errorValue) {
     return "";
@@ -109,6 +146,8 @@ export function createOpenAICompatibleAdapter(
     async *run(input: AgentRunInput): AsyncIterable<AgentStreamEvent> {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), config.maxRuntimeMs ?? 300_000);
+      const handleAbort = () => controller.abort();
+      input.abortSignal?.addEventListener("abort", handleAbort, { once: true });
 
       try {
         const headers: Record<string, string> = {
@@ -130,7 +169,7 @@ export function createOpenAICompatibleAdapter(
             messages: [
               {
                 role: "user",
-                content: input.prompt,
+                content: buildUserContent(input),
               },
             ],
             ...(config.temperature !== undefined ? { temperature: config.temperature } : {}),
@@ -264,7 +303,12 @@ export function createOpenAICompatibleAdapter(
         yield streamedAny ? { type: "completed" } : { type: "completed", finalText: "" };
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
-          yield { type: "failed", error: "openai-compatible backend request timed out" };
+          yield {
+            type: "failed",
+            error: input.abortSignal?.aborted
+              ? "openai-compatible backend request aborted by caller"
+              : "openai-compatible backend request timed out",
+          };
           return;
         }
 
@@ -274,6 +318,7 @@ export function createOpenAICompatibleAdapter(
         };
       } finally {
         clearTimeout(timeout);
+        input.abortSignal?.removeEventListener("abort", handleAbort);
       }
     },
   };
