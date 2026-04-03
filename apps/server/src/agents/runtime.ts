@@ -11,6 +11,7 @@ import {
 } from "@agent-tavern/agent-sdk";
 import type {
   AgentBinding,
+  Citizen,
   AgentSession,
   AgentSessionKind,
   BridgeTask,
@@ -264,6 +265,13 @@ function buildPrompt(input: {
   sessionKind: AgentSessionKind;
   contextMessages: AgentRunInput["contextMessages"];
 }): string {
+  const agentCitizen = input.agent.citizenId
+    ? db
+        .select()
+        .from(citizens)
+        .where(eq(citizens.id, input.agent.citizenId))
+        .get() as Citizen | undefined
+    : undefined;
   const allRoomMembers = db
     .select()
     .from(members)
@@ -321,6 +329,12 @@ function buildPrompt(input: {
     isSecretary
       ? `You are ${input.agent.displayName}, the secretary agent in the room "${input.room.name}".`
       : `You are ${input.agent.displayName}, a member in the room "${input.room.name}".`,
+    agentCitizen?.instructions
+      ? [
+          "Your role background and working style:",
+          agentCitizen.instructions,
+        ].join("\n")
+      : null,
     `Requester: ${input.requester.displayName}.`,
     input.sessionKind === "room_observe"
       ? "Observe the room, decide whether to respond, and only speak when coordination is genuinely helpful."

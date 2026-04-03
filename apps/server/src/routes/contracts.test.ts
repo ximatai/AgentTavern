@@ -2256,6 +2256,240 @@ test("citizen cannot create an agent citizen from another citizen's private serv
   });
 });
 
+test("citizen can manage owned agent citizens with role fields", async () => {
+  const ownerResponse = await app.request("http://localhost/api/citizens/bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "human",
+      loginKey: "agent-manage-owner@example.com",
+      globalDisplayName: "ManageOwner",
+    }),
+  });
+  const owner = await ownerResponse.json();
+
+  const configCreateResponse = await app.request("http://localhost/api/me/server-configs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      citizenId: owner.citizenId,
+      citizenToken: owner.citizenToken,
+      name: "Manage Config",
+      backendType: "openai_compatible",
+      visibility: "private",
+      config: {
+        baseUrl: "http://127.0.0.1:5500/v1",
+        model: "manage-qwen",
+        apiKey: "secret",
+      },
+    }),
+  });
+  assert.equal(configCreateResponse.status, 201);
+  const config = await configCreateResponse.json();
+
+  const createCitizenResponse = await app.request("http://localhost/api/me/agent-citizens", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      actorCitizenId: owner.citizenId,
+      actorCitizenToken: owner.citizenToken,
+      loginKey: "agent:managed-editor",
+      globalDisplayName: "ManagedEditor",
+      serverConfigId: config.id,
+      roleSummary: "Database migration reviewer",
+      instructions: "Review SQL risks before answering.",
+    }),
+  });
+  assert.equal(createCitizenResponse.status, 201);
+  const createdCitizen = await createCitizenResponse.json();
+  assert.equal(createdCitizen.roleSummary, "Database migration reviewer");
+  assert.equal(createdCitizen.instructions, "Review SQL risks before answering.");
+  assert.equal(createdCitizen.sourceServerConfigId, config.id);
+
+  const listResponse = await app.request(
+    `http://localhost/api/me/agent-citizens?actorCitizenId=${owner.citizenId}&actorCitizenToken=${owner.citizenToken}`,
+  );
+  assert.equal(listResponse.status, 200);
+  const listedCitizens = await listResponse.json();
+  const listedCitizen = listedCitizens.find((item: { id: string }) => item.id === createdCitizen.citizenId);
+  assert.equal(listedCitizen?.roleSummary, "Database migration reviewer");
+
+  const updateResponse = await app.request(`http://localhost/api/me/agent-citizens/${createdCitizen.citizenId}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      actorCitizenId: owner.citizenId,
+      actorCitizenToken: owner.citizenToken,
+      loginKey: "agent:managed-editor",
+      globalDisplayName: "ManagedEditorV2",
+      serverConfigId: config.id,
+      roleSummary: "Safer migration reviewer",
+      instructions: "Always explain rollback risk first.",
+    }),
+  });
+  assert.equal(updateResponse.status, 200);
+  const updatedCitizen = await updateResponse.json();
+  assert.equal(updatedCitizen.globalDisplayName, "ManagedEditorV2");
+  assert.equal(updatedCitizen.instructions, "Always explain rollback risk first.");
+
+  const pauseResponse = await app.request(`http://localhost/api/me/agent-citizens/${createdCitizen.citizenId}/pause`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      actorCitizenId: owner.citizenId,
+      actorCitizenToken: owner.citizenToken,
+    }),
+  });
+  assert.equal(pauseResponse.status, 200);
+  assert.equal((await pauseResponse.json()).status, "offline");
+
+  const resumeResponse = await app.request(`http://localhost/api/me/agent-citizens/${createdCitizen.citizenId}/resume`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      actorCitizenId: owner.citizenId,
+      actorCitizenToken: owner.citizenToken,
+    }),
+  });
+  assert.equal(resumeResponse.status, 200);
+
+  const deleteResponse = await app.request(
+    `http://localhost/api/me/agent-citizens/${createdCitizen.citizenId}?actorCitizenId=${owner.citizenId}&actorCitizenToken=${owner.citizenToken}`,
+    { method: "DELETE" },
+  );
+  assert.equal(deleteResponse.status, 200);
+  assert.deepEqual(await deleteResponse.json(), { ok: true });
+
+  const storedCitizen = db.select().from(citizens).where(eq(citizens.id, createdCitizen.citizenId)).get();
+  assert.equal(storedCitizen, undefined);
+});
+
+test("paused managed agent citizen is unavailable when mentioned from a room", async () => {
+  const roomId = "room_paused_managed_agent";
+  const createdAt = new Date("2026-03-25T04:02:00.000Z").toISOString();
+
+  seedRoom({
+    roomId,
+    name: "Paused Managed Agent Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(citizens).values([
+    {
+      id: "prn_owner_paused_agent",
+      kind: "human",
+      ownerCitizenId: "prn_owner_paused_agent",
+      loginKey: "owner-paused-agent@example.com",
+      globalDisplayName: "OwnerPausedAgent",
+      roleSummary: null,
+      instructions: null,
+      backendType: null,
+      backendThreadId: null,
+      backendConfig: null,
+      sourceServerConfigId: null,
+      status: "online",
+      createdAt,
+      updatedAt: createdAt,
+    },
+    {
+      id: "prn_paused_managed_agent",
+      kind: "agent",
+      ownerCitizenId: "prn_owner_paused_agent",
+      loginKey: "agent:paused-managed",
+      globalDisplayName: "PausedManaged",
+      roleSummary: "Paused reviewer",
+      instructions: "Do not run when paused.",
+      backendType: "openai_compatible",
+      backendThreadId: "thread_paused_managed_agent",
+      backendConfig: JSON.stringify({
+        baseUrl: "http://127.0.0.1:1234/v1",
+        model: "qwen-paused",
+      }),
+      sourceServerConfigId: null,
+      status: "offline",
+      createdAt,
+      updatedAt: createdAt,
+    },
+    {
+      id: "prn_owner_instruction_agent",
+      kind: "human",
+      ownerCitizenId: "prn_owner_instruction_agent",
+      loginKey: "owner-instruction-agent@example.com",
+      globalDisplayName: "OwnerInstructionAgent",
+      roleSummary: null,
+      instructions: null,
+      backendType: null,
+      backendThreadId: null,
+      backendConfig: null,
+      sourceServerConfigId: null,
+      status: "online",
+      createdAt,
+      updatedAt: createdAt,
+    },
+  ]).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_requester_paused_managed",
+      roomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "RequesterPausedManaged",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_paused_managed_agent",
+      roomId,
+      citizenId: "prn_paused_managed_agent",
+      type: "agent",
+      roleKind: "independent",
+      displayName: "PausedManaged",
+      ownerMemberId: null,
+      adapterType: "openai_compatible",
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+  ]).run();
+
+  db.insert(agentBindings).values({
+    id: "agb_paused_managed_agent",
+    citizenId: "prn_paused_managed_agent",
+    privateAssistantId: null,
+    bridgeId: null,
+    backendType: "openai_compatible",
+    backendThreadId: "thread_paused_managed_agent",
+    cwd: null,
+    status: "pending_bridge",
+    attachedAt: createdAt,
+    detachedAt: null,
+  }).run();
+
+  const requesterToken = issueWsToken("mem_requester_paused_managed", roomId);
+  const response = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_requester_paused_managed",
+      wsToken: requesterToken,
+      content: "@PausedManaged help me",
+    }),
+  });
+
+  assert.equal(response.status, 201);
+  const mention = db.select().from(mentions).where(eq(mentions.targetMemberId, "mem_paused_managed_agent")).get();
+  const roomMessages = db.select().from(messages).where(eq(messages.roomId, roomId)).all();
+  const sessions = db.select().from(agentSessions).where(eq(agentSessions.roomId, roomId)).all();
+
+  assert.equal(mention?.status, "expired");
+  assert.equal(sessions.length, 0);
+  assert.ok(roomMessages.some((message) => message.messageType === "system_notice"));
+});
+
 test("agent citizen bootstrap rejects a bound backendThreadId without leaving a citizen record", async () => {
   const createdAt = new Date("2026-03-25T00:30:00.000Z").toISOString();
 
@@ -4801,6 +5035,102 @@ test("mentioning an independent agent triggers execution and commits a reply", a
         /independent agent:/i.test(message.content),
     ),
   );
+});
+
+test("independent agent prompt includes citizen instructions", async () => {
+  const roomId = "room_independent_agent_instructions";
+  const createdAt = new Date("2026-03-25T04:01:00.000Z").toISOString();
+
+  seedRoom({
+    roomId,
+    name: "Independent Agent Prompt Room",
+    inviteToken: createInviteToken(),
+  });
+
+  db.insert(citizens).values({
+    id: "prn_instruction_agent",
+    kind: "agent",
+    ownerCitizenId: "prn_owner_instruction_agent",
+    loginKey: "agent:instruction-agent",
+    globalDisplayName: "InstructionAgent",
+    roleSummary: "SQL reviewer",
+    instructions: "Always explain migration rollback concerns before any answer.",
+    backendType: null,
+    backendThreadId: null,
+    backendConfig: null,
+    sourceServerConfigId: null,
+    status: "online",
+    createdAt,
+    updatedAt: createdAt,
+  }).run();
+
+  db.insert(members).values([
+    {
+      id: "mem_requester_instruction_agent",
+      roomId,
+      type: "human",
+      roleKind: "none",
+      displayName: "RequesterInstruction",
+      ownerMemberId: null,
+      adapterType: null,
+      adapterConfig: null,
+      presenceStatus: "online",
+      createdAt,
+    },
+    {
+      id: "mem_instruction_agent",
+      roomId,
+      citizenId: "prn_instruction_agent",
+      type: "agent",
+      roleKind: "independent",
+      displayName: "InstructionAgent",
+      ownerMemberId: null,
+      adapterType: "local_process",
+      adapterConfig: JSON.stringify({
+        command: "node",
+        args: [
+          "-e",
+          "process.stdin.setEncoding('utf8');let text='';process.stdin.on('data',chunk=>text+=chunk);process.stdin.on('end',()=>process.stdout.write(text));",
+        ],
+        inputFormat: "text",
+      }),
+      presenceStatus: "online",
+      createdAt,
+    },
+  ]).run();
+
+  const requesterToken = issueWsToken("mem_requester_instruction_agent", roomId);
+
+  const response = await app.request(`http://localhost/api/rooms/${roomId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      senderMemberId: "mem_requester_instruction_agent",
+      wsToken: requesterToken,
+      content: "@InstructionAgent review this query",
+    }),
+  });
+
+  assert.equal(response.status, 201);
+
+  const roomMessages = await waitFor(
+    () =>
+      db
+        .select()
+        .from(messages)
+        .where(eq(messages.roomId, roomId))
+        .all(),
+    (value) =>
+      value.some(
+        (message) => message.messageType === "agent_text" && message.senderMemberId === "mem_instruction_agent",
+      ),
+  );
+
+  const agentReply = roomMessages.find(
+    (message) => message.messageType === "agent_text" && message.senderMemberId === "mem_instruction_agent",
+  );
+  assert.ok(agentReply);
+  assert.match(agentReply.content, /Always explain migration rollback concerns before any answer\./);
 });
 
 test("mentioning an openai-compatible agent executes directly without bridge", async () => {

@@ -4,12 +4,13 @@ import type {
   AgentSession,
   AgentSessionKind,
   Approval,
+  Citizen,
   Member,
   Message,
 } from "@agent-tavern/shared";
 
 import { db } from "../db/client";
-import { agentSessions, approvals, members, mentions, messages, privateAssistants, rooms } from "../db/schema";
+import { agentSessions, approvals, citizens, members, mentions, messages, privateAssistants, rooms } from "../db/schema";
 import { createId } from "./id";
 import { insertMessage } from "./message-records";
 import {
@@ -501,8 +502,35 @@ export function processMessageTriggers(params: {
             .where(eq(privateAssistants.id, target.sourcePrivateAssistantId))
             .get() as { status: string } | undefined)
         : undefined;
+    const pausedIndependentCitizen =
+      target.type === "agent" &&
+      target.roleKind === "independent" &&
+      target.citizenId
+        ? (db
+            .select()
+            .from(citizens)
+            .where(eq(citizens.id, target.citizenId))
+            .get() as Citizen | undefined)
+        : undefined;
 
     if (pausedAssistant?.status === "paused") {
+      createMentionRecord({
+        messageId: params.message.id,
+        targetMemberId: target.id,
+        triggerText: `@${mentionName}`,
+        status: "expired",
+        createdAt: now(),
+      });
+      handleUnavailableAgentMention({
+        roomId: params.roomId,
+        message: params.message,
+        target,
+        detail: `${target.displayName} is temporarily offline.`,
+      });
+      continue;
+    }
+
+    if (pausedIndependentCitizen?.status === "offline" && pausedIndependentCitizen.ownerCitizenId) {
       createMentionRecord({
         messageId: params.message.id,
         targetMemberId: target.id,

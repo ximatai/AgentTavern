@@ -1,23 +1,15 @@
-import type { CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { Alert } from "antd";
 import { RobotOutlined } from "@ant-design/icons";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 import type { MessageAttachment, ApprovalGrantDuration, PublicMember, PublicMessage, SystemMessageStatus } from "@agent-tavern/shared";
 import { FileOutlined } from "@ant-design/icons";
 
 import type { SessionStream } from "../types";
 import { ApprovalCard } from "./ApprovalCard";
-
-function StreamContent({ content, isStreaming }: { content: string; isStreaming: boolean }) {
-  if (!content) return null;
-  return (
-    <p>
-      {content}
-      {isStreaming && <span className="stream-cursor">▌</span>}
-    </p>
-  );
-}
 
 type MessageItem = PublicMessage | SessionStream;
 
@@ -49,18 +41,40 @@ function ReasoningBlock({
 }) {
   const { t } = useTranslation();
   if (!reasoningContent) return null;
+  const preview = reasoningContent.replace(/\s+/g, " ").trim();
+  const [isOpen, setIsOpen] = useState(isStreaming);
+
+  useEffect(() => {
+    setIsOpen(isStreaming);
+  }, [isStreaming]);
 
   return (
-    <details className="reasoning-block">
+    <details className="reasoning-block" open={isOpen}>
       <summary className="reasoning-summary">
-        <span>{t("chat.reasoning")}</span>
-        {isStreaming ? <span className="reasoning-status">{t("chat.reasoningStreaming")}</span> : null}
+        <button
+          type="button"
+          className="reasoning-summary-button"
+          onClick={(event) => {
+            event.preventDefault();
+            setIsOpen((value) => !value);
+          }}
+        >
+        <span className="reasoning-summary-main">
+          <span className="reasoning-title-row">
+            <span>{t("chat.reasoning")}</span>
+            {isStreaming ? <span className="reasoning-status">{t("chat.reasoningStreaming")}</span> : null}
+          </span>
+          <span className="reasoning-preview">{preview}</span>
+        </span>
+          <span className="reasoning-toggle-copy">{isOpen ? t("chat.reasoningCollapse") : t("chat.reasoningExpand")}</span>
+          <span className="reasoning-chevron" aria-hidden="true">⌄</span>
+        </button>
       </summary>
       <div className="reasoning-content">
-        <p>
-          {reasoningContent}
+        <div className="markdown-content markdown-reasoning">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{reasoningContent}</ReactMarkdown>
           {isStreaming && <span className="stream-cursor">▌</span>}
-        </p>
+        </div>
       </div>
     </details>
   );
@@ -165,6 +179,22 @@ function MessageAttachments({ attachments }: { attachments: MessageAttachment[] 
           </span>
         </a>
       ))}
+    </div>
+  );
+}
+
+function MarkdownMessage({ content }: { content: string }) {
+  return (
+    <div className="markdown-content">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: (props) => <a {...props} target="_blank" rel="noreferrer" />,
+          pre: (props) => <pre className="markdown-code-block" {...props} />,
+        }}
+      >
+        {content}
+      </ReactMarkdown>
     </div>
   );
 }
@@ -325,7 +355,8 @@ export function MessageRow({
                 </button>
               )}
               <ReasoningBlock reasoningContent={reasoningContent} isStreaming={isStreaming} />
-              <StreamContent content={message.content} isStreaming={isStreaming} />
+              <MarkdownMessage content={message.content} />
+              {isStreaming && <span className="stream-cursor">▌</span>}
               <MessageAttachments attachments={message.attachments} />
             </div>
             <div className="chat-actions" style={{ justifyContent: "flex-end" }}>
@@ -383,7 +414,8 @@ export function MessageRow({
             </button>
           )}
           <ReasoningBlock reasoningContent={reasoningContent} isStreaming={isStreaming} />
-          <StreamContent content={message.content} isStreaming={isStreaming} />
+          <MarkdownMessage content={message.content} />
+          {isStreaming && <span className="stream-cursor">▌</span>}
           <MessageAttachments attachments={message.attachments} />
         </div>
         <div className="chat-actions">

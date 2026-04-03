@@ -122,14 +122,18 @@ export type BridgeTaskKind = "message_reply" | "room_observe" | "summary_refresh
 export type Citizen = {
   id: string;
   kind: CitizenKind;
+  ownerCitizenId?: string | null;
   loginKey: string;
   globalDisplayName: string;
+  roleSummary?: string | null;
+  instructions?: string | null;
   backendType?: AgentBackendType | null;
   backendThreadId?: string | null;
   backendConfig?: string | null;
   sourceServerConfigId?: string | null;
   status: PresenceStatus;
   createdAt: string;
+  updatedAt: string;
 };
 
 export type PrivateAssistant = {

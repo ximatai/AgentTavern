@@ -10,14 +10,18 @@ import { sql } from "drizzle-orm";
 export const citizens = sqliteTable("citizens", {
   id: text("id").primaryKey(),
   kind: text("kind").notNull(),
+  ownerCitizenId: text("owner_citizen_id"),
   loginKey: text("login_key").notNull(),
   globalDisplayName: text("global_display_name").notNull(),
+  roleSummary: text("role_summary"),
+  instructions: text("instructions"),
   backendType: text("backend_type"),
   backendThreadId: text("backend_thread_id"),
   backendConfig: text("backend_config"),
   sourceServerConfigId: text("source_server_config_id"),
   status: text("status").notNull(),
   createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull().default("1970-01-01T00:00:00.000Z"),
 }, (table) => ({
   kindLoginKeyUniqueIdx: uniqueIndex("citizens_kind_login_key_unique_idx").on(
     table.kind,
