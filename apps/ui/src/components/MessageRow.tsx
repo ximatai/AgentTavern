@@ -40,13 +40,14 @@ function ReasoningBlock({
   isStreaming: boolean;
 }) {
   const { t } = useTranslation();
-  if (!reasoningContent) return null;
-  const preview = reasoningContent.replace(/\s+/g, " ").trim();
   const [isOpen, setIsOpen] = useState(isStreaming);
+  const preview = reasoningContent.replace(/\s+/g, " ").trim();
 
   useEffect(() => {
     setIsOpen(isStreaming);
   }, [isStreaming]);
+
+  if (!reasoningContent) return null;
 
   return (
     <details className="reasoning-block" open={isOpen}>
